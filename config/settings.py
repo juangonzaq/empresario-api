@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'remype',
     'ruc_profile',
     'sunafil',
+    'compliance_profile',
 ]
 
 MIDDLEWARE = [
@@ -220,6 +221,9 @@ LOGGING = {
             'level': os.getenv('LOG_LEVEL', 'INFO'),
             'propagate': False,
         }
-        for app in ('sunat_mailbox', 'suppliers', 'remype', 'ruc_profile', 'sunafil')
+        for app in (
+            'sunat_mailbox', 'suppliers', 'remype', 'ruc_profile', 'sunafil',
+            'compliance_profile',
+        )
     },
 }

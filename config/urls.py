@@ -10,5 +10,6 @@ urlpatterns = [
     path("api/", include("remype.urls")),
     path("api/", include("ruc_profile.urls")),
     path("api/", include("sunafil.urls")),
+    path("api/", include("compliance_profile.urls")),
     path("api/auth/", include("rest_framework.urls")),  # login for the browsable API
 ]
