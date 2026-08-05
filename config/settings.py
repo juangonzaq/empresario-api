@@ -34,6 +34,21 @@ SUNAT_RUC = os.getenv("SUNAT_RUC", "")
 SUNAT_USER = os.getenv("SUNAT_USER", "")
 SUNAT_PASS = os.getenv("SUNAT_PASS", "")
 
+# SUNAT SIRE APIs (sensor_sunat prototype) — credentials live in .env, never in git
+SUNAT = {
+    "RUC": os.getenv("SUNAT_RUC", "20604442533"),
+    "SOL_USER": os.getenv("SUNAT_SOL_USER", os.getenv("SUNAT_USER", "")),
+    "SOL_PASS": os.getenv("SUNAT_SOL_PASS", os.getenv("SUNAT_PASS", "")),
+    "CLIENT_ID": os.getenv("SUNAT_CLIENT_ID"),
+    "CLIENT_SECRET": os.getenv("SUNAT_CLIENT_SECRET"),
+    "TOKEN_URL": "https://api-seguridad.sunat.gob.pe/v1/clientessol/{client_id}/oauth2/token/",
+    "SCOPE": "https://api-sire.sunat.gob.pe",
+    "BASE": "https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros",
+    "COD_LIBRO_RVIE": "140000",
+    "COD_LIBRO_RCE": "080000",
+}
+MEDIA_SUNAT_DIR = BASE_DIR / "media" / "sunat_raw"   # raw ZIPs and TXTs on local disk
+
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
@@ -67,6 +82,9 @@ INSTALLED_APPS = [
     'ruc_profile',
     'sunafil',
     'compliance_profile',
+    'sensor_sunat',
+    'sunat_itf',
+    'sunat_cpe',
 ]
 
 MIDDLEWARE = [
@@ -223,7 +241,7 @@ LOGGING = {
         }
         for app in (
             'sunat_mailbox', 'suppliers', 'remype', 'ruc_profile', 'sunafil',
-            'compliance_profile',
+            'compliance_profile', 'sunat_itf', 'sunat_cpe',
         )
     },
 }
