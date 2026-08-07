@@ -5,6 +5,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from .models import Attachment, Message
+from .services import insights
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
@@ -32,15 +33,23 @@ class MessageListSerializer(serializers.ModelSerializer):
     message_type_label = serializers.CharField(
         source="get_message_type_display", read_only=True
     )
+    # Functional classification (category, priority, action, tax period) derived
+    # by the insights service; the UI reads this block instead of the raw codes.
+    insights = serializers.SerializerMethodField()
+    is_reviewed = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Message
         fields = (
             "id", "taxpayer_id", "message_code", "message_type", "message_type_label",
             "subject", "sender_name", "sent_on", "published_at", "expires_at",
-            "read_at", "is_read", "is_urgent", "is_starred", "attachment_count",
-            "office_code", "label_code", "status_code",
+            "read_at", "is_read", "reviewed_at", "is_reviewed", "is_urgent",
+            "is_starred", "attachment_count",
+            "office_code", "label_code", "status_code", "insights",
         )
+
+    def get_insights(self, obj: Message) -> dict:
+        return insights.list_fields(obj)
 
 
 class MessageDetailSerializer(MessageListSerializer):
@@ -53,3 +62,6 @@ class MessageDetailSerializer(MessageListSerializer):
             "attachments", "list_payload", "detail_payload",
             "created_at", "updated_at",
         )
+
+    def get_insights(self, obj: Message) -> dict:
+        return insights.detail_insights(obj)

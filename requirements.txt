@@ -26,6 +26,7 @@ psycopg==3.3.4
 psycopg-binary==3.3.4
 pyee==13.0.1
 pypdf==6.14.2
+PyYAML==6.0.3
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
@@ -40,3 +41,5 @@ tzlocal==5.4.4
 urllib3==2.7.0
 vine==5.1.0
 wcwidth==0.8.2
+django-cors-headers
+openai

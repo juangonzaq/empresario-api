@@ -61,6 +61,13 @@ DEBUG = env_bool("DJANGO_DEBUG", True)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
+# Orígenes del frontend autorizados a consumir el API desde el navegador.
+CORS_ALLOWED_ORIGINS = env_list(
+    "DJANGO_CORS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:3001,"
+    "http://127.0.0.1:3000,http://127.0.0.1:3001",
+)
+
 
 # Application definition
 
@@ -73,6 +80,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'django_filters',
+    'corsheaders',
     'django_celery_beat',
     'django_celery_results',
     'core',
@@ -85,11 +93,14 @@ INSTALLED_APPS = [
     'sensor_sunat',
     'sunat_itf',
     'sunat_cpe',
+    'sunat_intel',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    # CorsMiddleware debe ir antes de CommonMiddleware para responder preflights.
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

@@ -73,24 +73,7 @@ class ComplianceSynchronizer:
         if current_period:
             rows[current_period] = current
 
-        ratings: list[ComplianceRating] = []
-        with transaction.atomic():
-            for period, row in sorted(rows.items()):
-                rating, created = ComplianceRating.objects.update_or_create(
-                    taxpayer_id=self.client.taxpayer_id,
-                    period=period,
-                    defaults={
-                        **header_fields(row),
-                        "is_current": period == current_period,
-                    },
-                )
-                ratings.append(rating)
-                result.created += created
-                result.updated += not created
-            # A quarter absent from this run's payloads must still lose the flag.
-            ComplianceRating.objects.for_taxpayer(self.client.taxpayer_id).exclude(
-                period=current_period or 0
-            ).filter(is_current=True).update(is_current=False)
+        ratings = self._upsert_ratings(rows, current_period, result)
 
         if self.fetch_details:
             for rating in ratings:
@@ -110,6 +93,41 @@ class ComplianceSynchronizer:
                         rating.taxpayer_id, rating.period,
                     )
         return result
+
+    def _upsert_ratings(
+        self,
+        rows: dict[int, dict[str, Any]],
+        current_period: int | None,
+        result: SyncResult,
+    ) -> list[ComplianceRating]:
+        ratings: list[ComplianceRating] = []
+        current_pk = None
+        with transaction.atomic():
+            for period, row in sorted(rows.items()):
+                fields = header_fields(row)
+                execution_period = fields.pop("execution_period")
+                # Keyed by execution too: a re-execution of the same quarter is a
+                # new evaluation snapshot, never an overwrite of the previous one.
+                rating, created = ComplianceRating.objects.update_or_create(
+                    taxpayer_id=self.client.taxpayer_id,
+                    period=period,
+                    execution_period=execution_period,
+                    defaults={
+                        **fields,
+                        "is_current": period == current_period,
+                    },
+                )
+                ratings.append(rating)
+                if period == current_period:
+                    current_pk = rating.pk
+                result.created += created
+                result.updated += not created
+            # Everything but this run's vigente snapshot must lose the flag,
+            # including older executions of the same quarter.
+            ComplianceRating.objects.for_taxpayer(self.client.taxpayer_id).exclude(
+                pk=current_pk
+            ).filter(is_current=True).update(is_current=False)
+        return ratings
 
     def _sync_detail(self, rating: ComplianceRating, result: SyncResult) -> None:
         detail = self.client.fetch_detail(rating.period)

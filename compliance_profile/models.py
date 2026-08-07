@@ -77,11 +77,14 @@ class ComplianceRating(BaseModel):
     objects = ComplianceRatingQuerySet.as_manager()
 
     class Meta:
-        ordering = ["-period"]
+        ordering = ["-period", "-execution_period"]
         constraints = [
+            # One row per evaluation run: SUNAT re-executes the vigente quarter
+            # monthly (perEjec) and previous evaluations must not be overwritten,
+            # so the trend endpoint can compare against real stored history.
             models.UniqueConstraint(
-                fields=["taxpayer_id", "period"],
-                name="unique_rating_per_taxpayer_period",
+                fields=["taxpayer_id", "period", "execution_period"],
+                name="unique_rating_per_taxpayer_period_execution",
             )
         ]
         indexes = [models.Index(fields=["taxpayer_id", "is_current"])]

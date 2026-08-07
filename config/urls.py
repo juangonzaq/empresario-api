@@ -13,5 +13,7 @@ urlpatterns = [
     path("api/", include("compliance_profile.urls")),
     path("api/", include("sunat_itf.urls")),
     path("api/", include("sunat_cpe.urls")),
+    path("api/", include("sensor_sunat.urls")),
+    path("api/", include("sunat_intel.urls")),
     path("api/auth/", include("rest_framework.urls")),  # login for the browsable API
 ]

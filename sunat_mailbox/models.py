@@ -19,7 +19,7 @@ class MessageQuerySet(models.QuerySet):
         return self.filter(taxpayer_id=taxpayer_id)
 
     def unread(self) -> "MessageQuerySet":
-        return self.filter(is_read=False)
+        return self.filter(is_read=False, reviewed_at__isnull=True)
 
     def with_attachments(self) -> "MessageQuerySet":
         return self.filter(attachment_count__gt=0)
@@ -47,6 +47,13 @@ class Message(BaseModel):
         null=True, blank=True,
         help_text="SUNAT's fecLectura. Only known once the detail has been fetched.",
     )
+    reviewed_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text=(
+            "When the message was opened in this app. Independent from read_at: "
+            "reviewing here does not mark the message as read in SUNAT SOL."
+        ),
+    )
 
     is_read = models.BooleanField(
         default=False, help_text="Derived from read_at; see Attachment sync notes."
@@ -64,6 +71,11 @@ class Message(BaseModel):
     detail_payload = models.JSONField(null=True, blank=True)
 
     objects = MessageQuerySet.as_manager()
+
+    @property
+    def is_reviewed(self) -> bool:
+        """Read in SUNAT SOL or opened in this app — either clears the inbox."""
+        return self.is_read or self.reviewed_at is not None
 
     class Meta:
         ordering = ["-published_at", "-message_code"]
