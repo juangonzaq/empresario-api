@@ -94,6 +94,7 @@ INSTALLED_APPS = [
     'sunat_itf',
     'sunat_cpe',
     'sunat_intel',
+    'finance_analytics',
 ]
 
 MIDDLEWARE = [

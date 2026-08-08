@@ -28,7 +28,13 @@ ASK_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "kind": {"type": "string", "enum": ["message", "case", "compliance"]},
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "message", "case", "compliance",
+                            "invoice", "finance", "finance_alert",
+                        ],
+                    },
                     "id": {"type": "string"},
                     "label": {"type": "string"},
                 },
@@ -48,8 +54,17 @@ Reglas estrictas:
 - Responde ÚNICAMENTE con la información del contexto proporcionado. No uses \
 conocimiento externo para afirmar hechos sobre la empresa.
 - Cita en `sources` cada mensaje (kind "message", id = el uuid indicado), caso \
-(kind "case") o dato del perfil de cumplimiento (kind "compliance", id \
+(kind "case"), comprobante (kind "invoice"), alerta financiera \
+(kind "finance_alert"), métrica financiera agregada (kind "finance", id \
+"resumen") o dato del perfil de cumplimiento (kind "compliance", id \
 "profile") que sustente tu respuesta.
+- Reglas financieras: la facturación emitida es venta facturada, no cobranza — \
+nunca afirmes que una factura fue cobrada sin evidencia de pago. Las compras \
+no son ingresos. El ITF son «movimientos bancarios reportados», nunca saldo, \
+ingresos ni flujo de caja. No sumes PEN y USD. Las diferencias entre \
+facturación y movimientos «requieren clasificación o revisión contable»; \
+jamás las describas como evasión, fraude u omisión. Distingue hechos \
+(números del contexto) de interpretaciones (tus lecturas), señalándolo.
 - Si el contexto no alcanza para responder, dilo claramente y marca \
 `has_sufficient_info` en false.
 - No emitas conclusiones legales definitivas ni recomendaciones de pago o \
@@ -60,8 +75,29 @@ montos que no estén.
 - Responde en español claro y ejecutivo, breve pero completo."""
 
 
+def _analysis_line(a: MessageAnalysis) -> str:
+    m = a.message
+    published = m.published_at.date().isoformat() if m.published_at else "s/f"
+    parts = [
+        f"[mensaje {m.id}] {published} | {a.comm_type or 'Comunicación'}",
+        f"prioridad {a.priority}",
+        f"acción requerida: {'sí' if a.requires_action else 'no'}",
+        a.summary,
+    ]
+    if a.tribute:
+        parts.append(f"tributo {a.tribute}")
+    if a.tax_period:
+        parts.append(f"periodo {a.tax_period}")
+    if a.amount is not None:
+        parts.append(f"monto S/ {a.amount} (fuente: {a.amount_source})")
+    if a.legal_deadline:
+        parts.append(f"plazo {a.legal_deadline} (fuente: {a.deadline_source})")
+    if a.references:
+        parts.append("refs " + ", ".join(a.references))
+    return " | ".join(p for p in parts if p)
+
+
 def _message_lines(taxpayer_id: str) -> list[str]:
-    lines = []
     analyses = (
         MessageAnalysis.objects.filter(
             status=AnalysisStatus.DONE, message__taxpayer_id=taxpayer_id
@@ -69,27 +105,7 @@ def _message_lines(taxpayer_id: str) -> list[str]:
         .select_related("message")
         .order_by("-message__published_at")
     )
-    for a in analyses:
-        m = a.message
-        published = m.published_at.date().isoformat() if m.published_at else "s/f"
-        parts = [
-            f"[mensaje {m.id}] {published} | {a.comm_type or 'Comunicación'}",
-            f"prioridad {a.priority}",
-            f"acción requerida: {'sí' if a.requires_action else 'no'}",
-            a.summary,
-        ]
-        if a.tribute:
-            parts.append(f"tributo {a.tribute}")
-        if a.tax_period:
-            parts.append(f"periodo {a.tax_period}")
-        if a.amount is not None:
-            parts.append(f"monto S/ {a.amount} (fuente: {a.amount_source})")
-        if a.legal_deadline:
-            parts.append(f"plazo {a.legal_deadline} (fuente: {a.deadline_source})")
-        if a.references:
-            parts.append("refs " + ", ".join(a.references))
-        lines.append(" | ".join(p for p in parts if p))
-    return lines
+    return [_analysis_line(a) for a in analyses]
 
 
 def _case_lines(taxpayer_id: str) -> list[str]:
@@ -140,6 +156,107 @@ def _compliance_lines(taxpayer_id: str) -> list[str]:
     return lines
 
 
+def _finance_lines(taxpayer_id: str) -> list[str]:
+    """Executive finance context: aggregates plus openable documents.
+
+    Amounts arrive pre-computed from finance_analytics — the assistant never
+    recalculates totals nor mixes currencies.
+    """
+    try:
+        from finance_analytics.models import FinanceAlert
+        from finance_analytics.services import parties
+        from finance_analytics.services.cpe_summary import (
+            credit_notes_detail, load_documents, purchases_summary, sales_summary,
+        )
+        from finance_analytics.services.itf_summary import itf_summary
+    except ImportError:  # pragma: no cover — app always present in this project
+        return []
+
+    docs = load_documents(taxpayer_id)
+    if not docs:
+        return []
+    return [
+        "[finance resumen] Métricas calculadas por el sistema (CPE / ITF):",
+        *_finance_flow_lines(sales_summary(docs, months=6), purchases_summary(docs, months=6)),
+        *_finance_party_lines(parties.customers_analysis(docs), parties.suppliers_analysis(docs)),
+        *_finance_credit_note_lines(credit_notes_detail(docs, months=6)),
+        *_finance_itf_lines(itf_summary(taxpayer_id, months=6)),
+        *(
+            f"[alerta financiera {alert.id}] ({alert.get_severity_display()}) "
+            f"{alert.title} — {alert.explanation}"
+            for alert in FinanceAlert.objects.filter(account_ruc=taxpayer_id).open()[:15]
+        ),
+    ]
+
+
+def _fmt_pct(value) -> str:
+    return f"{value}%" if value is not None else "s/d"
+
+
+def _finance_flow_lines(sales: dict, purchases: dict) -> list[str]:
+    lines = []
+    for row in sales["periods"]:
+        for currency, bucket in row["by_currency"].items():
+            lines.append(
+                f"[finance resumen] Ventas {row['label']} ({currency}): brutas "
+                f"{bucket['gross']:,.0f}, Nota crédito {bucket['credit_notes']:,.0f}, "
+                f"netas {bucket['net']:,.0f} · {bucket['invoice_count']} facturas. "
+                "Es facturación, no cobranza."
+            )
+    for row in purchases["periods"]:
+        for currency, bucket in row["by_currency"].items():
+            lines.append(
+                f"[finance resumen] Compras {row['label']} ({currency}): "
+                f"{bucket['net']:,.0f} netas · {bucket['invoice_count']} comprobantes. "
+                "No son ingresos."
+            )
+    return lines
+
+
+def _finance_party_lines(customers: dict, suppliers: dict) -> list[str]:
+    lines = [
+        f"[finance resumen] Cliente {r['name']}: neto PEN {r['net_pen']:,.0f} "
+        f"({r['share_pct']}% de la facturación), estado {r['status']}, "
+        f"variación último mes {_fmt_pct(r['variation_pct'])}."
+        for r in customers["parties"][:8]
+    ]
+    lines.extend(
+        f"[finance resumen] Proveedor {r['name']}: compras netas PEN "
+        f"{r['net_pen']:,.0f}, estado {r['status']}, variación {_fmt_pct(r['variation_pct'])}."
+        for r in suppliers["parties"][:8]
+    )
+    return lines
+
+
+def _finance_credit_note_lines(detail: dict) -> list[str]:
+    return [
+        f"[comprobante {note['id']}] Nota de crédito {note['full_number']} "
+        f"({note['period']}) de {note['counterparty']} por {note['currency']} "
+        f"{note['amount']:,.0f} — motivo: {note['reason'] or 'no indicado'}; "
+        f"reduce {note['references_document'] or 'documento no indicado'}."
+        for note in detail["notes"]
+    ]
+
+
+def _finance_itf_lines(itf: dict) -> list[str]:
+    """Cada línea separa entradas de salidas y dice qué compara cada variación;
+    el movimiento bruto va al final, marcado como referencia."""
+    return [
+        f"[finance resumen] ITF {row['label']}: entradas (acreditaciones "
+        f"reportadas, códigos 12 y 13) S/ {row['inflow_base']:,.0f} "
+        f"({_fmt_pct(row['variation_inflow_pct'])} vs entradas del mes "
+        f"anterior); salidas (débitos reportados, códigos 14 y 15) "
+        f"S/ {row['outflow_base']:,.0f} "
+        f"({_fmt_pct(row['variation_outflow_pct'])} vs salidas del mes "
+        f"anterior); ITF registrado {row['total_tax']:,.2f}; sin clasificar "
+        f"S/ {row['unclassified_base']:,.0f}. Movimiento bruto (referencia, "
+        f"suma ambos sentidos) S/ {row['gross_movement']:,.0f} "
+        f"({_fmt_pct(row['variation_gross_pct'])} vs movimiento bruto "
+        "anterior): no es facturación, ingresos, flujo de caja ni saldo."
+        for row in itf["periods"]
+    ]
+
+
 def build_context(taxpayer_id: str) -> str:
     sections = [
         "## Mensajes analizados del buzón SUNAT",
@@ -148,6 +265,8 @@ def build_context(taxpayer_id: str) -> str:
         *(_case_lines(taxpayer_id) or ["(sin casos)"]),
         "\n## Perfil de cumplimiento",
         *(_compliance_lines(taxpayer_id) or ["(sin perfil disponible)"]),
+        "\n## Finanzas (CPE + ITF, métricas ya calculadas)",
+        *(_finance_lines(taxpayer_id) or ["(sin datos financieros)"]),
     ]
     return "\n".join(sections)
 

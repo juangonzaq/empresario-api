@@ -71,6 +71,28 @@ class HelperTests(SimpleTestCase):
         self.assertEqual(parse_amount("S/7,227.50"), Decimal("7227.50"))
         self.assertEqual(month_bounds("202607"), ("01/07/2026", "31/07/2026"))
 
+    def test_amount_decodes_html_entities_before_reading_the_number(self):
+        # SUNAT manda el "$" como "&#36;": si no se decodifica, los dígitos 3
+        # y 6 se pegan al importe y 2,320.00 se vuelve 362320.00.
+        self.assertEqual(parse_amount("&#36;2,320.00"), Decimal("2320.00"))
+        self.assertEqual(parse_amount("&#36;175.82"), Decimal("175.82"))
+        self.assertEqual(parse_amount("&#36;80.00"), Decimal("80.00"))
+        self.assertEqual(parse_amount("&#83;&#47;1,180.00"), Decimal("1180.00"))
+
+    def test_amount_edge_cases(self):
+        self.assertIsNone(parse_amount(None))
+        self.assertIsNone(parse_amount(""))
+        self.assertIsNone(parse_amount("S/"))
+        self.assertEqual(parse_amount("-S/1,000.00"), Decimal("-1000.00"))
+        self.assertEqual(parse_amount("S/0.00"), Decimal("0.00"))
+
+    def test_currency_symbol_is_stored_decoded(self):
+        record = {**ALL_TYPES["11"][0], "codigoMonedaDesc": "&#36;",
+                  "codigoMoneda": "USD", "importeTotalDesc": "&#36;2,320.00"}
+        fields = record_fields(record, ACCOUNT, "11")
+        self.assertEqual(fields["currency_symbol"], "$")
+        self.assertEqual(fields["total_amount"], Decimal("2320.00"))
+
     def test_period_walkers(self):
         self.assertEqual(previous_period("202601"), "202512")
         self.assertEqual(current_period(datetime.date(2026, 7, 9)), "202607")

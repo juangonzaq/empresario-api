@@ -1,6 +1,6 @@
 """Persistence for SUNAT's electronic comprobantes (Consultar Factura y Nota).
 
-Covers all seven ``tipoConsulta`` flavours — facturas / notas de crédito / notas
+Covers all seven ``tipoConsulta`` flavours — facturas / Nota crédito / notas
 de débito, each emitida or recibida, plus rejected facturas — for a single SOL
 account. One row per physical comprobante (keyed by its issuer + series + number
 + type); the daily sync re-queries and updates it, recording any balance-relevant

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import datetime
+import html as html_entities
 import json
 import logging
 import re
@@ -14,6 +15,17 @@ from ..models import Direction
 from .constants import COD_CPE_CLASS, TIPO_CONSULTA
 
 logger = logging.getLogger(__name__)
+
+# El importe llega como texto con su símbolo: "S/7,227.50" o, en dólares,
+# "&#36;2,320.00" — SUNAT manda el "$" como entidad HTML. Se toma el primer
+# número completo del texto en lugar de borrar lo que no sea dígito: así
+# ningún prefijo puede pegarse al importe.
+_AMOUNT = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def clean_field(value: Any) -> str:
+    """Texto del registro ya sin entidades HTML y sin espacios sobrantes."""
+    return html_entities.unescape(str(value or "")).strip()
 
 
 def parse_records(html: str) -> list[dict[str, Any]]:
@@ -35,15 +47,24 @@ def parse_records(html: str) -> list[dict[str, Any]]:
 
 
 def parse_amount(value: str | None) -> Decimal | None:
+    """'S/7,227.50' → 7227.50; '&#36;2,320.00' → 2320.00.
+
+    Las entidades HTML se decodifican ANTES de leer el número: «&#36;» son
+    los dígitos 3 y 6 hasta que se convierten en «$», y borrando solo los no
+    dígitos quedaban pegados al importe (2,320.00 se volvía 362320.00).
+    """
     if not value:
         return None
-    cleaned = re.sub(r"[^\d.\-]", "", value.replace(",", ""))
-    if not cleaned:
+    text = html_entities.unescape(str(value))
+    match = _AMOUNT.search(text)
+    if not match:
         return None
     try:
-        return Decimal(cleaned)
+        amount = Decimal(match.group().replace(",", ""))
     except InvalidOperation:
         return None
+    # El signo puede venir antes del símbolo de moneda ("-S/1,000.00").
+    return -amount if "-" in text[: match.start()] else amount
 
 
 def parse_date(value: str | None) -> datetime.date | None:
@@ -56,10 +77,11 @@ def parse_date(value: str | None) -> datetime.date | None:
 
 
 def _name_from_desc(desc: str | None) -> str:
-    if not desc:
+    cleaned = clean_field(desc)
+    if not cleaned:
         return ""
-    parts = desc.split(" - ", 1)
-    return parts[1].strip() if len(parts) == 2 else desc.strip()
+    parts = cleaned.split(" - ", 1)
+    return parts[1].strip() if len(parts) == 2 else cleaned
 
 
 def record_fields(
@@ -73,43 +95,43 @@ def record_fields(
     """
     issue_date = parse_date(record.get("fechaEmisionDesc"))
     period = f"{issue_date.year}{issue_date.month:02d}" if issue_date else ""
-    issuer_ruc = (record.get("nroRucEmisor") or "").strip()
-    cod_cpe = (record.get("codCpe") or "").strip()
+    issuer_ruc = clean_field(record.get("nroRucEmisor"))
+    cod_cpe = clean_field(record.get("codCpe"))
 
     default_class, _default_dir, rejected_view = TIPO_CONSULTA.get(
         tipo_consulta, (None, None, False)
     )
     document_class = COD_CPE_CLASS.get(cod_cpe, default_class)
     direction = Direction.ISSUED if issuer_ruc == account_ruc else Direction.RECEIVED
-    is_rejected = rejected_view or bool((record.get("fechaRechazoDesc") or "").strip())
+    is_rejected = rejected_view or bool(clean_field(record.get("fechaRechazoDesc")))
 
     return {
         "account_ruc": account_ruc,
         "direction": direction,
         "document_class": document_class,
-        "document_type": (record.get("tipoCPE") or "").strip(),
+        "document_type": clean_field(record.get("tipoCPE")),
         "cpe_code": cod_cpe,
-        "download_code": (record.get("codFactura") or "").strip(),
+        "download_code": clean_field(record.get("codFactura")),
         "tipo_consulta": tipo_consulta,
         "issuer_ruc": issuer_ruc,
         "issuer_name": _name_from_desc(record.get("nroRucEmisorDesc")),
-        "receiver_doc_type": (record.get("codTipoDocReceptor") or "").strip(),
-        "receiver_ruc": (record.get("nroRucReceptor") or "").strip(),
+        "receiver_doc_type": clean_field(record.get("codTipoDocReceptor")),
+        "receiver_ruc": clean_field(record.get("nroRucReceptor")),
         "receiver_name": _name_from_desc(record.get("nroRucReceptorDesc")),
-        "series": (record.get("nroSerie") or "").strip(),
-        "number": (record.get("nroFactura") or "").strip(),
-        "full_number": (record.get("nroFacturaDesc") or "").strip(),
+        "series": clean_field(record.get("nroSerie")),
+        "number": clean_field(record.get("nroFactura")),
+        "full_number": clean_field(record.get("nroFacturaDesc")),
         "issue_date": issue_date,
         "period": period,
-        "currency": (record.get("codigoMoneda") or "").strip(),
-        "currency_symbol": (record.get("codigoMonedaDesc") or "").strip(),
+        "currency": clean_field(record.get("codigoMoneda")),
+        "currency_symbol": clean_field(record.get("codigoMonedaDesc")),
         "total_amount": parse_amount(record.get("importeTotalDesc")),
-        "status": (record.get("estadoDesc") or "").strip(),
+        "status": clean_field(record.get("estadoDesc")),
         "is_cancelled": str(record.get("ind_anulado") or "0") not in ("0", ""),
         "is_rejected": is_rejected,
-        "reject_date": (record.get("fechaRechazoDesc") or "").strip(),
-        "references_document": (record.get("comprobantePorElQueSeEmite") or "").strip(),
-        "xml_id": (record.get("numeroIdXml") or "").strip(),
+        "reject_date": clean_field(record.get("fechaRechazoDesc")),
+        "references_document": clean_field(record.get("comprobantePorElQueSeEmite")),
+        "xml_id": clean_field(record.get("numeroIdXml")),
         "can_download": str(record.get("ind_puede_descargar") or "0") in ("1", "true"),
         "raw": record,
     }
