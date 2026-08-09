@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import HasOrganization, visible_rucs
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -32,6 +34,14 @@ class RucProfileViewSet(viewsets.ReadOnlyModelViewSet):
     * ``GET /api/ruc-profiles/me/`` — latest for the configured RUC
     * ``POST /api/ruc-profiles/capture/`` — capture now, ``{"ruc": "...", "force": false}``
     """
+    permission_classes = [IsAuthenticated, HasOrganization]
+
+    def get_queryset(self):
+        # La ficha de un RUC es información pública, pero *a quién
+        # consulta* una empresa no lo es: solo se devuelven su propio
+        # RUC y los de sus proveedores.
+        return super().get_queryset().filter(ruc__in=visible_rucs(self.request))
+
 
     queryset = RucSnapshot.objects.all()
     filter_backends = (DjangoFilterBackend, filters.OrderingFilter)

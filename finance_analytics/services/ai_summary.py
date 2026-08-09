@@ -23,7 +23,6 @@ import json
 import re
 from typing import Any
 
-from django.conf import settings
 from django.utils import timezone
 
 from sunat_intel.services import llm
@@ -218,15 +217,15 @@ def _consistency_lines(consistency: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _metrics_payload(period: str) -> dict[str, Any]:
+def _metrics_payload(ruc: str, period: str) -> dict[str, Any]:
     """Todo lo que ve el modelo, ya en castellano y con importes en soles."""
-    docs = load_documents()
+    docs = load_documents(ruc)
     sales = sales_summary(docs, months=6)
     purchases = purchases_summary(docs, months=6)
     customers = customers_analysis(docs)
     suppliers = suppliers_analysis(docs)
-    itf = itf_summary(months=6)
-    consistency = consistency_analysis(docs)
+    itf = itf_summary(ruc, months=6)
+    consistency = consistency_analysis(docs, ruc)
 
     return {
         "version del briefing": BRIEFING_VERSION,
@@ -388,9 +387,9 @@ def payload(row: FinanceAiSummary) -> dict[str, Any]:
     }
 
 
-def latest_summary(period: str | None = None) -> FinanceAiSummary | None:
-    """El último briefing disponible; el del periodo si se indica."""
-    rows = FinanceAiSummary.objects.filter(account_ruc=settings.SUNAT_RUC)
+def latest_summary(ruc: str, period: str | None = None) -> FinanceAiSummary | None:
+    """El último briefing disponible de esa empresa; el del periodo si se indica."""
+    rows = FinanceAiSummary.objects.filter(account_ruc=ruc)
     if period:
         rows = rows.filter(period=period)
     return rows.order_by("-period", "-created_at").first()
@@ -403,12 +402,13 @@ def has_briefing(row: FinanceAiSummary | None) -> bool:
     return bool(row and (row.key_changes or row.attention or row.actions))
 
 
-def get_or_create_summary(period: str, force: bool = False) -> FinanceAiSummary:
-    ruc = settings.SUNAT_RUC
-    metrics = _metrics_payload(period)
+def get_or_create_summary(
+    ruc: str, period: str, force: bool = False
+) -> FinanceAiSummary:
+    metrics = _metrics_payload(ruc, period)
     fingerprint = _fingerprint(metrics)
 
-    existing = latest_summary(period)
+    existing = latest_summary(ruc, period)
     if existing and existing.fingerprint == fingerprint and not force:
         return existing
 

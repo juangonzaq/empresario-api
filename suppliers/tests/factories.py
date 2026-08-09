@@ -52,5 +52,11 @@ def result_page(
 
 
 def create_supplier(**overrides) -> Supplier:
-    defaults = {"ruc": RUC_ACTIVE, "alias": "Supermercados"}
+    # Toda ficha de proveedor pertenece a una empresa; por defecto, la del
+    # tenant que usan los tests (``core.testing.DEFAULT_RUC``).
+    from core.testing import DEFAULT_RUC
+
+    defaults = {
+        "account_ruc": DEFAULT_RUC, "ruc": RUC_ACTIVE, "alias": "Supermercados",
+    }
     return Supplier.objects.create(**{**defaults, **overrides})

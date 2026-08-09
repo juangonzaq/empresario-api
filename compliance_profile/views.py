@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -24,7 +25,7 @@ NO_DATA_RESPONSE = {
 }
 
 
-class ComplianceRatingViewSet(viewsets.ReadOnlyModelViewSet):
+class ComplianceRatingViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Browse the scraped perfil de cumplimiento.
 
     Ratings are written by the ``scrape_compliance_profile`` command, so the API
@@ -35,6 +36,7 @@ class ComplianceRatingViewSet(viewsets.ReadOnlyModelViewSet):
     * ``GET /api/compliance/ratings/current/`` — the quarter SUNAT reports as vigente
     * ``GET /api/compliance/ratings/latest/`` — the most recent stored quarter
     """
+    tenant_field = "taxpayer_id"
 
     queryset = ComplianceRating.objects.all()
     filter_backends = (

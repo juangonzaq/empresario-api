@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from sunat_mailbox.models import MessageType
 from sunat_mailbox.tests.factories import TAXPAYER_ID, create_message
@@ -40,7 +42,7 @@ def llm_result(**overrides):
     return {**base, **overrides}
 
 
-class AnalyzerTests(APITestCase):
+class AnalyzerTests(TenantAPITestCase):
     @patch("sunat_intel.services.analyzer.llm.structured_completion")
     def test_analysis_is_stored_and_cached(self, mock_llm):
         mock_llm.return_value = llm_result()
@@ -89,7 +91,7 @@ def make_analysis(message, **overrides):
     return MessageAnalysis.objects.create(message=message, **{**defaults, **overrides})
 
 
-class CaseGroupingTests(APITestCase):
+class CaseGroupingTests(TenantAPITestCase):
     def test_related_messages_become_one_case(self):
         m1 = create_message(
             message_code=1, subject="Orden de Pago",
@@ -147,7 +149,7 @@ class CaseGroupingTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=TAXPAYER_ID)
-class ApiTests(APITestCase):
+class ApiTests(TenantAPITestCase):
     def setUp(self):
         m1 = create_message(message_code=20, subject="Multa")
         make_analysis(

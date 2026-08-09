@@ -7,7 +7,9 @@ from pathlib import Path
 
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from sunat_cpe.models import Direction, ElectronicInvoice
 from sunat_cpe.services.sync import CpeSynchronizer
@@ -38,7 +40,7 @@ class StubClient:
         return f"{fields['series']}-{fields['number']}.XML", "<Invoice>ok</Invoice>"
 
 
-class CpeSyncTests(APITestCase):
+class CpeSyncTests(TenantAPITestCase):
     def test_sync_periods_stores_all_types_with_direction(self):
         client = StubClient()
         result = CpeSynchronizer(client).sync_periods(["202607"])
@@ -76,7 +78,7 @@ class CpeSyncTests(APITestCase):
         self.assertTrue(ElectronicInvoice.objects.with_xml().exists())
 
 
-class CpeApiTests(APITestCase):
+class CpeApiTests(TenantAPITestCase):
     @classmethod
     def setUpTestData(cls):
         CpeSynchronizer(StubClient()).sync_periods(["202607"])

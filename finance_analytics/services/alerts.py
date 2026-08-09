@@ -243,14 +243,14 @@ def _consistency_alerts(account_ruc: str, consistency: dict[str, Any]) -> list[s
     return keys
 
 
-def rebuild_alerts(account_ruc: str | None = None) -> dict[str, int]:
-    ruc = account_ruc or settings.SUNAT_RUC
+def rebuild_alerts(account_ruc: str) -> dict[str, int]:
+    ruc = account_ruc
     docs = load_documents(ruc)
     sales = sales_summary(docs)
     customers = customers_analysis(docs)
     suppliers = suppliers_analysis(docs)
     itf = itf_summary(ruc)
-    consistency = consistency_analysis(docs)
+    consistency = consistency_analysis(docs, ruc)
 
     active: list[str] = []
     active += _concentration_alerts(ruc, customers)

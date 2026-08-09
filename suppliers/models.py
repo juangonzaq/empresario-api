@@ -27,8 +27,15 @@ class Supplier(BaseModel):
     so lists and filters stay cheap; the full history lives in :class:`SupplierCheck`.
     """
 
+    # Cada empresa lleva su propia cartera: el mismo proveedor puede estar en
+    # la lista de varias, con alias y notas distintas. Por eso el RUC deja de
+    # ser único global y pasa a serlo por (empresa, proveedor).
+    account_ruc = models.CharField(
+        "RUC de la empresa", max_length=11, db_index=True, default="",
+        help_text="Empresa dueña de esta ficha de proveedor.",
+    )
     ruc = models.CharField(
-        "RUC", max_length=11, unique=True, validators=[validate_ruc]
+        "RUC", max_length=11, db_index=True, validators=[validate_ruc]
     )
     alias = models.CharField(
         max_length=120, blank=True,
@@ -65,6 +72,12 @@ class Supplier(BaseModel):
 
     class Meta:
         ordering = ["alias", "business_name", "ruc"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account_ruc", "ruc"],
+                name="unique_supplier_per_account",
+            )
+        ]
         indexes = [models.Index(fields=["is_tracked", "has_issue"])]
 
     def __str__(self) -> str:

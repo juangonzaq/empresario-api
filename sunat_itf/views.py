@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.db.models import Count, Sum
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -14,7 +15,7 @@ from .models import ItfRecord
 from .serializers import ItfRecordSerializer
 
 
-class ItfRecordViewSet(viewsets.ReadOnlyModelViewSet):
+class ItfRecordViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Browse the scraped Consulta de ITF.
 
     Records are written by the ``scrape_itf`` command, so the API is read-only.
@@ -22,6 +23,7 @@ class ItfRecordViewSet(viewsets.ReadOnlyModelViewSet):
     * ``GET /api/itf/records/`` — paginated list (filter by section, period range)
     * ``GET /api/itf/records/summary/`` — total base and tax per period
     """
+    tenant_field = "taxpayer_id"
 
     queryset = ItfRecord.objects.all()
     serializer_class = ItfRecordSerializer

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from django.db.models import Count
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, status, viewsets
@@ -17,6 +16,9 @@ from .serializers import (
     CaseDetailSerializer, CaseListSerializer, CaseUpdateSerializer,
     VigiaMessageSerializer,
 )
+from accounts.tenancy import HasOrganization, OrganizationAPIView
+from rest_framework.permissions import IsAuthenticated
+
 from .services import ask as ask_service
 from .services import overview as overview_service
 
@@ -24,12 +26,18 @@ logger = logging.getLogger(__name__)
 
 
 def default_taxpayer(request: Request) -> str:
-    """Single-company deployment: the RUC comes from settings unless the
-    caller scopes explicitly. Data never mixes across RUCs."""
-    return request.query_params.get("taxpayer_id") or settings.SUNAT_RUC
+    """El RUC de la empresa del request.
+
+    Antes salía de ``?taxpayer_id=`` con respaldo en settings: cualquiera
+    podía leer los casos de cualquier contribuyente cambiando el parámetro.
+    Ahora lo pone ``HasOrganization`` a partir de las membresías de quien
+    llama, y el parámetro se ignora.
+    """
+    return request.ruc
 
 
 class CaseViewSet(
+
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
@@ -38,6 +46,7 @@ class CaseViewSet(
     """Cases are created by the analysis pipeline; humans update gestión
     fields (status, responsible, next action) through PATCH."""
 
+    permission_classes = [IsAuthenticated, HasOrganization]
     http_method_names = ["get", "patch", "head", "options"]
     filter_backends = (DjangoFilterBackend,)
     filterset_fields = ("status", "risk", "requires_decision")
@@ -93,14 +102,14 @@ class CaseViewSet(
         return Response(CaseDetailSerializer(instance).data)
 
 
-class OverviewView(APIView):
+class OverviewView(OrganizationAPIView):
     """GET /api/intel/overview/ — the executive summary and card payload."""
 
     def get(self, request: Request) -> Response:
         return Response(overview_service.build_overview(default_taxpayer(request)))
 
 
-class VigiaHistoryView(APIView):
+class VigiaHistoryView(OrganizationAPIView):
     """GET — the persisted chat history; DELETE — clear it.
 
     The history is also the audit trail of consultations, so DELETE only
@@ -123,7 +132,7 @@ class VigiaHistoryView(APIView):
         return Response({"deleted": deleted})
 
 
-class AskView(APIView):
+class AskView(OrganizationAPIView):
     """POST /api/intel/ask/ — grounded Q&A over the company's SUNAT data.
 
     The OpenAI key never leaves the backend; the frontend only sends the

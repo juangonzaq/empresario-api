@@ -68,9 +68,22 @@ class CheckSupplierTaskTests(TestCase):
         self.assertEqual(result["status"], "ACTIVO")
         self.assertTrue(result["succeeded"])
 
-    def test_unknown_ruc_raises(self):
-        with self.assertRaises(Supplier.DoesNotExist):
-            check_supplier("20131312955")
+    def test_unknown_ruc_reports_instead_of_raising(self):
+        # Reventar haría que Celery reintente tres veces algo que nunca va a
+        # existir; se informa y se acaba.
+        result = check_supplier("20131312955")
+        self.assertFalse(result["succeeded"])
+        self.assertIn("no registrado", result["error"])
+
+    def test_the_same_ruc_in_two_companies_is_looked_up_once(self):
+        """El estado en SUNAT es público y único: una consulta, dos fichas."""
+        create_supplier(account_ruc="20999999999", ruc=RUC_ACTIVE, alias="Otra cartera")
+        monitor = monitor_with(profile())
+        with patch("suppliers.tasks.SupplierMonitor", return_value=monitor):
+            result = check_supplier(RUC_ACTIVE)
+
+        self.assertEqual(result["fichas"], 2)
+        self.assertTrue(result["succeeded"])
 
     def test_is_configured_to_retry_on_lookup_errors(self):
         self.assertIn(RucLookupError, check_supplier.autoretry_for)
@@ -85,11 +98,28 @@ class BeatScheduleTests(TestCase):
         self.assertEqual(task.crontab.hour, "7")
         self.assertEqual(task.crontab.minute, "0")
 
-    def test_mailbox_scrape_is_scheduled_without_overlapping(self):
+    def test_tenant_syncs_are_scheduled_and_do_not_overlap(self):
+        """Los horarios por fuente se retiraron: ahora Beat recorre empresas."""
         suppliers_task = PeriodicTask.objects.get(task="suppliers.check_all")
-        mailbox_task = PeriodicTask.objects.get(task="sunat_mailbox.scrape")
-        self.assertTrue(mailbox_task.enabled)
-        self.assertNotEqual(
-            (suppliers_task.crontab.hour, suppliers_task.crontab.minute),
-            (mailbox_task.crontab.hour, mailbox_task.crontab.minute),
-        )
+        daily = PeriodicTask.objects.get(task="sync.daily")
+        monthly = PeriodicTask.objects.get(task="sync.monthly")
+        self.assertTrue(daily.enabled)
+        self.assertTrue(monthly.enabled)
+
+        horas = {
+            (t.crontab.hour, t.crontab.minute)
+            for t in (suppliers_task, daily, monthly)
+        }
+        self.assertEqual(len(horas), 3, "dos tareas arrancan a la misma hora")
+
+    def test_single_tenant_schedules_are_gone(self):
+        # Cada uno de estos leía settings.SUNAT_RUC: con varias empresas
+        # sincronizaba a una sola.
+        for task in (
+            "sunat_cpe.scrape_daily", "sunat_itf.scrape", "sunat_mailbox.scrape",
+            "sunafil.scrape", "ruc_profile.capture", "remype.refresh",
+        ):
+            self.assertFalse(
+                PeriodicTask.objects.filter(task=task).exists(),
+                f"{task} sigue programado para una sola empresa",
+            )

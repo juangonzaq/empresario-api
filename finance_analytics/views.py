@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.request import Request
@@ -17,47 +16,50 @@ from rest_framework.views import APIView
 
 from sunat_cpe.models import Direction, ElectronicInvoice
 
+from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
+
+from . import cache as overview_cache
+
 from .models import SEVERITY_RANK, ActionStatus, AlertStatus, FinanceAlert
 from .services import ai_summary as ai_service
 from .services import consistency as consistency_service
 from .services import itf_summary as itf_service
 from .services import parties as parties_service
-from .services.alerts import rebuild_alerts
 from .services.common import clean_name, money
 from .services.cpe_summary import (
-    credit_notes_detail, load_documents, period_documents, purchases_summary,
-    sales_summary,
+    credit_notes_detail, load_documents, period_documents_for,
+    purchases_summary, sales_summary,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class SalesView(APIView):
+class SalesView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(sales_summary(load_documents()))
+        return Response(sales_summary(load_documents(request.ruc)))
 
 
-class PurchasesView(APIView):
+class PurchasesView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(purchases_summary(load_documents()))
+        return Response(purchases_summary(load_documents(request.ruc)))
 
 
-class CustomersView(APIView):
+class CustomersView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(parties_service.customers_analysis(load_documents()))
+        return Response(parties_service.customers_analysis(load_documents(request.ruc)))
 
 
-class SuppliersView(APIView):
+class SuppliersView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(parties_service.suppliers_analysis(load_documents()))
+        return Response(parties_service.suppliers_analysis(load_documents(request.ruc)))
 
 
-class CreditNotesView(APIView):
+class CreditNotesView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(credit_notes_detail(load_documents()))
+        return Response(credit_notes_detail(load_documents(request.ruc)))
 
 
-class PeriodDocumentsView(APIView):
+class PeriodDocumentsView(OrganizationAPIView):
     """The comprobantes behind one row of the monthly table.
 
     ``GET /api/finance/documents/?period=202607&direction=emitida&currency=PEN``
@@ -78,42 +80,54 @@ class PeriodDocumentsView(APIView):
                 {"detail": "Dirección no válida."}, status=status.HTTP_400_BAD_REQUEST
             )
         return Response(
-            period_documents(load_documents(), period, direction, currency)
+            period_documents_for(request.ruc, period, direction, currency)
         )
 
 
-class ItfView(APIView):
+class ItfView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(itf_service.itf_summary())
+        return Response(itf_service.itf_summary(request.ruc))
 
 
-class ConsistencyView(APIView):
+class ConsistencyView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(consistency_service.consistency_analysis(load_documents()))
+        return Response(consistency_service.consistency_analysis(load_documents(request.ruc), request.ruc))
 
 
-class OverviewView(APIView):
-    """One call for the three home cards and the Resumen tab."""
+class OverviewView(OrganizationAPIView):
+    """Una sola llamada para los cards del Home y la pestaña Resumen.
+
+    Se cachea por empresa. Antes esta vista además *reconstruía las alertas*
+    en cada GET: 19 escrituras por cada carga de pantalla, con la base
+    aguantando la contención y el endpoint imposible de cachear. Las alertas
+    se recalculan donde corresponde —al terminar una sincronización, que es
+    cuando los datos cambian— y aquí solo se leen.
+    """
 
     def get(self, request: Request) -> Response:
-        docs = load_documents()
+        cached = overview_cache.get_overview(request.ruc)
+        if cached is not None:
+            return Response(cached)
+        return Response(self._build(request))
+
+    def _build(self, request: Request) -> dict:
+        docs = load_documents(request.ruc)
         sales = sales_summary(docs, months=13)
         purchases = purchases_summary(docs, months=13)
         customers = parties_service.customers_analysis(docs)
-        itf = itf_service.itf_summary()
-        consistency = consistency_service.consistency_analysis(docs)
-        rebuild_alerts()
+        itf = itf_service.itf_summary(request.ruc)
+        consistency = consistency_service.consistency_analysis(docs, request.ruc)
         open_alerts = sorted(
-            FinanceAlert.objects.filter(account_ruc=settings.SUNAT_RUC).open(),
+            FinanceAlert.objects.filter(account_ruc=request.ruc).open(),
             key=lambda a: (SEVERITY_RANK.get(a.severity, 9), a.period),
         )
         priority = [a for a in open_alerts if SEVERITY_RANK.get(a.severity, 9) <= 1]
 
         period = sales.get("latest_period")
-        row = ai_service.latest_summary(period) if period else None
+        row = ai_service.latest_summary(request.ruc, period) if period else None
         cached_ai = ai_service.payload(row) if ai_service.has_briefing(row) else None
 
-        return Response({
+        payload = {
             "period": period,
             "sales": {
                 "meaning": sales["meaning"],
@@ -158,7 +172,9 @@ class OverviewView(APIView):
             # De dónde salen los números del briefing; se calculan aquí, nunca
             # los redacta el modelo.
             "sources": ai_service.briefing_sources(docs, itf, len(open_alerts)),
-        })
+        }
+        overview_cache.set_overview(request.ruc, payload)
+        return payload
 
 
 def _alert_payload(alert: FinanceAlert) -> dict:
@@ -178,9 +194,9 @@ def _alert_payload(alert: FinanceAlert) -> dict:
     }
 
 
-class AlertsView(APIView):
+class AlertsView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        alerts = FinanceAlert.objects.filter(account_ruc=settings.SUNAT_RUC)
+        alerts = FinanceAlert.objects.filter(account_ruc=request.ruc)
         if request.query_params.get("open") == "true":
             alerts = alerts.open()
         ordered = sorted(
@@ -189,10 +205,10 @@ class AlertsView(APIView):
         return Response([_alert_payload(a) for a in ordered])
 
 
-class AlertStatusView(APIView):
+class AlertStatusView(ManagedOrganizationAPIView):
     def patch(self, request: Request, pk: str) -> Response:
         alert = get_object_or_404(
-            FinanceAlert, pk=pk, account_ruc=settings.SUNAT_RUC
+            FinanceAlert, pk=pk, account_ruc=request.ruc
         )
         new_status = request.data.get("status")
         if new_status not in AlertStatus.values:
@@ -201,10 +217,11 @@ class AlertStatusView(APIView):
             )
         alert.status = new_status
         alert.save(update_fields=["status", "updated_at"])
+        overview_cache.invalidate(request.ruc)
         return Response(_alert_payload(alert))
 
 
-class InvoiceInsightView(APIView):
+class InvoiceInsightView(OrganizationAPIView):
     """Normalized detail of one comprobante for the UI drawer.
 
     Never returns the full XML; the raw document stays on the audit API
@@ -213,7 +230,8 @@ class InvoiceInsightView(APIView):
 
     def get(self, request: Request, pk: str) -> Response:
         invoice = get_object_or_404(
-            ElectronicInvoice.objects.select_related("extract"), pk=pk
+            ElectronicInvoice.objects.select_related("extract"),
+            pk=pk, account_ruc=request.ruc,
         )
         extract = getattr(invoice, "extract", None)
         return Response({
@@ -251,7 +269,7 @@ class InvoiceInsightView(APIView):
         })
 
 
-class AiSummaryView(APIView):
+class AiSummaryView(ManagedOrganizationAPIView):
     """POST — generate (or refresh) the cached monthly briefing.
 
     A failed generation is not a dead end: if a previous briefing exists it
@@ -260,7 +278,7 @@ class AiSummaryView(APIView):
     """
 
     def post(self, request: Request) -> Response:
-        period = sales_summary(load_documents(), months=1).get("latest_period")
+        period = sales_summary(load_documents(request.ruc, months=2), months=1).get("latest_period")
         if not period:
             return Response(
                 {"detail": "Aún no hay facturación registrada para este briefing."},
@@ -268,11 +286,11 @@ class AiSummaryView(APIView):
             )
         try:
             row = ai_service.get_or_create_summary(
-                period, force=request.data.get("force") is True
+                request.ruc, period, force=request.data.get("force") is True
             )
         except Exception:  # el usuario recibe un error amable; el log, el resto
             logger.exception("Finance briefing generation failed")
-            previous = ai_service.latest_summary()
+            previous = ai_service.latest_summary(request.ruc)
             if not ai_service.has_briefing(previous):
                 return Response(
                     {"detail": "No pudimos generar el briefing. Intenta de nuevo."},
@@ -286,10 +304,11 @@ class AiSummaryView(APIView):
                     "disponible."
                 ),
             })
+        overview_cache.invalidate(request.ruc)
         return Response({**ai_service.payload(row), "stale": False, "stale_note": None})
 
 
-class AiSummaryActionView(APIView):
+class AiSummaryActionView(ManagedOrganizationAPIView):
     """PATCH — move one briefing action to another status.
 
     The status belongs to the person, not to the model: regenerating the
@@ -302,9 +321,10 @@ class AiSummaryActionView(APIView):
             return Response(
                 {"detail": "Estado no válido."}, status=status.HTTP_400_BAD_REQUEST
             )
-        row = ai_service.latest_summary()
+        row = ai_service.latest_summary(request.ruc)
         if row is None or not row.set_action_status(action_id, new_status):
             return Response(
                 {"detail": "Acción no encontrada."}, status=status.HTTP_404_NOT_FOUND
             )
+        overview_cache.invalidate(request.ruc)
         return Response(ai_service.payload(row))

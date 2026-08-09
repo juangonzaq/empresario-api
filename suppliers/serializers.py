@@ -19,10 +19,22 @@ class SupplierCheckSerializer(serializers.ModelSerializer):
 class SupplierSerializer(serializers.ModelSerializer):
     """Suppliers are writable: this is the registry the user maintains."""
 
-    # ruc is deliberately not redeclared: ModelSerializer derives both validate_ruc
-    # and the uniqueness check from the model field, and overriding it here would
-    # silently drop the latter.
+    # El RUC dejó de ser único global (el mismo proveedor puede estar en la
+    # cartera de varias empresas), así que la unicidad ya no la deriva el
+    # ModelSerializer del modelo: se comprueba aquí contra la empresa activa.
     display_name = serializers.CharField(read_only=True)
+
+    def validate_ruc(self, value: str) -> str:
+        ruc = value.strip()
+        account_ruc = getattr(self.context.get("request"), "ruc", None)
+        existing = Supplier.objects.filter(account_ruc=account_ruc, ruc=ruc)
+        if self.instance is not None:
+            existing = existing.exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise serializers.ValidationError(
+                "Ya tienes registrado un proveedor con ese RUC."
+            )
+        return ruc
 
     class Meta:
         model = Supplier

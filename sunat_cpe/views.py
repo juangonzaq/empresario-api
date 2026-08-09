@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -19,7 +20,7 @@ from .serializers import (
 )
 
 
-class ElectronicInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+class ElectronicInvoiceViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Browse the scraped emitted comprobantes and their XML.
 
     Records are written by the ``scrape_cpe`` command, so the API is read-only.
@@ -29,6 +30,7 @@ class ElectronicInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     * ``GET /api/cpe/invoices/{id}/xml/`` — the raw XML as a download
     * ``GET /api/cpe/invoices/summary/`` — count and total per period
     """
+    tenant_field = "account_ruc"
 
     queryset = ElectronicInvoice.objects.all()
     filter_backends = (

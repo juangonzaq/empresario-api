@@ -9,7 +9,9 @@ from unittest.mock import patch
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from sunat_cpe.models import Direction, DocumentClass, ElectronicInvoice
 from sunat_itf.models import ItfRecord
@@ -70,7 +72,7 @@ def make_doc(**overrides):
 make_doc.counter = 1
 
 
-class XmlExtractTests(APITestCase):
+class XmlExtractTests(TenantAPITestCase):
     def test_parse_invoice_xml(self):
         data = parse_invoice_xml(UBL_INVOICE)
         self.assertEqual(data["currency"], "PEN")
@@ -88,7 +90,7 @@ class XmlExtractTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=RUC)
-class SalesSummaryTests(APITestCase):
+class SalesSummaryTests(TenantAPITestCase):
     def test_credit_notes_reduce_and_currencies_stay_apart(self):
         make_doc(total_amount=Decimal("1000"))
         make_doc(total_amount=Decimal("500"))
@@ -139,7 +141,7 @@ class SalesSummaryTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=RUC)
-class CustomerAnalysisTests(APITestCase):
+class CustomerAnalysisTests(TenantAPITestCase):
     def test_concentration_and_status(self):
         for period in ("202605", "202606", "202607"):
             make_doc(period=period, total_amount=Decimal("800"),
@@ -181,7 +183,7 @@ class CustomerAnalysisTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=RUC)
-class ItfDirectionTests(APITestCase):
+class ItfDirectionTests(TenantAPITestCase):
     """Códigos 12/13 = acreditaciones (entradas); 14/15 = débitos (salidas)."""
 
     def _record(self, period, code, base):
@@ -228,7 +230,7 @@ class ItfDirectionTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=RUC)
-class ConsistencyAndAlertTests(APITestCase):
+class ConsistencyAndAlertTests(TenantAPITestCase):
     def setUp(self):
         make_doc(period="202606", total_amount=Decimal("1000"))
         ItfRecord.objects.create(
@@ -238,7 +240,7 @@ class ConsistencyAndAlertTests(APITestCase):
         )
 
     def test_gap_is_review_note_never_accusation(self):
-        data = consistency_analysis(load_documents(RUC), months=2)
+        data = consistency_analysis(load_documents(RUC), RUC, months=2)
         self.assertEqual(data["status"], "requiere_revision")
         gap = next(f for f in data["findings"] if f["kind"] == "itf_outflow_without_cpe")
         self.assertIn("clasificación o revisión contable", gap["recommendation"])
@@ -251,7 +253,7 @@ class ConsistencyAndAlertTests(APITestCase):
         self.assertTrue(all(not f["is_breach"] for f in data["findings"]))
 
     def test_cross_compares_matching_directions(self):
-        row = consistency_analysis(load_documents(RUC), months=2)["rows"][-1]
+        row = consistency_analysis(load_documents(RUC), RUC, months=2)["rows"][-1]
         # El débito de 50k NO se compara contra la facturación emitida.
         self.assertEqual(row["itf_outflow"], 50000.0)
         self.assertEqual(row["itf_inflow"], 0.0)
@@ -265,7 +267,7 @@ class ConsistencyAndAlertTests(APITestCase):
             declarant_name="BANCO", operation_code="77",
             base_amount=Decimal("900"), tax=Decimal("0"),
         )
-        data = consistency_analysis(load_documents(RUC), months=2)
+        data = consistency_analysis(load_documents(RUC), RUC, months=2)
         pending = next(
             f for f in data["findings"] if f["kind"] == "itf_unclassified_movements"
         )
@@ -293,7 +295,7 @@ class ConsistencyAndAlertTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=RUC)
-class ApiTests(APITestCase):
+class ApiTests(TenantAPITestCase):
     def setUp(self):
         self.invoice = make_doc(total_amount=Decimal("590"))
         from finance_analytics.services.xml_extract import extract_invoice
@@ -341,6 +343,16 @@ class ApiTests(APITestCase):
             400,
         )
 
+    def test_overview_works_for_a_brand_new_company(self):
+        """Toda empresa empieza sin un solo comprobante: el panel debe abrir."""
+        ElectronicInvoice.objects.all().delete()
+        response = self.client.get(reverse("finance_analytics:overview"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["period"])
+        self.assertIsNone(response.data["sales"]["current"])
+        self.assertIsNone(response.data["sales"]["previous"])
+        self.assertEqual(response.data["alerts"]["total"], 0)
+
     def test_overview_endpoint(self):
         data = self.client.get(reverse("finance_analytics:overview")).data
         self.assertEqual(data["period"], "202607")
@@ -359,7 +371,7 @@ class ApiTests(APITestCase):
 
 
 @override_settings(SUNAT_RUC=RUC)
-class BriefingTests(APITestCase):
+class BriefingTests(TenantAPITestCase):
     """El briefing ejecutivo: recortes, limpieza, fechas y estados."""
 
     RAW = {

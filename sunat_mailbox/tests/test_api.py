@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from sunat_mailbox.models import Attachment, ExtractionStatus, MessageType
 
 from .factories import TAXPAYER_ID, create_message
 
 
-class MessageAPITests(APITestCase):
+class MessageAPITests(TenantAPITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.notification = create_message(

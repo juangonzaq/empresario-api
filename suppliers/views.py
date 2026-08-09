@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.db.models import Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -19,7 +20,24 @@ from .serializers import (
 from .services import RucLookupError, SupplierMonitor
 
 
-class SupplierViewSet(viewsets.ModelViewSet):
+class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
+    tenant_field = "account_ruc"
+
+    def perform_create(self, serializer):
+        # El dueño no se acepta del cliente: sale de la empresa del request.
+        # La unicidad (empresa, proveedor) se comprueba en el serializer, pero
+        # se atrapa también aquí: entre la validación y el insert cabe otra
+        # petición, y una carrera no debe salir como error 500.
+        from django.db import IntegrityError
+        from rest_framework.exceptions import ValidationError
+
+        try:
+            serializer.save(account_ruc=self.request.ruc)
+        except IntegrityError as exc:
+            raise ValidationError(
+                {"ruc": "Ya tienes registrado un proveedor con ese RUC."}
+            ) from exc
+
     """Manage the supplier registry and read their SUNAT standing.
 
     * ``GET/POST /api/suppliers/`` — list and register
@@ -87,7 +105,8 @@ class SupplierViewSet(viewsets.ModelViewSet):
         return Response({**totals, "by_status": by_status, "flagged": list(flagged)})
 
 
-class SupplierCheckViewSet(viewsets.ReadOnlyModelViewSet):
+class SupplierCheckViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_field = "supplier__account_ruc"
     """Browse the daily check history across all suppliers."""
 
     queryset = SupplierCheck.objects.select_related("supplier")

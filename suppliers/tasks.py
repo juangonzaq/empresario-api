@@ -43,15 +43,31 @@ def check_all_suppliers(skip_checked_today: bool = True) -> dict[str, Any]:
     retry_backoff=60,
     retry_kwargs={"max_retries": 3},
 )
-def check_supplier(ruc: str) -> dict[str, Any]:
-    """Check a single supplier, retrying if SUNAT is unreachable."""
-    supplier = Supplier.objects.get(ruc=ruc)
-    check = SupplierMonitor().check(supplier)
+def check_supplier(ruc: str, account_ruc: str | None = None) -> dict[str, Any]:
+    """Check one supplier RUC, retrying if SUNAT is unreachable.
+
+    El RUC dejó de identificar una sola fila: el mismo proveedor puede estar
+    en la cartera de varias empresas. Se consulta a SUNAT una vez y el
+    resultado se anota en todas las fichas que lo tengan (o solo en la de
+    ``account_ruc``, si se indica).
+    """
+    suppliers = Supplier.objects.filter(ruc=ruc)
+    if account_ruc:
+        suppliers = suppliers.filter(account_ruc=account_ruc)
+
+    monitor = SupplierMonitor()
+    cache: dict = {}
+    checks = [monitor.check(s, cache=cache) for s in suppliers]
+    if not checks:
+        return {"ruc": ruc, "succeeded": False, "error": "Proveedor no registrado."}
+
+    latest = checks[0]
     return {
         "ruc": ruc,
-        "status": check.status,
-        "condition": check.condition,
-        "has_issue": check.has_issue,
-        "changed": check.changed,
-        "succeeded": check.succeeded,
+        "fichas": len(checks),
+        "status": latest.status,
+        "condition": latest.condition,
+        "has_issue": latest.has_issue,
+        "changed": any(c.changed for c in checks),
+        "succeeded": all(c.succeeded for c in checks),
     }

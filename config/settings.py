@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,10 +30,16 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
-# SUNAT SOL credentials — see .env.example
+# Credenciales SOL de respaldo. Desde la conversión a multiempresa cada
+# organización guarda las suyas (accounts.SunatCredential); esto solo sirve
+# para los comandos de mantenimiento que se corren a mano contra una cuenta.
 SUNAT_RUC = os.getenv("SUNAT_RUC", "")
 SUNAT_USER = os.getenv("SUNAT_USER", "")
 SUNAT_PASS = os.getenv("SUNAT_PASS", "")
+
+# Llave Fernet con la que se cifra la clave SOL de cada empresa. Vive en el
+# entorno, nunca en la base ni en el repositorio; ver accounts/services/crypto.py.
+FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
 
 # SUNAT SIRE APIs (sensor_sunat prototype) — credentials live in .env, never in git
 SUNAT = {
@@ -59,6 +66,12 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("DJANGO_DEBUG", True)
 
+# La batería de tests corre con DEBUG=False, así que DEBUG no sirve para
+# distinguir «producción» de «tests». Las comprobaciones de arranque
+# (core/checks.py) usan esta bandera para no bloquear la suite por no tener
+# configurados los secretos reales.
+RUNNING_TESTS = "test" in sys.argv[:2] or bool(os.getenv("PYTEST_CURRENT_TEST"))
+
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 # Orígenes del frontend autorizados a consumir el API desde el navegador.
@@ -83,7 +96,11 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_celery_beat',
     'django_celery_results',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'core',
+    'accounts',
+    'sync',
     'sunat_mailbox',
     'suppliers',
     'remype',
@@ -145,6 +162,22 @@ DATABASES = {
 }
 
 
+AUTH_USER_MODEL = "accounts.User"
+
+# URL pública del frontend: los correos de verificación y recuperación apuntan ahí.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3001").rstrip("/")
+
+EMAIL_BACKEND = os.getenv(
+    "DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "EMPRESARIO <no-reply@empresario.pe>")
+
+
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
@@ -190,19 +223,66 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': int(os.getenv('API_PAGE_SIZE', '25')),
+    # El bearer es la vía de acceso del frontend; la sesión queda para el
+    # admin y el API navegable.
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
+    # Cerrado también en DEBUG: antes todo el API era público con DEBUG=True,
+    # y en un servicio multiempresa eso es una fuga, no una comodidad.
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny' if DEBUG
-        else 'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.IsAuthenticated',
     ),
+    # Techo general. Los endpoints sensibles (login, registro, recuperación)
+    # llevan además su propio límite, mucho más estrecho; ver accounts.throttles.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.getenv('THROTTLE_ANON', '60/hour'),
+        'user': os.getenv('THROTTLE_USER', '2000/hour'),
+        # Contra una cuenta concreta, sin importar desde cuántas IP se
+        # intente: es lo que frena un ataque distribuido a un solo correo.
+        'login_por_cuenta': os.getenv('THROTTLE_LOGIN_ACCOUNT', '10/hour'),
+        'login_por_ip': os.getenv('THROTTLE_LOGIN_IP', '30/hour'),
+        'registro': os.getenv('THROTTLE_REGISTER', '10/hour'),
+        # Cada solicitud manda un correo: el límite protege la cuota y la
+        # reputación del dominio, no solo la cuenta.
+        'correo': os.getenv('THROTTLE_EMAIL', '5/hour'),
+        'sunat_conexion': os.getenv('THROTTLE_SUNAT', '10/hour'),
+    },
     'DEFAULT_RENDERER_CLASSES': (
         ('rest_framework.renderers.JSONRenderer',
          'rest_framework.renderers.BrowsableAPIRenderer') if DEBUG
         else ('rest_framework.renderers.JSONRenderer',)
     ),
 }
+
+
+# Caché compartida
+# Debe ser compartida entre procesos: los límites de peticiones y el caché del
+# panel se reparten entre todos los workers. Con la caché en memoria de Django
+# (la de por defecto) cada proceso lleva su propia cuenta, así que un límite de
+# 20/hora se convierte en 20 × nº de workers.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        # Base distinta a la del broker: vaciar el caché no debe tocar la cola.
+        "LOCATION": os.getenv("CACHE_URL", "redis://localhost:6379/1"),
+        "KEY_PREFIX": "empresario",
+        "TIMEOUT": 300,
+    }
+}
+
+if RUNNING_TESTS:
+    # La suite no debería necesitar Redis levantado, y cada test arranca con
+    # el caché limpio (ver core.testing.TenantAPITestCase).
+    CACHES["default"] = {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "tests",
+    }
 
 
 # Celery
@@ -223,6 +303,20 @@ CELERY_ACCEPT_CONTENT = ['json']
 # idempotent (one row per supplier per day, messages upserted), so re-running is safe.
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# Las sincronizaciones abren un navegador real (200-400 MB cada una) y hablan
+# con SUNAT, que admite una sesión por usuario SOL. Van a su propia cola para
+# poder limitarlas sin frenar el resto de tareas:
+#
+#   celery -A config worker -Q default -c 8
+#   celery -A config worker -Q scraping -c ${SYNC_CONCURRENCY:-4}
+#
+# La concurrencia de esa segunda cola es el único límite real de cuántas
+# empresas se sincronizan a la vez. Ver sync/tasks.py para el cálculo.
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_TASK_ROUTES = {
+    'sync.run_job': {'queue': 'scraping'},
+}
 CELERY_TASK_TIME_LIMIT = 60 * 35
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 30
 CELERY_RESULT_EXTENDED = True
@@ -257,3 +351,35 @@ LOGGING = {
         )
     },
 }
+
+
+# JSON Web Tokens
+# https://django-rest-framework-simplejwt.readthedocs.io/
+
+from datetime import timedelta  # noqa: E402
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=int(os.getenv("JWT_ACCESS_MINUTES", "30"))
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=int(os.getenv("JWT_REFRESH_DAYS", "14"))
+    ),
+    # Al refrescar se emite un refresh nuevo y el anterior queda en la lista
+    # negra: un refresh robado sirve hasta el siguiente uso legítimo, no dos
+    # semanas.
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
+}
+
+# El frontend manda la empresa activa en esta cabecera cuando el usuario tiene
+# acceso a más de una.
+CORS_ALLOW_HEADERS = [
+    "accept", "authorization", "content-type", "origin", "user-agent",
+    "x-csrftoken", "x-requested-with", "x-organization",
+]

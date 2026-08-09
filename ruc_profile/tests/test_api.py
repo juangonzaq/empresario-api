@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status as http
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from ruc_profile.models import RucSection, RucSnapshot, WorkerHeadcount
 from ruc_profile.services.sync import RucProfileSynchronizer
@@ -27,7 +29,7 @@ def make_snapshot(ruc: str = f.RUC, captured_on: date = TODAY, **overrides) -> R
     return RucSnapshot.objects.create(**{**defaults, **overrides})
 
 
-class ProfileReadTests(APITestCase):
+class ProfileReadTests(TenantAPITestCase):
     def setUp(self):
         self.old = make_snapshot(captured_on=TODAY - timedelta(days=40))
         self.current = make_snapshot(worker_count=5, latest_worker_period="2026-05")
@@ -95,7 +97,7 @@ class ProfileReadTests(APITestCase):
         self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
 
 
-class CaptureEndpointTests(APITestCase):
+class CaptureEndpointTests(TenantAPITestCase):
     def setUp(self):
         self.url = reverse("ruc_profile:rucprofile-capture")
 

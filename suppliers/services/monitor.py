@@ -57,10 +57,16 @@ class SupplierMonitor:
         today = on_date or timezone.localdate()
         result = MonitorResult()
 
-        for supplier in queryset:
+        # El estado de un RUC en SUNAT es público y único: si tres empresas
+        # tienen al mismo proveedor en su cartera, se consulta una vez y se
+        # anota en las tres. Sin esto, cada empresa nueva multiplicaba las
+        # peticiones a SUNAT sobre los mismos RUC.
+        cache: dict[str, TaxpayerProfile | RucLookupError] = {}
+
+        for supplier in queryset.order_by("ruc"):
             if skip_checked_today and supplier.checks.filter(checked_on=today).exists():
                 continue
-            self.check(supplier, on_date=today, result=result)
+            self.check(supplier, on_date=today, result=result, cache=cache)
         return result
 
     def check(
@@ -68,13 +74,14 @@ class SupplierMonitor:
         supplier: Supplier,
         on_date: date | None = None,
         result: MonitorResult | None = None,
+        cache: dict | None = None,
     ) -> SupplierCheck:
         """Check a single supplier and record the snapshot."""
         result = result or MonitorResult()
         today = on_date or timezone.localdate()
 
         try:
-            profile = self.client.fetch(supplier.ruc)
+            profile = self._fetch(supplier.ruc, cache)
         except RucLookupError as exc:
             logger.warning("Lookup failed for %s: %s", supplier.ruc, exc)
             result.failed += 1
@@ -85,6 +92,24 @@ class SupplierMonitor:
         result.changed += check.changed
         result.with_issues += check.has_issue
         return check
+
+    def _fetch(self, ruc: str, cache: dict | None):
+        """Consulta el RUC, reutilizando el resultado dentro de una corrida.
+
+        El fallo también se cachea: si SUNAT no respondió por este RUC, no
+        tiene sentido volver a intentarlo para cada empresa que lo tenga.
+        """
+        if cache is None:
+            return self.client.fetch(ruc)
+        if ruc not in cache:
+            try:
+                cache[ruc] = self.client.fetch(ruc)
+            except RucLookupError as exc:
+                cache[ruc] = exc
+        cached = cache[ruc]
+        if isinstance(cached, RucLookupError):
+            raise cached
+        return cached
 
     @transaction.atomic
     def _record_success(

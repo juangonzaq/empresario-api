@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -15,7 +16,7 @@ from .models import ItemKind, SunafilItem
 from .serializers import SunafilItemDetailSerializer, SunafilItemListSerializer
 
 
-class SunafilItemViewSet(viewsets.ReadOnlyModelViewSet):
+class SunafilItemViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Browse what SUNAFIL has deposited in the casilla.
 
     Items are written by the ``scrape_sunafil`` command, so the API is read-only.
@@ -26,6 +27,7 @@ class SunafilItemViewSet(viewsets.ReadOnlyModelViewSet):
     * ``GET /api/sunafil/pending/`` — unread obligations, soonest deadline first
     * ``GET /api/sunafil/summary/`` — counts per listing
     """
+    tenant_field = "taxpayer_id"
 
     queryset = SunafilItem.objects.all()
     filter_backends = (

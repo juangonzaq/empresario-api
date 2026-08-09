@@ -5,7 +5,9 @@ from __future__ import annotations
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from compliance_profile.models import ComplianceRating, ComplianceVariable
 
@@ -24,7 +26,7 @@ def create_rating(period: int, rating: str = "D", **overrides) -> ComplianceRati
     return ComplianceRating.objects.create(**defaults)
 
 
-class ComplianceRatingAPITests(APITestCase):
+class ComplianceRatingAPITests(TenantAPITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.old = create_rating(202503, rating="C")

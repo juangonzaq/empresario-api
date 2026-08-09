@@ -167,10 +167,10 @@ def _period_findings(period: str, itf_row: dict[str, Any], net_sales: float,
     return findings
 
 
-def consistency_analysis(docs, months: int = 6) -> dict[str, Any]:
+def consistency_analysis(docs, ruc: str, months: int = 6) -> dict[str, Any]:
     sales = sales_summary(docs, months=months)
     purchases = purchases_summary(docs, months=months)
-    itf = itf_summary(months=months)
+    itf = itf_summary(ruc, months=months)
 
     itf_by_period = {p["period"]: p for p in itf["periods"]}
     sales_by_period = {p["period"]: p for p in sales["periods"]}

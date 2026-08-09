@@ -7,7 +7,9 @@ from pathlib import Path
 
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from sunat_itf.models import ItfRecord, ItfSection
 from sunat_itf.services.sync import ItfSynchronizer
@@ -27,7 +29,7 @@ class StubClient:
         return SAMPLE
 
 
-class ItfSyncTests(APITestCase):
+class ItfSyncTests(TenantAPITestCase):
     def test_run_stores_records_and_is_idempotent(self):
         client = StubClient()
         result = ItfSynchronizer(client).run("202608")
@@ -48,7 +50,7 @@ class ItfSyncTests(APITestCase):
         )
 
 
-class ItfApiTests(APITestCase):
+class ItfApiTests(TenantAPITestCase):
     @classmethod
     def setUpTestData(cls):
         ItfSynchronizer(StubClient()).run("202608")

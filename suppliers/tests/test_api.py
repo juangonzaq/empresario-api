@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 
 from django.urls import reverse
 from rest_framework import status as http
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from suppliers.models import Supplier, SupplierCheck
 
@@ -15,7 +17,7 @@ from .factories import RUC_ACTIVE, RUC_OTHER, create_supplier
 from .test_monitor import profile
 
 
-class SupplierAPITests(APITestCase):
+class SupplierAPITests(TenantAPITestCase):
     def setUp(self):
         self.healthy = create_supplier(ruc=RUC_ACTIVE, alias="Supermercados")
         self.healthy.status, self.healthy.condition = "ACTIVO", "HABIDO"
@@ -107,7 +109,7 @@ class SupplierAPITests(APITestCase):
         self.assertTrue(self.healthy.has_issue)
 
 
-class SupplierCheckAPITests(APITestCase):
+class SupplierCheckAPITests(TenantAPITestCase):
     def setUp(self):
         self.supplier = create_supplier()
         for day, state in ((29, "ACTIVO"), (30, "ACTIVO"), (31, "BAJA DE OFICIO")):

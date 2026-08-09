@@ -226,8 +226,8 @@ def _period_row(
     }
 
 
-def itf_summary(taxpayer_id: str | None = None, months: int = 12) -> dict[str, Any]:
-    ruc = taxpayer_id or settings.SUNAT_RUC
+def itf_summary(taxpayer_id: str, months: int = 12) -> dict[str, Any]:
+    ruc = taxpayer_id
     records = list(ItfRecord.objects.for_taxpayer(ruc))
     if not records:
         return {

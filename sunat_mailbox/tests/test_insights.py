@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from sunat_mailbox.models import Attachment, ExtractionStatus, MessageType
 from sunat_mailbox.services import insights
@@ -19,7 +21,7 @@ RVIE_MSJ = (
 )
 
 
-class ClassificationTests(APITestCase):
+class ClassificationTests(TenantAPITestCase):
     def test_coactive_collection_is_urgent_and_requires_action(self):
         rule = insights.classify(
             "ASUNTO: Notificación de Resolución de Ejecución Coactiva N° 1",
@@ -70,7 +72,7 @@ class ClassificationTests(APITestCase):
         self.assertEqual(insights.expected_documents({"msjMensaje": "hola"}), [])
 
 
-class DetailInsightsTests(APITestCase):
+class DetailInsightsTests(TenantAPITestCase):
     def test_detail_reports_unavailable_files_with_human_note(self):
         message = create_message(
             subject="Generación de Registro RVIE Y RCE del período 202606",
@@ -98,7 +100,7 @@ class DetailInsightsTests(APITestCase):
         self.assertIn("no pudieron descargarse", data["summary"])
 
 
-class CardEndpointTests(APITestCase):
+class CardEndpointTests(TenantAPITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.urgent = create_message(

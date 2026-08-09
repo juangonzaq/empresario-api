@@ -27,15 +27,55 @@ DEFAULT_MONTHS = 13
 VARIATION_BASIS = "neto en soles vs neto en soles del mes anterior"
 
 
-def load_documents(account_ruc: str | None = None) -> list[ElectronicInvoice]:
-    """The whole CPE dataset in one query; 600–10k rows is trivial in memory
-    and lets every analysis share a single load."""
-    ruc = account_ruc or settings.SUNAT_RUC
-    return list(
-        ElectronicInvoice.objects.for_account(ruc)
+# Ventana por defecto. Ningún análisis del panel mira más atrás: las series
+# usan 13 meses, clientes y proveedores 12, y el cruce de consistencia 6.
+# Cargar además los años anteriores solo gastaba memoria.
+DEFAULT_WINDOW_MONTHS = 13
+
+
+def load_documents(
+    account_ruc: str, months: int | None = DEFAULT_WINDOW_MONTHS
+) -> list[ElectronicInvoice]:
+    """Los comprobantes de UNA empresa dentro de la ventana pedida.
+
+    El RUC es obligatorio a propósito: antes caía a ``settings.SUNAT_RUC`` y
+    ese respaldo, en un servicio multiempresa, significa servirle a alguien los
+    datos de otro. Mejor que reviente el llamador a que devuelva lo ajeno.
+
+    ``months=None`` trae todo el histórico; se usa donde de verdad hace falta
+    (el detalle de un mes antiguo). Todo lo demás debe acotarse: con tres años
+    de comprobantes, cargar el histórico entero costaba ~68 MB por petición y
+    varias peticiones simultáneas de una empresa grande tumbaban el proceso.
+    """
+    queryset = (
+        ElectronicInvoice.objects.for_account(account_ruc)
         .select_related("extract")
         .defer("xml_content", "raw")
     )
+    if months:
+        floor = _period_floor(months)
+        if floor:
+            queryset = queryset.filter(period__gte=floor)
+    return list(queryset)
+
+
+def _period_floor(months: int) -> str:
+    """El periodo más antiguo que hay que traer, a partir del más reciente.
+
+    Se ancla al último periodo con datos, no a la fecha de hoy: una empresa que
+    dejó de facturar hace medio año debe seguir viendo su último año con
+    movimiento, no una pantalla vacía.
+    """
+    import datetime
+
+    from django.utils import timezone
+
+    hoy = timezone.localdate()
+    year, month = hoy.year, hoy.month - (months - 1)
+    while month <= 0:
+        year -= 1
+        month += 12
+    return f"{year}{month:02d}"
 
 
 def document_amount(doc: ElectronicInvoice) -> Decimal:
@@ -120,7 +160,13 @@ def direction_series(
     """Per-period series for one direction, ending at the latest period seen."""
     relevant = [d for d in docs if d.direction == direction]
     if not relevant:
-        return {"periods": [], "current": None, "latest_period": None}
+        # Mismas claves que el caso con datos: una empresa recién creada no
+        # tiene comprobantes, y el contrato de salida no puede cambiar de
+        # forma según haya datos o no.
+        return {
+            "periods": [], "current": None, "previous": None,
+            "latest_period": None,
+        }
 
     latest = max(d.period for d in relevant if d.period)
     window = period_range_desc(latest, months)
@@ -177,6 +223,24 @@ def purchases_summary(docs: list[ElectronicInvoice], months: int = DEFAULT_MONTH
         "ingresos ni egresos de caja."
     )
     return data
+
+
+def period_documents_for(
+    account_ruc: str, period: str, direction: str, currency: str | None = None
+) -> dict[str, Any]:
+    """Igual que :func:`period_documents`, pero pidiendo a la base solo ese mes.
+
+    Antes se cargaba el histórico completo para quedarse con un mes. Ahora la
+    consulta ya viene acotada, que es lo que permite abrir el detalle de un mes
+    antiguo sin traerse tres años.
+    """
+    docs = list(
+        ElectronicInvoice.objects.for_account(account_ruc)
+        .filter(period=period, direction=direction)
+        .select_related("extract")
+        .defer("xml_content", "raw")
+    )
+    return period_documents(docs, period, direction, currency)
 
 
 def period_documents(

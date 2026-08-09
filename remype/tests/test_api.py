@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status as http
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase  # noqa: F401
+
+from core.testing import TenantAPITestCase
 
 from remype.models import RemypeCheck
 from remype.services.sync import RemypeSynchronizer
@@ -27,8 +29,14 @@ def make_check(ruc: str, checked_on: date, **overrides) -> RemypeCheck:
     return RemypeCheck.objects.create(**{**defaults, **overrides})
 
 
-class RemypeReadTests(APITestCase):
+class RemypeReadTests(TenantAPITestCase):
+    # Los RUC consultables son el propio y los de proveedores registrados por
+    # la empresa; los fixtures usan RUC de proveedor, así que se registran.
     def setUp(self):
+        from suppliers.models import Supplier
+
+        for ruc in (RUC_REGISTERED, RUC_UNREGISTERED):
+            Supplier.objects.get_or_create(account_ruc=self.RUC, ruc=ruc)
         self.old = make_check(RUC_REGISTERED, TODAY - timedelta(days=40))
         self.new = make_check(RUC_REGISTERED, TODAY)
         self.other = make_check(
@@ -83,7 +91,7 @@ class RemypeReadTests(APITestCase):
         self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
 
 
-class RemypeLookupTests(APITestCase):
+class RemypeLookupTests(TenantAPITestCase):
     def setUp(self):
         self.url = reverse("remype:remype-lookup")
 

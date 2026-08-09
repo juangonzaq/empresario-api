@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
+from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -18,7 +19,7 @@ from .serializers import MessageDetailSerializer, MessageListSerializer
 from .services import insights
 
 
-class MessageViewSet(viewsets.ReadOnlyModelViewSet):
+class MessageViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Browse the scraped mailbox.
 
     Messages are written by the ``scrape_mailbox`` command, so the API is read-only.
@@ -28,6 +29,7 @@ class MessageViewSet(viewsets.ReadOnlyModelViewSet):
     * ``GET /api/messages/summary/`` — counts by type and read state
     * ``GET /api/messages/card/`` — executive card for the home dashboard
     """
+    tenant_field = "taxpayer_id"
 
     queryset = Message.objects.all()
     filter_backends = (
