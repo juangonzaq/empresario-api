@@ -84,17 +84,20 @@ class ProfileReadTests(TenantAPITestCase):
         response = self.client.post(self.list_url, {"ruc": f.RUC})
         self.assertEqual(response.status_code, http.HTTP_405_METHOD_NOT_ALLOWED)
 
-    @override_settings(SUNAT_RUC=f.RUC)
-    def test_me_returns_the_configured_company(self):
+    def test_me_returns_the_active_company(self):
         response = self.client.get(reverse("ruc_profile:rucprofile-me"))
         self.assertEqual(response.status_code, http.HTTP_200_OK)
         self.assertEqual(response.data["ruc"], f.RUC)
         self.assertIn("sections", response.data)
 
     @override_settings(SUNAT_RUC="")
-    def test_me_requires_the_setting(self):
+    def test_me_no_depende_de_la_variable_de_entorno(self):
+        """Salía de ``settings.SUNAT_RUC`` —un solo RUC para toda la
+        instalación—, así que en una cuenta con varias empresas respondía
+        siempre por la misma, y por la equivocada."""
         response = self.client.get(reverse("ruc_profile:rucprofile-me"))
-        self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertEqual(response.data["ruc"], f.RUC)
 
 
 class CaptureEndpointTests(TenantAPITestCase):

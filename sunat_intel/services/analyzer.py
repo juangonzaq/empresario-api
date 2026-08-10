@@ -243,9 +243,18 @@ def analyze_message(message: Message) -> MessageAnalysis:
     return analysis
 
 
-def pending_messages(force: bool = False):
-    """Messages that need (re)analysis: new, failed, or stale fingerprint."""
+def pending_messages(taxpayer_id: str | None = None, force: bool = False):
+    """Messages that need (re)analysis: new, failed, or stale fingerprint.
+
+    ``taxpayer_id`` acota a una empresa. Se deja opcional porque las
+    herramientas de operación (el comando de gestión) recorren la base
+    entera, pero el flujo que dispara la sincronización SIEMPRE lo pasa: sin
+    él, sincronizar una empresa gastaría llamadas al modelo analizando los
+    mensajes de todas las demás.
+    """
     messages = Message.objects.prefetch_related("attachments").order_by("published_at")
+    if taxpayer_id:
+        messages = messages.for_taxpayer(taxpayer_id)
     for message in messages:
         analysis = getattr(message, "analysis", None)
         needs_run = (
@@ -258,10 +267,16 @@ def pending_messages(force: bool = False):
             yield message
 
 
-def analyze_pending(limit: int | None = None, force: bool = False) -> dict[str, int]:
-    """Run the analysis over every message that needs it."""
+def analyze_pending(
+    taxpayer_id: str | None = None,
+    limit: int | None = None,
+    force: bool = False,
+) -> dict[str, int]:
+    """Run the analysis over every message that needs it, for one empresa."""
     done = failed = 0
-    for index, message in enumerate(pending_messages(force=force)):
+    for index, message in enumerate(
+        pending_messages(taxpayer_id=taxpayer_id, force=force)
+    ):
         if limit is not None and index >= limit:
             break
         analysis = analyze_message(message)

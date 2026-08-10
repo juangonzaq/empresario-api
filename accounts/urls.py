@@ -1,6 +1,8 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from .search_views import GlobalSearchView
+from .status_views import CompanyStatusView
 from .views import (
     LoginView, LogoutView, OrganizationListView, PasswordChangeView,
     PasswordResetConfirmView, PasswordResetRequestView, ProfileView,
@@ -26,4 +28,6 @@ urlpatterns = [
     path("me/", ProfileView.as_view(), name="profile"),
     path("organizations/", OrganizationListView.as_view(), name="organizations"),
     path("organizations/sunat/", SunatConnectionView.as_view(), name="sunat-connection"),
+    path("status/", CompanyStatusView.as_view(), name="company-status"),
+    path("search/", GlobalSearchView.as_view(), name="global-search"),
 ]

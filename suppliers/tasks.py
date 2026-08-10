@@ -22,11 +22,23 @@ def check_all_suppliers(skip_checked_today: bool = True) -> dict[str, Any]:
     """
     result = SupplierMonitor().run(skip_checked_today=skip_checked_today)
 
-    flagged = list(
-        Supplier.objects.with_issues().values_list("ruc", flat=True)
-    )
-    if flagged:
-        logger.warning("Suppliers needing attention: %s", ", ".join(flagged))
+    # Agrupado por empresa: desde que esto es multiempresa, una sola lista de
+    # RUC mezclaba las carteras de todas y no se sabía a quién avisar.
+    por_empresa: dict[str, list[str]] = {}
+    for account_ruc, ruc in (
+        Supplier.objects.with_issues()
+        .order_by("account_ruc", "ruc")
+        .values_list("account_ruc", "ruc")
+    ):
+        por_empresa.setdefault(account_ruc, []).append(ruc)
+
+    for account_ruc, rucs in por_empresa.items():
+        logger.warning(
+            "Proveedores que necesitan atención en %s: %s",
+            account_ruc, ", ".join(rucs),
+        )
+
+    flagged = [ruc for rucs in por_empresa.values() for ruc in rucs]
 
     return {
         "checked": result.checked,

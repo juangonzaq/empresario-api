@@ -79,16 +79,16 @@ class RemypeReadTests(TenantAPITestCase):
         response = self.client.post(self.list_url, {"ruc": RUC_REGISTERED})
         self.assertEqual(response.status_code, http.HTTP_405_METHOD_NOT_ALLOWED)
 
-    @override_settings(SUNAT_RUC=RUC_REGISTERED)
-    def test_me_returns_the_configured_company(self):
+    def test_me_returns_the_active_company(self):
         response = self.client.get(reverse("remype:remype-me"))
         self.assertEqual(response.status_code, http.HTTP_200_OK)
         self.assertEqual(response.data["ruc"], RUC_REGISTERED)
 
     @override_settings(SUNAT_RUC="")
-    def test_me_requires_the_setting(self):
+    def test_me_no_depende_de_la_variable_de_entorno(self):
         response = self.client.get(reverse("remype:remype-me"))
-        self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertEqual(response.data["ruc"], RUC_REGISTERED)
 
 
 class RemypeLookupTests(TenantAPITestCase):
@@ -131,3 +131,25 @@ class RemypeLookupTests(TenantAPITestCase):
         self.assertEqual(
             response.data["check"]["condition"], "ACREDITADO COMO MICRO EMPRESA"
         )
+
+
+class RemypeNoCruzaEmpresasTests(TenantAPITestCase):
+    """`?ruc=` no puede servir la acreditación de un tercero cualquiera.
+
+    `_current_for` consultaba `RemypeCheck.objects` directamente y se saltaba
+    el `get_queryset()` que acota a RUC propio y de proveedores, así que
+    bastaba con pedir `?ruc=` para leer la de quien fuera.
+    """
+
+    AJENO = "20200000002"
+
+    def setUp(self):
+        RemypeCheck.objects.create(
+            ruc=self.AJENO, checked_on=date(2026, 8, 1), succeeded=True,
+            is_registered=True, changed=False, payload={},
+        )
+
+    def test_no_devuelve_el_remype_de_una_empresa_ajena(self):
+        url = reverse("remype:remype-current")
+        response = self.client.get(f"{url}?ruc={self.AJENO}")
+        self.assertEqual(response.status_code, http.HTTP_404_NOT_FOUND)

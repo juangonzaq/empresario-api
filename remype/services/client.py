@@ -17,6 +17,8 @@ from typing import Any
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from core.browser import browser_env
+
 from .constants import (
     APP_URL,
     BASIC_AUTH_HEADER,
@@ -150,7 +152,8 @@ class RemypeClient:
         try:
             self._playwright = sync_playwright().start()
             self._browser = self._playwright.chromium.launch(
-                headless=self.headless, channel="chromium", args=BROWSER_ARGS
+                headless=self.headless, channel="chromium", args=BROWSER_ARGS,
+                env=browser_env(),
             )
             context = self._browser.new_context(
                 user_agent=USER_AGENT, locale="es-PE",

@@ -16,7 +16,7 @@ from accounts.models import (
     Membership, Organization, Role, SunatConnectionStatus, SunatCredential, User,
 )
 from sync.models import JobKind, JobStatus, SyncJob
-from sync.sources import Cadence, sources_for
+from sync.sources import SOURCES, Cadence, sources_for
 from sync.tasks import sync_all
 
 KEY = "D__dbkJT6pvD6tQBqyl37GUdmyuBp3ZPYM220eV9y6Q="
@@ -59,8 +59,16 @@ class CadenceTests(TestCase):
     def test_manual_and_initial_run_everything(self):
         for cadence in (Cadence.MANUAL, Cadence.INITIAL):
             self.assertEqual(
-                len(sources_for(cadence)), 8, f"{cadence} no corre todas las fuentes"
+                len(sources_for(cadence)), len(SOURCES),
+                f"{cadence} no corre todas las fuentes",
             )
+
+    def test_el_analisis_de_ia_va_despues_del_buzon(self):
+        """Analiza los mensajes que el buzón acaba de traer, así que si corre
+        antes trabaja sobre lo del día anterior."""
+        for cadence in (Cadence.INITIAL, Cadence.DAILY):
+            keys = [s.key for s in sources_for(cadence)]
+            self.assertLess(keys.index("mailbox"), keys.index("intel"), cadence)
 
     def test_analytics_always_runs_last(self):
         for cadence in (Cadence.INITIAL, Cadence.DAILY, Cadence.MONTHLY):

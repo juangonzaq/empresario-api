@@ -21,6 +21,8 @@ import requests
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from core.browser import browser_env
+
 from sunat_mailbox.services.constants import (
     ATTEMPT_POLL_MS,
     BROWSER_ARGS,
@@ -71,7 +73,8 @@ class CpePortalClient:
             # SUNAT's WAF resets the connection for Playwright's headless shell, so the
             # full Chromium build is required alongside the automation flag being hidden.
             browser = playwright.chromium.launch(
-                headless=self.headless, channel="chromium", args=BROWSER_ARGS
+                headless=self.headless, channel="chromium", args=BROWSER_ARGS,
+                env=browser_env(),
             )
             context = browser.new_context(
                 user_agent=USER_AGENT,

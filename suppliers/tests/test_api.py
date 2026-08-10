@@ -31,20 +31,28 @@ class SupplierAPITests(TenantAPITestCase):
 
         self.list_url = reverse("suppliers:supplier-list")
 
+    def alta(self, **datos):
+        """El alta consulta SUNAT; en los tests esa consulta va simulada.
+
+        Sin esto cada POST saldría a internet de verdad: lento, dependiente de
+        la red y distinto según el día.
+        """
+        with patch("suppliers.views.RucLookupClient") as cliente:
+            cliente.return_value.fetch.return_value = profile()
+            return self.client.post(self.list_url, datos)
+
     def test_registers_a_supplier(self):
-        response = self.client.post(
-            self.list_url, {"ruc": "20131312955", "alias": "Nuevo"}
-        )
+        response = self.alta(ruc="20131312955", alias="Nuevo")
         self.assertEqual(response.status_code, http.HTTP_201_CREATED)
         self.assertTrue(Supplier.objects.filter(ruc="20131312955").exists())
 
     def test_rejects_an_invalid_ruc(self):
-        response = self.client.post(self.list_url, {"ruc": "12345678901"})
+        response = self.alta(ruc="12345678901")
         self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
         self.assertIn("ruc", response.data)
 
     def test_rejects_a_duplicate_ruc(self):
-        response = self.client.post(self.list_url, {"ruc": RUC_ACTIVE})
+        response = self.alta(ruc=RUC_ACTIVE)
         self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
 
     def test_sunat_fields_are_read_only(self):

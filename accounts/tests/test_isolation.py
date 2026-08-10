@@ -122,3 +122,55 @@ class CrossTenantLeakTests(APITestCase):
                 self.client.get(url).status_code, 401,
                 f"{url} respondió sin bearer",
             )
+
+    def test_el_resumen_de_cumplimiento_no_cruza_empresas(self):
+        """`/api/compliance/summary/` partía de `objects.all()` y solo acotaba
+        si el cliente mandaba `?taxpayer_id=`: devolvía la calificación más
+        reciente de cualquiera, y el parámetro dejaba elegir de quién."""
+        for user, own, other in ((self.ana, UNO, DOS), (self.beto, DOS, UNO)):
+            self.client.force_authenticate(user)
+            for url in ("/api/compliance/summary/", "/api/compliance/findings/"):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200, f"{url} → {own}")
+                self.assertNotIn(
+                    other, str(response.data),
+                    f"{url} le mostró a {own} datos de {other}",
+                )
+                # Y el parámetro no puede ampliar el alcance.
+                ajeno = self.client.get(f"{url}?taxpayer_id={other}")
+                self.assertNotIn(
+                    other, str(ajeno.data),
+                    f"{url} filtró datos de {other} vía query param",
+                )
+
+
+class EmpresaRecienRegistradaTests(APITestCase):
+    """Una empresa sin datos propios debe ver vacío, no lo del vecino.
+
+    Es el caso que destapó la fuga: al registrar un RUC nuevo, el perfil de
+    cumplimiento aparecía relleno con el de otra cuenta.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.nueva = User.objects.create_user(
+            email="nueva@tres.pe", password="una-clave-larga-99",
+            email_verified_at=timezone.now(),
+        )
+        org = Organization.objects.create(ruc="20300000003", name="EMPRESA NUEVA")
+        Membership.objects.create(user=cls.nueva, organization=org, role=Role.OWNER)
+
+        # La otra empresa sí tiene cumplimiento cargado.
+        ComplianceRating.objects.create(
+            taxpayer_id=DOS, period=20261, execution_period=20261,
+            rating="A", is_current=True,
+        )
+
+    def test_sin_datos_propios_el_cumplimiento_sale_vacio(self):
+        self.client.force_authenticate(self.nueva)
+        for url in ("/api/compliance/summary/", "/api/compliance/findings/"):
+            response = self.client.get(url)
+            self.assertEqual(
+                response.status_code, 404,
+                f"{url} devolvió datos a una empresa que no tiene ninguno",
+            )

@@ -229,10 +229,16 @@ Scheduling runs on Celery with Redis as the broker. Two processes are needed bes
 web server:
 
 ```bash
-redis-server                                     # broker
-celery -A config worker -l info                  # runs the tasks
-celery -A config beat -l info                    # dispatches them on schedule
+redis-server                                          # broker
+celery -A config worker -l info -Q default,scraping   # runs the tasks
+celery -A config beat -l info                         # dispatches them on schedule
 ```
+
+`-Q` is not optional. `sync.run_job` — the whole "Sincronizar ahora" flow — is routed to
+the `scraping` queue (see `CELERY_TASK_ROUTES`), and a worker started without it consumes
+only `default`: the jobs pile up in Redis, the UI shows them stuck "en cola" forever, and
+nothing in the logs says why. In production the scraping queue gets its own worker with a
+low `-c`, since each job drives a browser through several SUNAT portals.
 
 Seeded schedule (America/Lima):
 

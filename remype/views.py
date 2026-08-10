@@ -47,8 +47,16 @@ class RemypeViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ("-checked_on", "ruc")
 
     def _current_for(self, ruc: str) -> RemypeCheck | None:
+        """Acotado a lo que la empresa del request puede ver.
+
+        Partía de ``RemypeCheck.objects`` y se saltaba el ``get_queryset()``
+        de arriba, así que ``?ruc=`` dejaba leer la acreditación de cualquier
+        contribuyente: justo el filtro por RUC propio y de proveedores que la
+        clase se molesta en aplicar.
+        """
         return (
-            RemypeCheck.objects.filter(ruc=ruc, succeeded=True)
+            self.get_queryset()
+            .filter(ruc=ruc, succeeded=True)
             .order_by("-checked_on")
             .first()
         )
@@ -81,15 +89,15 @@ class RemypeViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def me(self, request: Request) -> Response:
-        """Current standing for the project's own RUC."""
-        if not settings.SUNAT_RUC:
-            return Response(
-                {"detail": "SUNAT_RUC is not configured."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        check = self._current_for(settings.SUNAT_RUC)
+        """Acreditación de la empresa activa.
+
+        Salía de ``settings.SUNAT_RUC`` —el RUC del ``.env``, uno solo para
+        toda la instalación—, así que en una cuenta con varias empresas
+        respondía siempre por la misma, y por la equivocada.
+        """
+        check = self._current_for(request.ruc)
         if check is None:
-            return self._not_stored(settings.SUNAT_RUC)
+            return self._not_stored(request.ruc)
         return Response(self.get_serializer(check).data)
 
     @action(detail=False, methods=["post"])

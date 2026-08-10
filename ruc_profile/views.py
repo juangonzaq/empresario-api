@@ -96,15 +96,14 @@ class RucProfileViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def me(self, request: Request) -> Response:
-        """Full profile for the RUC this project is configured with."""
-        if not settings.SUNAT_RUC:
-            return Response(
-                {"detail": "SUNAT_RUC is not configured."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        snapshot = self._latest_for(settings.SUNAT_RUC)
+        """Ficha de la empresa activa.
+
+        Salía de ``settings.SUNAT_RUC`` —el RUC del ``.env``—, que en una
+        cuenta con varias empresas no es el de quien pregunta.
+        """
+        snapshot = self._latest_for(request.ruc)
         if snapshot is None:
-            return self._not_captured(settings.SUNAT_RUC)
+            return self._not_captured(request.ruc)
         return Response(self.get_serializer(snapshot).data)
 
     @action(detail=False, methods=["post"])

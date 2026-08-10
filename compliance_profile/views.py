@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from django_filters.rest_framework import DjangoFilterBackend
-from accounts.tenancy import TenantScopedViewSetMixin
+from accounts.tenancy import OrganizationAPIView, TenantScopedViewSetMixin
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from .filters import ComplianceRatingFilter
 from .models import ComplianceRating
@@ -62,7 +61,7 @@ class ComplianceRatingViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelVi
 
     @action(detail=False, methods=["get"])
     def current(self, request: Request) -> Response:
-        """The vigente calificación (optionally scoped with ``?taxpayer_id=``)."""
+        """The vigente calificación for the caller's empresa."""
         rating = self.filter_queryset(self.get_queryset()).current().first()
         if rating is None:
             return Response(NO_DATA_RESPONSE, status=status.HTTP_404_NOT_FOUND)
@@ -70,7 +69,7 @@ class ComplianceRatingViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelVi
 
     @action(detail=False, methods=["get"])
     def latest(self, request: Request) -> Response:
-        """The most recent rating by period (optionally scoped with ``?taxpayer_id=``).
+        """The most recent rating by period, for the caller's empresa.
 
         Unlike ``current``, this ignores SUNAT's vigente flag and simply returns
         the newest quarter stored, breaking ties by scrape time.
@@ -85,16 +84,24 @@ class ComplianceRatingViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelVi
         return Response(self.get_serializer(rating).data)
 
 
-class BaseFindingsView(APIView):
-    """Shared lookup: the newest stored evaluation, optionally by taxpayer."""
+class BaseFindingsView(OrganizationAPIView):
+    """Búsqueda compartida: la evaluación más reciente de la empresa activa.
+
+    Antes esto era un ``APIView`` pelado que partía de ``objects.all()`` y solo
+    acotaba si el cliente mandaba ``?taxpayer_id=``. Con el permiso por defecto
+    —``IsAuthenticated`` a secas— eso significaba dos cosas: sin parámetro
+    devolvía la calificación más reciente de *cualquier* contribuyente, así que
+    una empresa recién registrada veía el cumplimiento de otra; y con el
+    parámetro, cualquier usuario autenticado podía leer el de quien quisiera.
+
+    El RUC sale ahora de las membresías de quien llama, como en el resto del
+    API, y el parámetro se ignora.
+    """
 
     def get_rating(self, request: Request) -> ComplianceRating | None:
-        queryset = ComplianceRating.objects.all()
-        taxpayer_id = request.query_params.get("taxpayer_id")
-        if taxpayer_id:
-            queryset = queryset.for_taxpayer(taxpayer_id)
         return (
-            queryset.order_by("-period", "-execution_period", "-loaded_at")
+            ComplianceRating.objects.for_taxpayer(request.ruc)
+            .order_by("-period", "-execution_period", "-loaded_at")
             .prefetch_related("variables")
             .first()
         )
