@@ -129,6 +129,36 @@ def _compliance(creds, cadence: str) -> dict[str, Any]:
     return {"periodos": getattr(result, "stored", 0)}
 
 
+def _afpnet(creds, cadence: str) -> dict[str, Any]:
+    """Aportes previsionales. La única fuente que no puede abrir sesión sola.
+
+    El login de AFPnet lleva un CAPTCHA que resuelve una persona, así que aquí
+    se usa la sesión que esa persona dejó abierta. Sin ella el paso falla con un
+    motivo accionable en lugar de intentar entrar —que además de inútil, sería
+    saltarse un control anti-bots—.
+
+    No recibe las credenciales SOL: no le sirven. Solo usa el RUC para saber de
+    qué empresa es la sesión.
+    """
+    from accounts.models import Organization
+    from afpnet.services.client import PortalCerrado
+    from afpnet.services.sync import SinSesion, sincronizar
+
+    organization = Organization.objects.filter(ruc=creds.ruc).first()
+    if organization is None:
+        raise SourceFailed(f"No hay ninguna empresa registrada con RUC {creds.ruc}.")
+    try:
+        return sincronizar(organization)
+    except PortalCerrado as exc:
+        # AFPnet cierra por las noches, que es justo cuando corre el reparto
+        # programado. Se dice tal cual para que nadie busque una avería.
+        raise SourceFailed(str(exc)) from exc
+    except SinSesion as exc:
+        # No es LoginFailed: aquello invalida la credencial SOL y corta el resto
+        # del trabajo. Que AFPnet necesite un CAPTCHA no dice nada de SUNAT.
+        raise SourceFailed(str(exc)) from exc
+
+
 def _sunafil(creds, cadence: str) -> dict[str, Any]:
     from sunafil.services import SunafilClient, SunafilLoginError, SunafilSynchronizer
 
@@ -299,6 +329,12 @@ SOURCES: list[Source] = [
            frozenset({INITIAL, DAILY})),
     Source("sunafil", "Casilla SUNAFIL", True, _sunafil,
            frozenset({INITIAL, DAILY})),
+    # AFPnet no usa la clave SOL —de ahí el False— y su sesión la abre una
+    # persona resolviendo un CAPTCHA. Se consulta una vez al mes porque los
+    # aportes se declaran mensualmente: pedirlo a diario gastaría la sesión sin
+    # traer nada nuevo, y cada sesión cuesta un CAPTCHA.
+    Source("afpnet", "Aportes AFP (AFPnet)", False, _afpnet,
+           frozenset({INITIAL, MONTHLY})),
     # El ITF se publica una vez cerrado el mes.
     Source("itf", "Movimientos bancarios (ITF)", True, _itf,
            frozenset({INITIAL, MONTHLY})),

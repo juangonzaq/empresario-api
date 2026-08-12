@@ -112,6 +112,7 @@ INSTALLED_APPS = [
     'sunat_cpe',
     'sunat_intel',
     'finance_analytics',
+    'afpnet',
 ]
 
 MIDDLEWARE = [
@@ -383,3 +384,8 @@ CORS_ALLOW_HEADERS = [
     "accept", "authorization", "content-type", "origin", "user-agent",
     "x-csrftoken", "x-requested-with", "x-organization",
 ]
+
+# `Retry-After` no está en la lista blanca de CORS: sin exponerla, el frontend
+# —que corre en otro origen— no puede leerla y solo podría decir «espera unos
+# minutos» cuando el límite de peticiones salta. Con esto dice cuántos.
+CORS_EXPOSE_HEADERS = ["Retry-After"]

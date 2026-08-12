@@ -32,6 +32,12 @@ RUTAS_PERMITIDAS = {
     "api/me/",             # el perfil de la persona, no de la empresa
     "api/organizations/",  # justamente, la lista de sus empresas
     "api/calendario/",     # vencimientos calculados del dígito del RUC; no lee la base
+    # Suscripción de calendario por token. Es la excepción deliberada: Google
+    # Calendar y Apple Calendar no mandan cabeceras de autenticación, así que
+    # la empresa se identifica por un token secreto en la URL en lugar de por
+    # la membresía. Sirve solo el .ics del cronograma —derivado del dígito del
+    # RUC—, nunca alertas ni buzón. Ver sensor_sunat/views_app.py.
+    "api/calendario/suscripcion/<str:token>.ics",
 }
 
 # Índices del router navegable de DRF: listan URLs, no datos.

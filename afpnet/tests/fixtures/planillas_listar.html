@@ -1,0 +1,371 @@
+<input id="JsonModelPagingList" name="JsonModelPagingList" type="hidden" value="{&quot;Items&quot;:[{&quot;RucEmpresa&quot;:&quot;20604442533     &quot;,&quot;NumeroPlanilla&quot;:&quot;2610640231&quot;,&quot;NumeroPlanillaEncriptado&quot;:&quot;Aw3m1A2VR0oGHL5ole8v&quot;,&quot;NumeroTicket&quot;:null,&quot;CodigoAFP&quot;:&quot;HA&quot;,&quot;CodigoTipoOperacion&quot;:&quot;DYP&quot;,&quot;CodigoEstadoPlanilla&quot;:&quot;PAG&quot;,&quot;CodigoEstadoOperacion&quot;:&quot;PAG&quot;,&quot;CodigoTipoTrabajador&quot;:null,&quot;AFP&quot;:&quot;HABITAT&quot;,&quot;Banco&quot;:&quot;BCP&quot;,&quot;TipoTrabajador&quot;:&quot;DEPENDIENTE&quot;,&quot;LineaArchivo&quot;:null,&quot;PeriodoDevengue&quot;:&quot;202607&quot;,&quot;EstadoPlanilla&quot;:&quot;PAGADA&quot;,&quot;FormaPago&quot;:&quot;PL&quot;,&quot;TipoRegistro&quot;:null,&quot;FechaPago&quot;:&quot;11/08/2026&quot;,&quot;FechaMaximaPago&quot;:&quot;&quot;,&quot;FechaMaximaRegistro&quot;:&quot;&quot;,&quot;FechaGeneracion&quot;:&quot;07/08/2026&quot;,&quot;NumeroPreImpreso&quot;:&quot;0000000         &quot;,&quot;Origen&quot;:&quot;UNI&quot;,&quot;PlanillaRegularizacion&quot;:null,&quot;UltimaTransaccion&quot;:null,&quot;TotalGeneralFondo&quot;:1370.00,&quot;TotalGeneralRyR&quot;:187.69,&quot;TotalFondo&quot;:1370.00,&quot;TotalRyR&quot;:187.69,&quot;DataEncriptada&quot;:&quot;AB66g23YVjH3prM0VK0mTAaxVXe60juXQ4m8mKkACQoaQm3gZVUGxzPOYBndTj52rmM6kj&quot;,&quot;TotalFondoPensiones&quot;:0.0,&quot;TotalRetencionesRetribuciones&quot;:0.0,&quot;DatosAnularPlanilla&quot;:&quot;GEyZBkngx6tW1zjMjVa7iVZojL79YZFRVbx3R3oRFdX&quot;,&quot;PermiteProcesoAnulacion&quot;:false}],&quot;Pagination&quot;:{&quot;Guid&quot;:&quot;2e994c03-0cc8-441a-bcfb-39c94c094004&quot;,&quot;ActualGuid&quot;:null,&quot;Mensaje&quot;:&quot;&lt;p&gt;Se ha encontrado &lt;strong&gt;1 registro&lt;/strong&gt;.&lt;/p&gt;&quot;,&quot;Action&quot;:null,&quot;PageCount&quot;:1,&quot;PageIndex&quot;:1,&quot;TotalRecordCount&quot;:1,&quot;SortExpression&quot;:null,&quot;NumberOfPagesToShow&quot;:1,&quot;StartPageIndex&quot;:1,&quot;StopPageIndex&quot;:1},&quot;Resultado&quot;:1}" />
+<input id="JsonModelAgrupacion" name="JsonModelAgrupacion" type="hidden" value="[{&quot;RucEmpresa&quot;:null,&quot;NumeroPlanilla&quot;:null,&quot;NumeroPlanillaEncriptado&quot;:null,&quot;NumeroTicket&quot;:null,&quot;CodigoAFP&quot;:null,&quot;CodigoTipoOperacion&quot;:null,&quot;CodigoEstadoPlanilla&quot;:null,&quot;CodigoEstadoOperacion&quot;:null,&quot;CodigoTipoTrabajador&quot;:null,&quot;AFP&quot;:null,&quot;Banco&quot;:null,&quot;TipoTrabajador&quot;:null,&quot;LineaArchivo&quot;:null,&quot;PeriodoDevengue&quot;:&quot;202607&quot;,&quot;EstadoPlanilla&quot;:null,&quot;FormaPago&quot;:null,&quot;TipoRegistro&quot;:null,&quot;FechaPago&quot;:null,&quot;FechaMaximaPago&quot;:null,&quot;FechaMaximaRegistro&quot;:null,&quot;FechaGeneracion&quot;:null,&quot;NumeroPreImpreso&quot;:null,&quot;Origen&quot;:null,&quot;PlanillaRegularizacion&quot;:null,&quot;UltimaTransaccion&quot;:null,&quot;TotalGeneralFondo&quot;:1370.00,&quot;TotalGeneralRyR&quot;:187.69,&quot;TotalFondo&quot;:1370.00,&quot;TotalRyR&quot;:187.69,&quot;DataEncriptada&quot;:null,&quot;TotalFondoPensiones&quot;:0.0,&quot;TotalRetencionesRetribuciones&quot;:0.0,&quot;DatosAnularPlanilla&quot;:null,&quot;PermiteProcesoAnulacion&quot;:false}]" />
+
+        <div class="row p-0 mb-2">
+            <div class="table-responsive">
+
+                <div class="custom_pager">
+                    <div class="custom_pager_top">
+                        <div class="custom_pager_message">
+                            <p>Se ha encontrado <strong>1 registro</strong>.</p>
+                        </div>
+                        <div class="custom_pager_button">
+                            <div class="pager-container" data-form-container="#form-buscar-planillas">
+                                <input id="Guid" name="Guid" type="hidden" value="2e994c03-0cc8-441a-bcfb-39c94c094004" />
+
+
+
+
+
+
+
+<script type="text/javascript">
+    $(document).ready(function () {
+        $("#ActualGuid").val($("#Guid").val());
+        if ($("#Guid").val() == "" || $("#pageNumber").val() != "0") $("#pageNumber").val("0");
+    });
+</script>
+
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-header-fixed">
+                        <table id="gvw-planilla" class="table table-sm nofreeze">
+                            <thead class="header">
+                                <tr>
+                                    <th scope="col" class="text-no-wrap">&nbsp;</th>
+                                    <th scope="col" class="text-no-wrap">Devengue</th>
+                                    <th scope="col" class="text-no-wrap">Total<br>Fondo de Pensiones</th>
+                                    <th scope="col" class="text-no-wrap">Total<br>Retenciones y Retribuciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                    <tr id="fila1_action" class="collapsed" data-toggle="collapse" href="#fila1" role="button" aria-expanded="false" aria-controls="fila1">
+                                        <td class="text-center desplazar" style="width:36px !important;">
+                                            <i class="fa" aria-hidden="true"></i>
+                                        </td>
+                                        <td class="text-center">2026-07</td>
+                                        <td class="text-right"> 1,370.00</td>
+                                        <td class="text-right"> 187.69</td>
+                                    </tr>
+                                    <tr class="collapse" id="fila1" data-parent="#gvw-planilla">
+                                        <td>&nbsp;</td>
+                                        <td colspan="4" class="text-center justify-content-center">
+
+                                            <table class="table table-sm table-fit">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="text-no-wrap">AFP</th>
+                                                        <th class="text-no-wrap">N° de Planilla</th>
+                                                        <th class="text-no-wrap">Nominal Fondo</th>
+                                                        <th class="text-no-wrap">Nominal RyR</th>
+                                                        <th class="text-no-wrap">Estado</th>
+                                                        <th class="text-no-wrap">Tipo de Trabajador</th>
+                                                        <th class="text-no-wrap">F. Declaración</th>
+                                                        <th class="text-no-wrap">F. Pago</th>
+                                                        <th class="text-no-wrap">N° de Ticket</th>
+                                                        <th class="text-no-wrap">Banco</th>
+                                                        <th class="text-no-wrap">Forma de Pago</th>
+                                                        <th style="min-width:540px !important;">Acciones</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+
+                                                        <tr id="fila1_2610640231" class="filaevento">
+                                                            <td class="text-no-wrap text-left">
+                                                                HABITAT
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                2610640231
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                1,370.00
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                187.69
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                PAGADA
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                DEPENDIENTE
+                                                            </td>
+                                                            <td class="text-no-wrap text-center">
+                                                                07/08/2026
+                                                            </td>
+                                                            <td class="text-no-wrap text-center">
+                                                                11/08/2026
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                BCP
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                PL
+                                                            </td>
+                                                            <td class="text-no-wrap text-center form-inline">
+                                                                <button class="btn btn-sm btn-success" onclick="ImprimirPlanillaDeclaracion('Aw3m1A2VR0oGHL5ole8v','7l0Je7GldbiydRRXEZLOFVRN3Gg','S')">Imprimir</button>
+
+
+                                                                    <button class="btn btn-sm btn-danger" disabled>Anular</button>
+                                                                    <button class="btn btn-sm btn-info" disabled>Pagar en Línea</button>
+                                                                    <button class="btn btn-sm btn-info btn-ticket-vista-previa" disabled>Emitir Ticket</button>
+                                                            </td>
+                                                            </tr>
+
+
+                                                    </tbody>
+                                                </table>
+
+                                            </td>
+                                        </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="custom_pager_bottom">
+                            <div class="pager-container" data-form-container="#form-buscar-planillas">
+                                <input id="Guid" name="Guid" type="hidden" value="2e994c03-0cc8-441a-bcfb-39c94c094004" />
+
+
+
+
+
+
+
+<script type="text/javascript">
+    $(document).ready(function () {
+        $("#ActualGuid").val($("#Guid").val());
+        if ($("#Guid").val() == "" || $("#pageNumber").val() != "0") $("#pageNumber").val("0");
+    });
+</script>
+
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        <div class="row p-0 mb-0">
+            <div class="col-sm-12 col-md-7 col-lg-5 offset-md-5 offset-lg-7 text-left">
+                <button type="button" class="btn btn-success" id="btn-imprimir-planillas">Imprimir</button>
+            </div>
+        </div>
+        <script>
+            $('#btn-imprimir-planillas').off().on('click', function () {
+                showAFPModal({ title: 'Vista Preliminar de Planillas de Empleadores', size: 'lg', message: $('#modal-imprimir').html() });
+            });
+        </script>
+        <form method="post" id="form-ticket-vista-previa-emitir" action="/GestionarPlanilla/Planilla/TicketEmpleadorVistaPreviaFormAsync">
+            <input type="hidden" name="dataTicket" id="dataTicket" value="" />
+            <input type="hidden" name="origenTicket" value="PlanillaEmpleador" />
+            <input type="hidden" name="numeroPlanillaSelecionada" id="numeroPlanillaSelecionada" />
+        <input name="__RequestVerificationToken" type="hidden" value="CfDJ8TOKEN-DE-PRUEBA" /></form>
+    <style>
+        .table-header-fixed thead th {
+            position: unset !important;
+            top: 0;
+        }
+    </style>
+    <div id="modal-imprimir" style="display: none;">
+        <div class="container">
+            <div class="row mb-0">
+                <div class="col-md-2">
+                    <label class="col-form-label">RUC:</label>
+                </div>
+                <div class="col-md-2">
+                    <label class="col-form-label">20604442533</label>
+                </div>
+            </div>
+            <div class="row mb-2">
+                <div class="col-md-2">
+                    <label class="col-form-label">Razón Social:</label>
+                </div>
+                <div class="col-md-10">
+                    <label class="col-form-label">PATTERN GROUP S.A.C</label>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-12 pr-2">
+                    <div class="table-header-fixed">
+                        <table class="table table-sm table-fit">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-no-wrap">Devengue</th>
+                                    <th scope="col" class="text-no-wrap">Total Fondo de Pensiones</th>
+                                    <th scope="col" class="text-no-wrap">Total Retenciones y Retribuciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                    <tr>
+                                        <td class="text-no-wrap text-center">2026-07</td>
+                                        <td class="text-no-wrap text-right">1,370.00</td>
+                                        <td class="text-no-wrap text-right">187.69</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&nbsp;</td>
+                                        <td colspan="2" class="text-center justify-content-center">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="text-no-wrap">AFP</th>
+                                                        <th class="text-no-wrap">N° de Planilla</th>
+                                                        <th class="text-no-wrap">Nominal Fondo</th>
+                                                        <th class="text-no-wrap">Nominal RyR</th>
+                                                        <th class="text-no-wrap">Estado</th>
+                                                        <th class="text-no-wrap">Tipo de<br>Trabajador</th>
+                                                        <th class="text-no-wrap">Fecha de<br>Declaración</th>
+                                                        <th class="text-no-wrap">Fecha de Pago</th>
+                                                        <th class="text-no-wrap">N° de Ticket</th>
+                                                        <th class="text-no-wrap">Banco</th>
+                                                        <th class="text-no-wrap">Forma<br>de Pago</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                        <tr>
+                                                            <td class="text-no-wrap text-left">
+                                                                HABITAT
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                2610640231
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                1,370.00
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                187.69
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                PAGADA
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                DEPENDIENTE
+                                                            </td>
+                                                            <td class="text-no-wrap text-center">
+                                                                07/08/2026
+                                                            </td>
+                                                            <td class="text-no-wrap text-center">
+                                                                11/08/2026
+                                                            </td>
+                                                            <td class="text-no-wrap text-right">
+                                                                
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                BCP
+                                                            </td>
+                                                            <td class="text-no-wrap text-left">
+                                                                PL
+                                                            </td>
+                                                        </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-md-12 text-right">
+                    <button id="btnPrint" type="button" class="btn btn-success" onclick="return printElement();">Imprimir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+        <script type="text/javascript">
+            $(function () {
+
+
+                if ($("#numeroPlanillaSelecionada").val() !== "") {
+
+                    var valorSeleccionadoArray = String($("#numeroPlanillaSelecionada").val()).split("_");
+                    var filaSeleccionada = valorSeleccionadoArray[0] + "_action";
+                    $("#" + filaSeleccionada).click();
+                    $(document.getElementById(String($("#numeroPlanillaSelecionada").val()))).find("td").each(function () { $(this).addClass("selected") });
+                }
+
+                //$('.filaevento').hover(function () {
+                //    $(this).find("td").each(function () {
+                //        if ($(this).hasClass("selected"))
+                //            $(this).removeClass("selected");
+                //    });
+
+                //});
+
+                $('.btn-ticket-vista-previa-form').click(function () {
+                    var mensaje = "¿Desea emitir el ticket?";
+                    var params = { data: $(this).data('encriptada') };
+                    //mostrarConfirmacion(mensaje, EmitirTicketVistaPrevia, params);
+
+                    var objModal = {
+                        size: 'sm',
+                        type: 'c',
+                        message: mensaje,
+                        buttons: {
+                            ok: { function: EmitirTicketVistaPrevia, params: params },
+                            cancel: { function: destroyAFPModal }
+                        }
+                    };
+                    showAFPModal(objModal);
+
+                    //estableciendo la ultima fila selecionada.
+                    var row = $(this).parent().parent();
+                    $("#numeroPlanillaSelecionada").val(row.prop("id"));
+
+
+
+
+                });
+
+                $('.btn-anular-planilla').click(function () {
+                    var data = $(this).data('encriptada');
+                    var formData = new FormData();
+                    formData.append('data', data);
+
+                    $('#form-planilla-buscar').attr('action', 'AnularPlanilla');
+
+                    mostrarLoader();
+
+                    $.ajax({
+                        url: $('#form-planilla-buscar').attr('action'),
+                        data: formData,
+                        async: true,
+                        method: 'POST',
+                        processData: false,
+                        contentType: false,
+                        success: function (response) {
+                            $('#busqueda-resultado').html(response);
+
+                        },
+                        error: function (xhr) {
+                            console.log(xhr.statusText, ' : ', xhr.responseText);
+                            var mensaje = "No se ha podido realizar la operación, por favor intente nuevamente, gracias.";
+                            notificarErrorAFP(mensaje);
+                            //notificacionError("No se ha podido realizar la operación, por favor intente nuevamente, gracias.");
+                        },
+                        complete: function (data) {
+                            esconderLoader();
+                        }
+                    });
+                });
+
+            })
+
+
+            function EmitirTicketVistaPrevia(params) {
+                //if (result) {
+                //esconderLoader();
+
+                $('#dataTicket').val(params.data);
+                $('#form-ticket-vista-previa-emitir').submit();
+                //}
+            }
+
+
+
+        </script>
+
+
+

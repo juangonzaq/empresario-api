@@ -1,0 +1,1504 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>AFPnet</title>
+
+    <link href="/lib/bootstrap/dist/css/bootstrap.css" rel="stylesheet" />
+    <link href="/lib/font-awesome/css/font-awesome.css" rel="stylesheet" />
+    <link href="/lib/bootstrap-notify/css/bootstrap-notify.css" rel="stylesheet" />
+    <link href="/lib/bootstrap-datepicker/dist/css/bootstrap-datepicker.css" rel="stylesheet" />
+    <link href="/lib/pretty-checkbox/dist/pretty-checkbox.css" rel="stylesheet" />
+
+    <link href="/diseno-v01/css/base.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/base-mediaquery.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/base-width.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/navbar.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/sidebar.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/page.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/accordion.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/label.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/input.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/button.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/table.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/pagination.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/alert.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/modal.css" rel="stylesheet" />
+    <link href="/diseno-v01/css/navtab.css" rel="stylesheet" />
+    <link href="/css/afpnet.keypad.css" rel="stylesheet" />
+
+    <link href="/lib/jquery-checktree/css/jquery-checktree.css" rel="stylesheet" />
+    <link href="/lib/jquery-ui/dist/css/themes/base/jquery-ui.min.css" rel="stylesheet" />
+    <script src="/lib/jquery/dist/jquery.js"></script>
+    <script src="/lib/browser-detect-javascript/detect.min.js"></script>
+    <script src="/lib/popper.js/dist/umd/popper.js"></script>
+    <script src="/lib/bootstrap/dist/js/bootstrap.js"></script>
+    <script src="/lib/jquery-validation/dist/jquery.validate.js"></script>
+    <script src="/lib/jquery-ajax-unobtrusive/dist/jquery.unobtrusive-ajax.js"></script>
+    <script src="/lib/jquery-validation-unobtrusive/dist/jquery.validate.unobtrusive.js"></script>
+    <script src="/lib/notifyjs/bootstrap-notify.js"></script>
+    <script src="/js/afpnet.notify.js" type="text/javascript"></script>
+    <script src="/js/afpnet.general.js"></script>
+    <script src="/afpnet/js/afpnet.regex.js"></script>
+    <script src="/lib/bootbox/bootbox.min.js"></script>
+    <script src="/diseno-v01/js/base.js"></script>
+    <script src="/diseno-v01/js/accordion.js"></script>
+    <script src="/diseno-v01/js/modal.js"></script>
+    <script src="/lib/jquery-checktree/js/jquery-checktree.js"></script>
+    <script src="/lib/jquery-ui/dist/js/jquery-ui.min.js"></script>
+    <script src="/lib/jquery-ui/dist/js/jquery.ui-contextmenu.min.js"></script>
+    <script src="/lib/bootstrap-datepicker/js/bootstrap-datepicker.js"></script>
+    <script src="/lib/bootstrap-datepicker/js/locales/bootstrap-datepicker.es.js"></script>
+    <link href="/lib/tool-tip/css/tool-tip.css" rel="stylesheet" />
+    <script src="/lib/tool-tip/js/tool-tip.js"></script>
+    <script src="/lib/SignalR/signalr.js"></script>
+
+    <link href="/diseno-v01/css/notification.css" rel="stylesheet" />
+
+    <style>
+        a.btn-secondary, a.btn-secondary:link, a.btn-secondary:visited, a.btn-secondary:hover, a.btn-secondary:active {
+            color: #ffffff !important;
+        }
+
+        a.btn-info, a.btn-info:link, a.btn-info:visited, a.btn-info:hover, a.btn-info:active {
+            color: #ffffff !important;
+        }
+
+        a.btn-primary, a.btn-primary:link, a.btn-primary:visited, a.btn-primary:hover, a.btn-primary:active {
+            color: #ffffff !important;
+        }
+    </style>
+
+
+    <script src="/js/afpnet.keypad.js"></script>
+
+    <script type="text/javascript">
+        var xa = 0;
+        var btnNotificacion = false;
+    </script>
+
+</head>
+
+
+<body onload="obtenerFechaHora('2026','8','12','9','31')">
+
+    
+<form id="form-logout" method="post" action="/Seguridad/CerrarSesionAsync"><input name="__RequestVerificationToken" type="hidden" value="CfDJ8TOKEN-DE-PRUEBA" /></form>
+<form id="form-password" method="get" action="/GestionarUsuario/Usuario/CambiarContrasenia"></form>
+
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+    <a id="logo" class="navbar-brand nav-item-logo" href="/Sistema">
+        <img src="/images/img-afpnet/logo_home_v01.png" alt="logo" height="40" />
+    </a>
+
+    <ul class="navbar-nav mr-auto nav-item-sm ml-3">
+        <li class="nav-item">
+            <label class="nav-item-user">
+
+20604442533 - PATTERN GROUP S.A.C                    <br>
+Bienvenido Sr(a). juan carlos huinca calla (Administrador)            </label>
+        </li>
+    </ul>
+
+    <div class="collapse navbar-collapse" id="navbarColor01">
+        <ul class="navbar-nav mr-auto">
+            <li class="nav-item nav-item-lg text-right">
+                <a href="#">
+                    <i class="fa fa-bars nav-item-menu" style=""></i>
+                </a>
+            </li>
+            <li class="nav-item dropdown nav-item-user nav-item-lg">
+
+20604442533 - PATTERN GROUP S.A.C                    <br>
+Bienvenido Sr(a). juan carlos huinca calla (Administrador)            </li>
+
+            <li class="nav-item nav_user_info_mobile01">
+                <p>Cambiar Clave<br>Salir</p>
+            </li>
+        </ul>
+        <form class="form-inline my-2 my-lg-0 nav_fechahora_pc">
+            <label class="nav-item">
+                <span id="lblWebTime" class="nav-item-hour">12/08/2026 09:31:21 -05:00</span><br>
+                <span id="lblWebDate" class="nav-item-date">12/08/2026</span>
+            </label>
+        </form>
+
+            <div id="btnnotificacion" class="dropdown" style="float: right; padding: 13px;">
+                <div id="btn-notificaciones" data-toggle="dropdown" aria-expanded="true" data-target="#">
+                    <i class="fa fa-bell-o" id="camp_i" style="font-size: 20px; float: left; color:#ffffff;"></i>
+                    <span id="noticontar" class="badge badge-danger">0</span>
+                </div>
+                <ul class="dropdown-menu pull-right" role="menu" aria-labelledby="btn-notificaciones" style="left: -200px; z-index:-100;">
+                    <li>
+                        <ul id="strulnotify" class="notificar" style=""></ul>
+                    </li>
+                </ul>
+            </div>
+
+        <div id="btuser" class="dropdown" style="float: right; padding: 13px;">
+            <a href="#" onclick="return false;" role="button" data-toggle="dropdown" id="dropdownMenu1" data-target="#" style="float: left" aria-expanded="true">
+                <i class="fa fa-user-o" id="camp_i" style="font-size: 20px; float: left; color:white">
+                </i>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-left pull-right" role="menu" aria-labelledby="dropdownMenu1" style="left: -120px;">
+                    <li>
+                        <button class="btn btn-sm btn-info w-90 rounded ml-2 mr-2 mt-2 mb-2" onclick="document.getElementById('form-password').submit();">
+                            Cambiar Contraseña
+                        </button>
+                    </li>
+                <li>
+                    <button class="btn btn-sm btn-secondary w-90 rounded ml-2 mr-2 mt-0 mb-2" onclick="document.getElementById('form-logout').submit();">
+                        Cerrar Sesión
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <button type="button" class="navbar-toggler">
+        <i class="fa fa-bars nav-item-menu-mobile"></i>
+    </button>
+</nav>
+
+<script>
+    var year = '2026';
+    var month = parseInt('8') - 1;
+    var day = '12';
+    var hours = '9';
+    var minutes = '31';
+    var seconds = '21';
+    var milliseconds = '774';
+    var webDateTime = new Date(year, month, day, hours, minutes, seconds, milliseconds);
+    
+    function pad(n, width, z) {
+        z = z || '0';
+        n = n + '';
+        return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
+    }
+
+    function UpdateWebDateTime() {
+        webDateTime.setSeconds(webDateTime.getSeconds() + 1);
+        
+        //Update Day
+        var day = webDateTime.getDate();
+        var month = webDateTime.getMonth() + 1;
+        var year = webDateTime.getFullYear();
+
+        if (day < 10) { day = '0' + day; }
+        if (month < 10) { month = '0' + month; }
+
+        document.getElementById('lblWebDate').innerHTML = day + '/' + month + '/' + year;
+
+        //Update Time
+        var hour = webDateTime.getHours() > 12 ? webDateTime.getHours() - 12 : webDateTime.getHours();
+        var meridian = webDateTime.getHours() > 11 ? 'PM' : 'AM';
+        var hourFormat = pad(hour, 2, '0');
+        var minuteFormat = pad(webDateTime.getMinutes(), 2, '0');
+        var secondFormat = pad(webDateTime.getSeconds(), 2, '0');
+
+        document.getElementById('lblWebTime').innerHTML = hourFormat + ':' + minuteFormat + ':' + secondFormat + ' ' + meridian;
+    }
+</script>
+
+<script type="text/javascript">
+    $(document).ready(function () {
+        $('[data-toggle="tooltip"]').tooltip();
+        UpdateWebDateTime();
+        setInterval(UpdateWebDateTime, 1000);
+    });
+</script>
+
+    <div class="body">
+
+        <div class="sidebar">
+            <style>
+    footer {
+        position: absolute;
+        bottom: 0;
+        width: 10%;
+        height: 25px;
+        font-size: 0.8rem !important;
+    }
+</style>
+
+<div id="sidebar" class="list-group panel">
+    <input type="hidden" id="hdcontadornoti" />
+        <button type="button" class="btn btn-sm btn-info rounded ml-2 mr-2 mt-0 mb-2 nav-item-sm" onclick="document.getElementById('form-password').submit();">
+            Cambiar Contraseña
+        </button>
+
+
+    <button type="button" class="btn btn-sm btn-secondary rounded ml-2 mr-2 mt-0 mb-3 nav-item-sm" onclick="document.getElementById('form-logout').submit();">
+        Cerrar Sesión
+    </button>
+            <a class="list-group-item" href="/Sistema">Inicio</a>
+<a class='list-group-item' data-toggle='collapse' data-parent='#sidebar' href='#menu-2'>Administración<i class='fa fa-caret-down'></i></a><div class='collapse' id='menu-2' >                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarEmpleador/Empleador/ModificarDatosEmpresa?parguid=9XoO3NAxD45LvpYkzWPm">Datos de la Empresa</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarUsuario/Usuario/Listar?parguid=jrpLnm8DYyMBDMX43ogy">Usuarios</a>
+</div><a class='list-group-item' data-toggle='collapse' data-parent='#sidebar' href='#menu-3'>Aportes<i class='fa fa-caret-down'></i></a><div class='collapse' id='menu-3' >                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarPlanilla/Planilla/Cargar?parguid=65gmnLlvQWQMw0XdQ3ZK">Presentaci&#xF3;n y Pago de Planillas</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarPlanilla/Planilla/Listar?parguid=PJ9K3G6wRNM0w7dzZEm1">Consulta y Pago de Planillas</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarRegularizaciones/Planillas/Consultar?parguid=bam08rjwm1YgwKPxnl4L">Consulta y Pago de Regularizaciones</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarPlanilla/PagoPendiente2daFirma/Listar?parguid=jKGlyR6qg6pXvzoL1AZ7">Pagos Pendientes de 2da firma</a>
+</div><a class='list-group-item' data-toggle='collapse' data-parent='#sidebar' href='#menu-4'>Afiliados<i class='fa fa-caret-down'></i></a><div class='collapse' id='menu-4' >                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarAfiliado/Afiliado/ConsultarAfiliado?parguid=oOQGA3bqj2Ogq8R7r2Ep">Consulta de Afiliados Unitaria</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarAfiliado/Afiliado/ConsultaCusppMasiva?parguid=ZyM3bE7wzNY3wrJkjYBK">Consulta de Afiliados Masiva</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarAfiliado/AfiliadoUnitario/AceptacionTerminos?parguid=by0kPRnqdj0XD3YrgaZQ">Afiliaci&#xF3;n Unitaria</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarAfiliado/AfiliacionMasiva/CargaArchivo?parguid=rLYE5ogv6nZavkBabVXM">Afiliaci&#xF3;n Masiva</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarAfiliado/SolicitudAfiliacion/Consultar?parguid=1m5xbAKwGaLjvegBo3dY">Consulta de Solicitudes de Afiliaci&#xF3;n</a>
+</div><a class='list-group-item' data-toggle='collapse' data-parent='#sidebar' href='#menu-7'>Obligaciones de Pago<i class='fa fa-caret-down'></i></a><div class='collapse' id='menu-7' >                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarObligacionPago/Afiliado/Listar?parguid=yK1VG60DaRVbvX8xglbr">Por Afiliado</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarObligacionPago/Devengue/ListarResumenSituacionOpPorDevengue?parguid=MeNjlkKDX3M8wa5RYJ4z">Por Devengue</a>
+                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarObligacionPago/MovimientoLaboral/Registrar?parguid=EG9JoNXDezylvQnglBLp">Planilla Movimiento Laboral</a>
+</div><a class='list-group-item' data-toggle='collapse' data-parent='#sidebar' href='#menu-34'>Deudas Ciertas y Presuntas<i class='fa fa-caret-down'></i></a><div class='collapse' id='menu-34' >                    <a class="list-group-item menu-item " data-toggle="collapse" href="/GestionarDeuda/Reporte/DeudasCiertasYPresuntas?parguid=E2yPz47wkJRBqQrJgjel">Reporte de Deudas</a>
+</div>        <a class="list-group-item" href="/GestionarUsuario/Usuario/CambiarContrasenia">Cambiar Contraseña</a>
+        <a class="list-group-item" href="/Seguridad/CerrarSesionAsync">Cerrar Sesión</a>
+</div>
+<div>
+    <br />
+    <br />
+    <footer>
+        <div style="background-color:#E6EAF5;width:230px;padding-bottom: 5px;">
+            <h class="text-muted small mb-4 mb-lg-0">© AFPnet - 10.260610.4  SE -216</h>
+        </div>
+    </footer>
+</div>
+
+        </div>
+
+        <div class="page main">
+            
+<h6 class="page-header-title">
+</h6>
+            <div id="pagina" class="page-body content pt-3 pl-4 pr-4 pb-5">
+                
+<form method="post" id="form-modificar-empleador" action="/GestionarEmpleador/Empleador/ModificarDatosEmpresa">
+    <input data-val="true" data-val-required="The VieneDeRegistrarSolicitud field is required." id="VieneDeRegistrarSolicitud" name="VieneDeRegistrarSolicitud" type="hidden" value="False" />
+    <input data-val="true" data-val-required="The VieneDeInicio field is required." id="VieneDeInicio" name="VieneDeInicio" type="hidden" value="False" />
+    <input data-val="true" data-val-required="The TipoUsuarioSesion field is required." id="TipoUsuarioSesion" name="TipoUsuarioSesion" type="hidden" value="2" />
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5  mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px">RUC: </label>
+            <input class="form-control form-control-sm w-150px" maxlength="60" readonly="readonly" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="11" data-val-length-min="11" data-val-regex="Ingresar solo n&#xFA;meros" data-val-regex-pattern="^[0-9]*$" data-val-required="Campo obligatorio" id="EmpresaRuc" name="EmpresaRuc" value="20604442533" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="EmpresaRuc" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-160px">Fecha de Actualización:</label>
+            <input class="form-control form-control-sm w-90px" disabled type="text" id="FechaModificacion" name="FechaModificacion" value="08/04/2026" />
+        </div>
+
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-10 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px">Razón Social: *</label>
+            <input maxlength="60" class="form-control form-control-sm w-rest-150px val-regex-lngsp" readonly="readonly" value="PATTERN GROUP S.A.C" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="60" data-val-length-min="2" data-val-regex="Usar solo n&#xFA;meros y letras" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" id="RazonSocial" name="RazonSocial" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RazonSocial" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+
+    <div class="row p-0 mb-2">
+        <label class="col-form-label col-form-label-sm justify-content-start w-150px">Teléfono fijo: *</label>
+        <div class="col-md-9 form-inline mb-0">
+            <div class="input-group input-group-sm">
+                <div class="input-group-append w-100px">
+                    <select id="selectTelefonoEmpresa" class="cbo-control form-control form-control-sm w-100" name="PrefTelefonoEmpresa">
+                        <option value="" selected="selected">Seleccione</option>
+                    <option value="01">01-Lima</option>
+<option value="041">041-Amazonas </option>
+<option value="042">042-San Martin</option>
+<option value="043">043-Ancash</option>
+<option value="044">044-La Libertad</option>
+<option value="051">051-Puno</option>
+<option value="052">052-Tacna</option>
+<option value="053">053-Moquegua</option>
+<option value="054">054-Arequipa</option>
+<option value="056">056-Ica</option>
+<option value="061">061-Ucayali</option>
+<option value="062">062-Huanuco</option>
+<option value="063">063-Pasco</option>
+<option value="064">064-Junin</option>
+<option value="065">065-Loreto</option>
+<option value="066">066-Ayacucho</option>
+<option value="067">067-Huancavelica</option>
+<option value="072">072-Tumbes</option>
+<option value="073">073-Piura</option>
+<option value="074">074-Lambayeque</option>
+<option value="076">076-Cajamarca</option>
+<option value="082">082-Madre de Dios</option>
+<option value="083">083-Apurimac</option>
+<option value="084">084-Cusco</option>
+</select>
+                </div>
+                <input type="text" id="telefonoEmpresa" class="form-control form-control-sm input-group-custom w-rest-100px" data-val="true" data-val-regex="Ingresar solo n&#xFA;meros" data-val-regex-pattern="^[0-9]*$" name="TelefonoEmpresa" value="" />
+            </div>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <label class="col-form-label col-form-label-sm justify-content-start w-150px">Celular: *</label>
+        <div class="col-md-9 form-inline mb-0">
+            <input id="celularEmpresa" class="form-control form-control-sm integer" style="width:18rem !important;" maxlength="9" autocomplete="off" type="text" name="CelularEmpresa" value="900000001" />
+        </div>
+        <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CelularEmpresa" data-valmsg-replace="true"></span>
+
+    </div>
+
+
+
+    <div class="row">
+        <div class="col-md-12">
+            <hr>
+        </div>
+    </div>
+
+    <div class="row mt-2 mb-2">
+        <div class="col-md-12">
+            <h6>Dirección declarada por el Empleador</h6>
+        </div>
+    </div>
+
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-10 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-130px" for="CodigoTipoViaEmpl">V&#xED;a: *</label>
+            <div class="input-group w-rest-130px">
+                <div class="input-group-append w-180px">
+                    <select class="form-control form-control-sm w-100" data-val="true" data-val-required="Campo obligatorio" id="CodigoTipoViaEmpl" name="CodigoTipoViaEmpl">
+                        <option value="">Seleccione</option>
+                    <option value="01">JR.</option>
+<option selected="selected" value="02">CL.</option>
+<option value="03">AV.</option>
+<option value="04">PSJE.</option>
+<option value="05">MZ.</option>
+<option value="06">PROLONG.</option>
+<option value="07">BLOCK</option>
+<option value="08">CONDOMINIO</option>
+<option value="09">PARQUE</option>
+<option value="10">MALECON</option>
+<option value="11">ALAMEDA</option>
+<option value="12">CARRETERA</option>
+<option value="13">AUTOPISTA</option>
+<option value="14">C.P.</option>
+<option value="15">CASERIO</option>
+<option value="16">PLAZA</option>
+<option value="17">OVALO</option>
+<option value="18">BOULEVARD</option>
+<option value="19">PASEO</option>
+<option value="20">EDIFICIO</option>
+<option value="21">SUPERMZ.</option>
+<option value="99">OTROS</option>
+</select>
+                </div>
+                <input type="text" maxlength="50" class="form-control form-control-sm w-rest-180px val-regex-lngsp" placeholder="Vía" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="50" data-val-length-min="2" data-val-regex="Usar solo n&#xFA;meros y letras" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="NombreViaEmpl" name="NombreViaEmpl" value="LOS OLIVOS" />
+            </div>
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="CodigoTipoViaEmpl" data-valmsg-replace="true"></span>
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="NombreViaEmpl" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-4 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-130px" for="NumeroViaEmpl">N&#xFA;mero:</label>
+            <input maxlength="15" class="form-control form-control-sm text-right w-rest-130px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="15" data-val-regex="El n&#xFA;mero de direcci&#xF3;n solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="NumeroViaEmpl" name="NumeroViaEmpl" value="257" />
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="NumeroViaEmpl" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-4 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px w-pl-50px" for="DepartamentoEmpl">Dpto:</label>
+            <input maxlength="10" class="form-control form-control-sm text-right w-rest-150px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-regex="El departamento solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="DepartamentoEmpl" name="DepartamentoEmpl" value="402" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="DepartamentoEmpl" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-4 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px w-pl-50px" for="InteriorEmpl">Interior:</label>
+            <input maxlength="10" class="form-control form-control-sm text-right w-rest-150px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-regex="El interior solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="InteriorEmpl" name="InteriorEmpl" value="" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="InteriorEmpl" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-4 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-130px" for="ManzanaEmpl">Manzana:</label>
+            <input maxlength="10" class="form-control form-control-sm text-right w-rest-130px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-regex="La manzana solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="ManzanaEmpl" name="ManzanaEmpl" value="" />
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="ManzanaEmpl" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-4 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px w-pl-50px" for="LoteEmpl">Lote:</label>
+            <input maxlength="10" class="form-control form-control-sm text-right w-rest-150px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-regex="El lote solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="LoteEmpl" name="LoteEmpl" value="" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="LoteEmpl" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-4 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px w-pl-50px" for="KilometroEmpl">Kilometro:</label>
+            <input maxlength="10" class="form-control form-control-sm text-right w-rest-150px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-regex="El kilometro solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="KilometroEmpl" name="KilometroEmpl" value="" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="KilometroEmpl" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-12 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-130px" for="CodigoTipoLocalidadEmpl">Localidad:</label>
+            <div class="input-group w-rest-130px">
+                <div class="input-group-append w-180px">
+                    <select class="form-control form-control-sm w-100" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="2" id="CodigoTipoLocalidadEmpl" name="CodigoTipoLocalidadEmpl">
+                        <option value="" selected="selected">Seleccione</option>
+                    <option value="01">URB.</option>
+<option value="02">A.A.H.H.</option>
+<option value="03">PP.JJ.</option>
+<option value="04">ASOC.</option>
+<option value="05">ZONA</option>
+<option value="06">GRUPO</option>
+<option value="07">SECTOR</option>
+<option value="08">CONJ.HAB.</option>
+<option value="09">RESIDENC.</option>
+<option value="10">COOP.</option>
+<option value="11">UNID.VEC.</option>
+<option value="12">CASERIO</option>
+<option value="13">CAMPAMENTO</option>
+<option value="14">FUNDO</option>
+<option value="15">COMUNIDAD</option>
+<option value="16">BARRIO</option>
+<option value="17">AGRUPACION</option>
+<option value="18">LOTIZACION</option>
+<option value="19">CENTRO-POB</option>
+<option value="20">ANEXO</option>
+<option value="99">OTROS</option>
+</select>
+                </div>
+                <input type="text" maxlength="100" class="form-control form-control-sm w-rest-180px val-regex-lngsp" placeholder="Localidad" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="100" data-val-regex="La localidad solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="NombreLocalidadEmpl" name="NombreLocalidadEmpl" value="" />
+            </div>
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="CodigoTipoLocalidadEmpl" data-valmsg-replace="true"></span>
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="NombreLocalidadEmpl" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-12 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-130px" for="ReferenciaEmpl">Referencia:</label>
+            <input maxlength="100" class="form-control form-control-sm w-rest-130px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="100" data-val-regex="La referencia solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" id="ReferenciaEmpl" name="ReferenciaEmpl" value="" />
+            <span class="w-ml-130px text-danger field-validation-valid" data-valmsg-for="ReferenciaEmpl" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-12 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-130px">Ubigeo:</label>
+            <div class="w-rest-130px">
+                <div class="d-inline-block">
+                    <div class="input-group input-group-sm">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text" style="min-width: 110px !important; max-width: 110px !important;">Departamento *</span>
+                        </div>
+                        <select class="form-control form-control-sm" style="min-width: 170px !important; max-width: 170px !important;" data-val="true" data-val-required="Campo obligatorio" id="UbigeoDepartamento" name="UbigeoDepartamento">
+                            <option value="">Seleccione</option>
+                        <option value="01">AMAZONAS</option>
+<option value="02">ANCASH</option>
+<option value="03">APURIMAC</option>
+<option value="04">AREQUIPA</option>
+<option value="05">AYACUCHO</option>
+<option value="06">CAJAMARCA</option>
+<option value="07">CALLAO</option>
+<option value="08">CUSCO</option>
+<option value="33">EXTRANJERO</option>
+<option value="09">HUANCAVELICA</option>
+<option value="10">HUANUCO</option>
+<option value="11">ICA</option>
+<option value="12">JUNIN</option>
+<option value="13">LA LIBERTAD</option>
+<option value="14">LAMBAYEQUE</option>
+<option selected="selected" value="15">LIMA</option>
+<option value="16">LORETO</option>
+<option value="17">MADRE DE DIOS</option>
+<option value="18">MOQUEGUA</option>
+<option value="19">PASCO</option>
+<option value="20">PIURA</option>
+<option value="21">PUNO</option>
+<option value="22">SAN MARTIN</option>
+<option value="23">TACNA</option>
+<option value="24">TUMBES</option>
+<option value="25">UCAYALI</option>
+</select>
+                    </div>
+                    <span class="text-danger field-validation-valid" data-valmsg-for="UbigeoDepartamento" data-valmsg-replace="true"></span>
+                </div>
+
+                <div class="d-inline-block">
+                    <div class="input-group input-group-sm">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text" style="min-width: 80px !important; max-width: 80px !important;">Provincia *</span>
+                        </div>
+                        <select class="form-control form-control-sm" data-url="/Maestro/ObtenerProvincia" style="min-width: 200px !important; max-width: 200px !important;" data-val="true" data-val-required="Campo obligatorio" id="UbigeoProvincia" name="UbigeoProvincia">
+                            <option value="">Seleccione</option>
+                        <option value="02">BARRANCA</option>
+<option value="03">CAJATAMBO</option>
+<option value="05">CA&#xD1;ETE</option>
+<option value="04">CANTA</option>
+<option value="06">HUARAL</option>
+<option value="07">HUAROCHIRI</option>
+<option value="08">HUAURA</option>
+<option selected="selected" value="01">LIMA</option>
+<option value="09">OYON</option>
+<option value="10">YAUYOS</option>
+</select>
+                    </div>
+                    <span class="text-danger field-validation-valid" data-valmsg-for="UbigeoProvincia" data-valmsg-replace="true"></span>
+                </div>
+
+                <div class="d-inline-block">
+                    <div class="input-group input-group-sm">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text" style="min-width: 80px !important; max-width: 80px !important;">Distrito *</span>
+                        </div>
+                        <select class="form-control form-control-sm" data-url="/Maestro/ObtenerDistrito" style="min-width: 200px !important; max-width: 200px !important;" data-val="true" data-val-required="Campo obligatorio" id="UbigeoDistrito" name="UbigeoDistrito">
+                            <option value="">Seleccione</option>
+                        <option value="02">ANCON</option>
+<option value="03">ATE</option>
+<option value="04">BARRANCO</option>
+<option value="05">BRE&#xD1;A</option>
+<option value="06">CARABAYLLO</option>
+<option value="07">CHACLACAYO</option>
+<option value="08">CHORRILLOS</option>
+<option value="09">CIENEGUILLA</option>
+<option value="10">COMAS</option>
+<option value="11">EL AGUSTINO</option>
+<option value="12">INDEPENDENCIA</option>
+<option value="13">JESUS MARIA</option>
+<option value="14">LA MOLINA</option>
+<option value="15">LA VICTORIA</option>
+<option value="01">LIMA</option>
+<option selected="selected" value="16">LINCE</option>
+<option value="17">LOS OLIVOS</option>
+<option value="18">LURIGANCHO</option>
+<option value="19">LURIN</option>
+<option value="20">MAGDALENA DEL MAR</option>
+<option value="22">MIRAFLORES</option>
+<option value="23">PACHACAMAC</option>
+<option value="24">PUCUSROSA</option>
+<option value="21">PUEBLO LIBRE</option>
+<option value="25">PUENTE PIEDRA</option>
+<option value="26">PUNTA HERMOSA</option>
+<option value="27">PUNTA NEGRA</option>
+<option value="28">RIMAC</option>
+<option value="29">SAN BARTOLO</option>
+<option value="30">SAN BORJA</option>
+<option value="31">SAN ISIDRO</option>
+<option value="32">SAN MARIA DE LURIGANCHO</option>
+<option value="33">SAN MARIA DE MIRAFLORES</option>
+<option value="34">SAN LUIS</option>
+<option value="35">SAN MARTIN DE PORRES</option>
+<option value="36">SAN MIGUEL</option>
+<option value="37">SANTA ANITA</option>
+<option value="38">SANTA MARIA DEL MAR</option>
+<option value="39">SANTA ROSA</option>
+<option value="40">SANTIAGO DE SURCO</option>
+<option value="41">SURQUILLO</option>
+<option value="42">VILLA EL SALVADOR</option>
+<option value="43">VILLA MARIA DEL TRIUNFO</option>
+</select>
+                    </div>
+                    <span class="text-danger field-validation-valid" data-valmsg-for="UbigeoDistrito" data-valmsg-replace="true"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <hr>
+        </div>
+    </div>
+
+
+    <div class="row mt-2 mb-2">
+        <div class="col-md-12">
+            <h6>Representante Legal de la Empresa</h6>
+        </div>
+    </div>
+
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="RptaLegalApePaterno">Apellido Paterno: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px alfabeticoCompleto" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="RptaLegalApePaterno" name="RptaLegalApePaterno" value="PEREZ" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalApePaterno" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="RptaLegalApeMaterno">Apellido Materno: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="RptaLegalApeMaterno" name="RptaLegalApeMaterno" value="GARCIA" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalApeMaterno" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="RptaLegalNombre1">Primer Nombre: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="RptaLegalNombre1" name="RptaLegalNombre1" value="MARIA" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalNombre1" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="RptaLegalNombre2">Segundo Nombre:</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" id="RptaLegalNombre2" name="RptaLegalNombre2" value="ELENA" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalNombre2" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px">Tipo de Documento: *</label>
+            <div class="input-group w-rest-150px">
+                <select class="validar-campo form-control form-control-sm w-100" data-children="#RptaLegalDocNum" data-validar-tipo="DocumentoIdentidad" data-validar-tipo-campo="#RptaLegalDocNum" data-oldvalue="0" data-val="true" data-val-regex="Ingresar solo n&#xFA;meros" data-val-regex-pattern="^[0-9]*$" id="RptaLegalTipoDocumento" name="RptaLegalTipoDocumento">
+                    <option value="">Seleccione</option>
+                <option selected="selected" value="0">DNI - DNI</option>
+<option value="1">CE - CARNET DE EXTRANJER&#xCD;A</option>
+<option value="2">CMP - CARNET MILITAR Y POLICIAL</option>
+<option value="3">LAT - LIBRETA ADOLESCENTES TRAB</option>
+<option value="4">PAS - PASAPORTE</option>
+<option value="9">CSREF - CARNE SOLICITANTE DE REFUGIO</option>
+<option value="5">INX - INEXIS/AFILIA</option>
+<option value="7">CIRREE - CARNE DE RELACIONES EXTERIORES</option>
+<option value="6">PTP - PERMISO TEMP. DE PERMANENCIA</option>
+<option value="8">CIE - CEDULA IDENTIDAD DE EXTRANJERO</option>
+<option value="10">CPP - CARNE PERMISO TEMP PERMANENCIA</option>
+</select>
+            </div>
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalTipoDocumento" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="RptaLegalDocNum">Nro. documento: *</label>
+            <input type="text" class="form-control form-control-sm w-rest-150px val-regex-solo-numeros" placeholder="N° de Documento" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-length-min="8" data-val-required="Campo obligatorio" id="RptaLegalDocNum" maxlength="10" name="RptaLegalDocNum" value="12345678" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalDocNum" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="CorreoLegal">Correo Electr&#xF3;nico: *</label>
+            <input maxlength="60" class="form-control form-control-sm w-rest-150px" type="email" data-val="true" data-val-email="Correo electr&#xF3;nico inv&#xE1;lido" data-val-length="Longitud incorrecta" data-val-length-max="60" data-val-length-min="10" data-val-required="Campo obligatorio" id="CorreoLegal" name="CorreoLegal" value="contacto@ejemplo.pe" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CorreoLegal" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="RptaLegalCorreoElectronico">Confirmar Correo Electr&#xF3;nico: *</label>
+            <input maxlength="60" class="form-control form-control-sm w-rest-150px" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="50" data-val-length-min="1" data-val-required="Campo obligatorio" id="RptaLegalCorreoElectronico" name="RptaLegalCorreoElectronico" value="" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="RptaLegalCorreoElectronico" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm w-150px-fixed justify-content-start">Teléfono fijo: *</label>
+            <div class="w-rest-160px">
+                <div class="input-group input-group-sm">
+                    <div class="input-group-append w-100px">
+                        <select id="selectTelefonoLegal" class="cbo-control form-control form-control-sm w-100" name="PrefTelefonoRptaLegal">
+                            <option value="" selected="selected">Seleccione</option>
+                        <option value="01">01-Lima</option>
+<option value="041">041-Amazonas </option>
+<option value="042">042-San Martin</option>
+<option value="043">043-Ancash</option>
+<option value="044">044-La Libertad</option>
+<option value="051">051-Puno</option>
+<option value="052">052-Tacna</option>
+<option value="053">053-Moquegua</option>
+<option value="054">054-Arequipa</option>
+<option value="056">056-Ica</option>
+<option value="061">061-Ucayali</option>
+<option value="062">062-Huanuco</option>
+<option value="063">063-Pasco</option>
+<option value="064">064-Junin</option>
+<option value="065">065-Loreto</option>
+<option value="066">066-Ayacucho</option>
+<option value="067">067-Huancavelica</option>
+<option value="072">072-Tumbes</option>
+<option value="073">073-Piura</option>
+<option value="074">074-Lambayeque</option>
+<option value="076">076-Cajamarca</option>
+<option value="082">082-Madre de Dios</option>
+<option value="083">083-Apurimac</option>
+<option value="084">084-Cusco</option>
+</select>
+                    </div>
+                    <input type="text" id="telefonoLegal" class="form-control form-control-sm input-group-custom w-50" data-val="true" data-val-regex="Ingresar solo n&#xFA;meros" data-val-regex-pattern="^[0-9]*$" name="TelefonoLegal" value="" />
+                </div>
+            </div>
+
+            <span class="w-ml-150px w-120px-fixed d-inline-block field-validation-valid" data-valmsg-for="PrefTelefonoRptaLegal" data-valmsg-replace="true"></span>
+            <span class="w-120px-fixed text-right d-inline-block field-validation-valid" data-valmsg-for="TelefonoLegal" data-valmsg-replace="true"></span>
+            <label class="w-120px-fixed text-right d-inline-block" id="dniVal" style="color: red"><span></span></label>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px">Celular: *</label>
+            <div class="col-md-9 form-inline mb-0">
+                <input id="CelularRptaLegalId" class="form-control form-control-sm integer" style="width:18rem !important;" maxlength="9" autocomplete="off" type="text" name="CelularRptaLegal" value="900000002" />
+            </div>
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CelularRptaLegal" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="CargoLegal">Cargo: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="El cargo solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" data-val-required="Campo obligatorio" id="CargoLegal" name="CargoLegal" value="GERENTE GENERAL" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CargoLegal" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <hr>
+        </div>
+    </div>
+
+    <div class="row mt-2 mb-2">
+        <div class="col-md-12">
+            <h6>Datos del Contacto</h6>
+        </div>
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="PaternoRecomendo">Apellido Paterno: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="PaternoRecomendo" name="PaternoRecomendo" value="LOPEZ" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="PaternoRecomendo" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="MaternoRecomendo">Apellido Materno: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="MaternoRecomendo" name="MaternoRecomendo" value="SOTO" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="MaternoRecomendo" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="PrimerNombreRecomendo">Primer Nombre: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" data-val-required="Campo obligatorio" id="PrimerNombreRecomendo" name="PrimerNombreRecomendo" value="ROSA" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="PrimerNombreRecomendo" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="SegundoNombreRecomendo">Segundo Nombre:</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-solo-letras" onkeyup="this.value = this.value.toUpperCase();" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="Usar solo letras" data-val-regex-pattern="^[a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;.\- ]&#x2B;$" id="SegundoNombreRecomendo" name="SegundoNombreRecomendo" value="MARIA" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="SegundoNombreRecomendo" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px">Tipo de Documento: *</label>
+            <div class="input-group w-rest-150px">
+                <select class="validar-campo form-control form-control-sm w-100" data-children="#NumeroDocumentoRecomendo" data-validar-tipo="DocumentoIdentidad" data-validar-tipo-campo="#NumeroDocumentoRecomendo" data-oldvalue="0" data-val="true" data-val-regex="Ingresar solo n&#xFA;meros" data-val-regex-pattern="^[0-9]*$" data-val-required="Campo obligatorio" id="TipoDocumentoRecomendo" name="TipoDocumentoRecomendo">
+                    <option value="">Seleccione</option>
+                <option selected="selected" value="0">DNI - DNI</option>
+<option value="1">CE - CARNET DE EXTRANJER&#xCD;A</option>
+<option value="2">CMP - CARNET MILITAR Y POLICIAL</option>
+<option value="3">LAT - LIBRETA ADOLESCENTES TRAB</option>
+<option value="4">PAS - PASAPORTE</option>
+<option value="9">CSREF - CARNE SOLICITANTE DE REFUGIO</option>
+<option value="5">INX - INEXIS/AFILIA</option>
+<option value="7">CIRREE - CARNE DE RELACIONES EXTERIORES</option>
+<option value="6">PTP - PERMISO TEMP. DE PERMANENCIA</option>
+<option value="8">CIE - CEDULA IDENTIDAD DE EXTRANJERO</option>
+<option value="10">CPP - CARNE PERMISO TEMP PERMANENCIA</option>
+</select>
+            </div>
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="TipoDocumentoRecomendo" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="NumeroDocumentoRecomendo">Nro. documento: *</label>
+            <input type="text" class="form-control form-control-sm w-rest-150px val-regex-solo-numeros" placeholder="N° de Documento" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="10" data-val-length-min="8" data-val-required="Campo obligatorio" id="NumeroDocumentoRecomendo" maxlength="10" name="NumeroDocumentoRecomendo" value="87654321" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="NumeroDocumentoRecomendo" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="CorreoRecomendo">Correo Electr&#xF3;nico: *</label>
+            <input class="form-control form-control-sm w-rest-150px" type="email" data-val="true" data-val-email="Correo electr&#xF3;nico inv&#xE1;lido" data-val-length="Longitud incorrecta" data-val-length-max="60" data-val-length-min="10" data-val-required="Campo obligatorio" id="CorreoRecomendo" maxlength="60" name="CorreoRecomendo" value="ROSA001.C@GMAIL.COM" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CorreoRecomendo" data-valmsg-replace="true"></span>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="CorreoElecConfirmar">Confirmar Correo Electr&#xF3;nico: *</label>
+            <input class="form-control form-control-sm w-rest-150px" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="50" data-val-length-min="1" data-val-required="Campo obligatorio" id="CorreoElecConfirmar" maxlength="50" name="CorreoElecConfirmar" value="" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CorreoElecConfirmar" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm w-150px-fixed justify-content-start">Teléfono fijo: *</label>
+            <div class="w-rest-160px">
+                <div class="input-group input-group-sm">
+                    <div class="input-group-append w-100px">
+                        <select id="selectTelefonoRecomendo" class="cbo-control form-control form-control-sm w-100" name="PrefTelefonoRec">
+                            <option value="" selected="selected">Seleccione</option>
+                        <option value="01">01-Lima</option>
+<option value="041">041-Amazonas </option>
+<option value="042">042-San Martin</option>
+<option value="043">043-Ancash</option>
+<option value="044">044-La Libertad</option>
+<option value="051">051-Puno</option>
+<option value="052">052-Tacna</option>
+<option value="053">053-Moquegua</option>
+<option value="054">054-Arequipa</option>
+<option value="056">056-Ica</option>
+<option value="061">061-Ucayali</option>
+<option value="062">062-Huanuco</option>
+<option value="063">063-Pasco</option>
+<option value="064">064-Junin</option>
+<option value="065">065-Loreto</option>
+<option value="066">066-Ayacucho</option>
+<option value="067">067-Huancavelica</option>
+<option value="072">072-Tumbes</option>
+<option value="073">073-Piura</option>
+<option value="074">074-Lambayeque</option>
+<option value="076">076-Cajamarca</option>
+<option value="082">082-Madre de Dios</option>
+<option value="083">083-Apurimac</option>
+<option value="084">084-Cusco</option>
+</select>
+                    </div>
+                    <input type="text" id="telefonoRecomendo" class="form-control form-control-sm input-group-custom w-50" data-val="true" data-val-regex="Ingresar solo n&#xFA;meros" data-val-regex-pattern="^[0-9]*$" name="TelefonoRecomendo" value="" />
+                </div>
+            </div>
+
+            <span class="w-ml-150px w-120px-fixed d-inline-block field-validation-valid" data-valmsg-for="PrefTelefonoRec" data-valmsg-replace="true"></span>
+            <span class="w-120px-fixed text-right d-inline-block field-validation-valid" data-valmsg-for="TelefonoRecomendo" data-valmsg-replace="true"></span>
+            <label class="w-120px-fixed text-right d-inline-block" id="dniVal" style="color: red"><span></span></label>
+        </div>
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1 offset-sm-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px">Celular: *</label>
+            <div class="col-md-9 form-inline mb-0">
+                <input id="CelularRec" class="form-control form-control-sm integer" style="width:18rem !important;" maxlength="9" autocomplete="off" type="text" name="CelularRec" value="900000003" />
+            </div>
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CelularRec" data-valmsg-replace="true"></span>
+
+        </div>
+    </div>
+    <div class="row p-0 mb-2">
+        <div class="form-group form-inline col-sm-5 mb-0 p-0 pl-1">
+            <label class="col-form-label col-form-label-sm justify-content-start w-150px" for="CargoRecomendo">Cargo: *</label>
+            <input maxlength="30" class="form-control form-control-sm w-rest-150px val-regex-lngsp" type="text" data-val="true" data-val-length="Longitud incorrecta" data-val-length-max="30" data-val-length-min="2" data-val-regex="El cargo solo acepta n&#xFA;meros, letras, apostrofes(&#x27;), guiones(-), slash(/) y punto(.)" data-val-regex-pattern="^[0-9a-zA-Z&#xF1;&#xD1;&#xE4;&#xC4;&#xEB;&#xCB;&#xEF;&#xCF;&#xF6;&#xD6;&#xFC;&#xDC;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xE1;&#xE9;&#xED;&#xF3;&#xFA;&#xC1;&#xC9;&#xCD;&#xD3;&#xDA;&#xC2;&#xCA;&#xCE;&#xD4;&#xDB;&#xE2;&#xEA;&#xEE;&#xF4;&#xFB;&#xE0;&#xE8;&#xEC;&#xF2;&#xF9;&#xC0;&#xC8;&#xCC;&#xD2;&#xD9;_&#x27;-/. ]&#x2B;$" data-val-required="Campo obligatorio" id="CargoRecomendo" name="CargoRecomendo" value="ASISTENTE CONTABLE" />
+            <span class="w-ml-150px text-danger field-validation-valid" data-valmsg-for="CargoRecomendo" data-valmsg-replace="true"></span>
+        </div>
+    </div>
+
+        <div class="row">
+            <div class="col-md-12">
+                <hr>
+            </div>
+        </div>
+        <div class="row">
+                <div class="d-none d-sm-block d-md-block d-lg-block d-xl-block">&nbsp;</div>
+                <div class="col-sm-3 ml-1">
+                    Pago en Línea con Doble Firma:
+                        <input type="checkbox" disabled="disabled" data-val="true" data-val-required="The *Pago en l&#xED;nea con doble firma: field is required." id="BolSegundaFirma" name="BolSegundaFirma" value="true">
+                </div>
+            <div>
+                        <button id="btnSolicitarPago2daFirma" type="button" class="btn btn-sm btn-primary ml-1" onclick="VerificarSolicitudPago2daFirma('N');"> Solicitar Activación</button>
+            </div>
+        </div>
+    <br /><br />
+        <div class="row form-group mt-2 mb-1">
+            <div class="col-sm-12">
+                <label class="text-danger"> Antes de guardar, verifique que los datos ingresados son correctos.</label>
+            </div>
+        </div>
+        <div class="row form-group mb-2">
+            <div class="col-sm-12">
+                <label class="text-danger"> Los campos marcados con asterisco (*) son obligatorios.</label>
+            </div>
+        </div>
+    <div class="row">
+        <div class="col-sm-12 col-md-7 col-lg-5 offset-md-5 offset-lg-7 text-left">
+
+                <button type="submit" class="btn btn-sm btn-info ml-1" id="btn-empleador-guardar">Guardar</button>
+                    <a class="btn btn-sm btn-secondary" href="/Sistema">Cancelar</a>
+        </div>
+    </div>
+
+<input name="__RequestVerificationToken" type="hidden" value="CfDJ8TOKEN-DE-PRUEBA" /><input name="BolSegundaFirma" type="hidden" value="false"></form>
+
+<div id="MensajeModalRegistroPrimeraFirma" style="display:none;">
+</div>
+
+
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-container"></div>
+
+
+    <div id="keypad" class="container-keypad keypad rounded border-secondary"></div>
+    
+    <div id="loader">
+        <img alt="loader" src="/afpnet/img/loader.gif" />
+    </div>
+
+    <a href="#" class="top-button">
+        <i class="fa fa-arrow-circle-up"></i>
+    </a>
+
+    
+
+
+        <script>
+            $('#CodigoTipoViaEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#NombreViaEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#NumeroViaEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#DepartamentoEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#InteriorEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#ManzanaEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#LoteEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#KilometroEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#CodigoTipoLocalidadEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#NombreLocalidadEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#ReferenciaEmplSunat').prop('disabled', true).addClass('disabled');
+            $('#UbigeoDepartamentoSunat').prop('disabled', true).addClass('disabled');
+            $('#UbigeoProvinciaSunat').prop('disabled', true).addClass('disabled');
+            $('#UbigeoDistritoSunat').prop('disabled', true).addClass('disabled');
+        </script>
+    <script type="text/javascript">
+
+        $(document).ready(function () {
+
+            const camposTelefonos = [
+                {
+                    selectId: '#selectTelefonoEmpresa',
+                    inputId: '#telefonoEmpresa'
+                },
+                {
+                    selectId: '#selectTelefonoLegal',
+                    inputId: '#telefonoLegal'
+                },
+                {
+                    selectId: '#selectTelefonoRecomendo',
+                    inputId: '#telefonoRecomendo'
+                }
+            ];
+
+            camposTelefonos.forEach(function (campo) {
+                const select = $(campo.selectId);
+                const input = $(campo.inputId);
+
+                function ajustarMaxlength() {
+                    const codigoArea = select.val();
+
+                    if (codigoArea === "01") {
+                        input.attr('maxlength', '7');
+                    } else if (codigoArea !== "") {
+                        input.attr('maxlength', '6');
+                    }
+                }
+
+                // Ejecutar al inicio
+                ajustarMaxlength();
+
+                // Ejecutar en cada cambio
+                select.on('change', ajustarMaxlength);
+            });
+
+
+
+            $.each($("select.validar-campo"), function () {
+                configurarValidarDocumentoIdentidad(this);
+            });
+
+            var mm = '';
+            if ('2' != '4' && mm.length != 0) {
+                showAFPModal({ title: 'Recordatorio', size: 'md', message: '' });
+            }
+
+            var mensaje = "";
+            var resultado = "";
+
+            if (mensaje != "") {
+                if (resultado == "1") {
+                    showAFPModal({ size: 'md', type: 's', message: mensaje });
+                } else {
+                    showAFPModal({ size: 'md', type: 'd', message: mensaje });
+                }
+            }
+
+            //Titulo
+            localStorage.setItem('Title', 'Actualización de Datos de la Empresa');
+
+            $("#form-modificar-empleador").submit(function(evt) {
+                if (!validarParametros()) {
+                    evt.preventDefault();
+                    return false;
+                }
+                if (!validarCampos()) {
+                    evt.preventDefault();
+                    return false;
+                }
+            });
+        });
+
+        function validarCampos() {
+            let mensaje = "";
+
+            // Grupo 1: Teléfono Empresa o Celular Empresa
+            const telefonoEmpresa = $("#telefonoEmpresa").val().trim();
+            const prefijoEmpresa = $("#selectTelefonoEmpresa").val();
+            const celularEmpresa = $("#celularEmpresa").val().trim();
+
+            if (!telefonoEmpresa && !celularEmpresa) {
+                mensaje += "<li>Debe ingresar Teléfono Empresa o Celular Empresa.</li>";
+            } else if ((telefonoEmpresa !== "" && prefijoEmpresa === "") || (telefonoEmpresa === "" && prefijoEmpresa !== "")) {
+                mensaje += "<li>Debe seleccionar un prefijo para el Teléfono Empresa.</li>";
+            }
+
+            // Grupo 2: Teléfono Representante Legal o Celular
+            const telefonoLegal = $("#telefonoLegal").val().trim();
+            const prefijoLegal = $("#selectTelefonoLegal").val();
+            const celularLegal = $("#CelularRptaLegalId").val().trim();
+
+            if (!telefonoLegal && !celularLegal) {
+                mensaje += "<li>Debe ingresar Teléfono Rep. Legal o Celular Rep. Legal.</li>";
+            } else if ((telefonoLegal !== "" && prefijoLegal === "") || (telefonoLegal === "" && prefijoLegal !== "")) {
+                mensaje += "<li>Debe seleccionar un prefijo para el Teléfono Rep. Legal.</li>";
+            }
+
+            // Grupo 3: Teléfono de quien recomendó o Celular
+            const telefonoRec = $("#telefonoRecomendo").val().trim();
+            const prefijoRec = $("#selectTelefonoRecomendo").val();
+            const celularRec = $("#CelularRec").val().trim();
+
+            if (!telefonoRec && !celularRec) {
+                mensaje += "<li>Debe ingresar Teléfono Contacto o Celular Contacto.</li>";
+            } else if ((telefonoRec !== "" && prefijoRec === "") || (telefonoRec === "" && prefijoRec !== "")) {
+                mensaje += "<li>Debe seleccionar un prefijo para el Teléfono Contacto.</li>";
+            }
+
+            if (mensaje.length > 0) {
+                showAFPModal({ size: 'md', type: 'w', message: mensaje });
+                return false; // Evita el envío del formulario
+            }
+            return true;
+
+        }
+        function validarParametros() {
+            var ruc = $.trim($('#EmpresaRuc').val());
+            var tipoDocRecomendado = $.trim($('#TipoDocumentoRecomendo').val());
+            var docRecomendado = $.trim($('#NumeroDocumentoRecomendo').val());
+            var mensaje = '';
+
+            if (!validarRuc(ruc)) {
+                showAFPModal({ type: 'w', message: 'El N° de RUC: ' + ruc + ' es inválido.' });
+                return false;
+            }
+            if (tipoDocRecomendado == 0) {
+                if (parseInt(docRecomendado) != docRecomendado) {
+                    showAFPModal({ type: 'w', message: 'El N° de DNI: ' + docRecomendado + ' es inválido.' });
+                    return false;
+                }
+            }
+
+
+            if ($('#RazonSocial').val() != undefined) {
+                var razonSoc = $.trim($('#RazonSocial').val());
+                if (razonSoc.length == 0)
+                    mensaje = mensaje + '<li>Debe de ingresar la razón social.</li>';
+            }
+
+            if ('True' && $('#CodigoTipoViaEmpl').val() != undefined) {
+                var NumViaEmpl = $.trim($('#NumeroViaEmpl').val());
+                var DeptoEmpl = $.trim($('#DepartamentoEmpl').val());
+                var IntEmpl = $.trim($('#InteriorEmpl').val());
+                var MzEmpl = $.trim($('#ManzanaEmpl').val());
+                var LoteEmpl = $.trim($('#LoteEmpl').val());
+                var KmEmpl = $.trim($('#KilometroEmpl').val());
+
+                if (NumViaEmpl.length == 0 &&
+                    DeptoEmpl.length == 0 &&
+                    IntEmpl.length == 0 &&
+                    MzEmpl.length == 0 &&
+                    LoteEmpl.length == 0 &&
+                    KmEmpl.length == 0) {
+                    mensaje = mensaje +
+                        '<li>El ingreso del cualquiera de los siguientes campos: Número, Dpto., Kilómetro, Manzana, Lote o Interior de Dirección de Empleador es obligatorio.</li>';
+                }
+            }
+            if (mensaje.length != 0) {
+                showAFPModal({ size: 'md', type: 'w', message: mensaje });
+                return false;
+            }
+
+            return true;
+        }
+
+        var optionTemplate = '<option value="{0}">{1}</option>';
+        var optionTemplateEmpty = '<option value="">-- Seleccione --</option>';
+
+
+        $(document).on('change',
+            '#UbigeoDepartamento',
+            function(e) {
+                var url = $('#UbigeoProvincia').data('url');
+                var valor = $(this).val();
+                $('#UbigeoProvincia').html(optionTemplateEmpty);
+                $.ajax({
+                    url: url,
+                    data: {
+                        parametro: valor
+                    }
+                }).done(function(data) {
+                    $.each(data,
+                        function() {
+                            var option = optionTemplate
+                                .replace('{0}', this.value)
+                                .replace('{1}', this.text);
+                            $('#UbigeoProvincia').append(option);
+                        });
+                    $('#UbigeoProvincia').trigger('change');
+                });
+
+            });
+
+        $(document).on('change',
+            '#UbigeoProvincia',
+            function() {
+                var url = $('#UbigeoDistrito').data('url');
+
+                var valor = $('#UbigeoDepartamento').val() + $(this).val();
+                $('#UbigeoDistrito').html(optionTemplateEmpty);
+
+                $.ajax({
+                    url: url,
+                    data: {
+                        parametro: valor
+                    }
+                }).done(function(data) {
+                    $.each(data,
+                        function() {
+                            var option = optionTemplate
+                                .replace('{0}', this.value)
+                                .replace('{1}', this.text);
+                            $('#UbigeoDistrito').append(option);
+                        })
+                });
+
+            });
+
+
+        CargarComboUbigeoSUNAT(optionTemplateEmpty, optionTemplate);
+
+        function CargarComboUbigeoSUNAT(optionTemplateEmpty, optionTemplate) {
+
+            $(document).on('change',
+                '#UbigeoDepartamentoSunat',
+                function() {
+                    var url = $('#UbigeoProvinciaSunat').data('url');
+                    var valor = $(this).val();
+
+                    $('#UbigeoProvinciaSunat').html(optionTemplateEmpty);
+                    $.ajax({
+                        url: url,
+                        data: {
+                            parametro: valor
+                        }
+                    }).done(function(data) {
+                        $.each(data,
+                            function() {
+                                var option = optionTemplate
+                                    .replace('{0}', this.value)
+                                    .replace('{1}', this.text);
+                                $('#UbigeoProvinciaSunat').append(option);
+                            });
+                        $('#UbigeoProvinciaSunat').trigger('change');
+                    });
+                });
+
+            $(document).on('change',
+                '#UbigeoProvinciaSunat',
+                function() {
+                    var url = $('#UbigeoDistritoSunat').data('url');
+                    var valor = $('#UbigeoDepartamentoSunat').val() + $(this).val();
+
+                    $('#UbigeoDistritoSunat').html(optionTemplateEmpty);
+
+                    $.ajax({
+                        url: url,
+                        data: {
+                            parametro: valor
+                        }
+                    }).done(function(data) {
+                        $.each(data,
+                            function() {
+                                var option = optionTemplate
+                                    .replace('{0}', this.value)
+                                    .replace('{1}', this.text);
+                                $('#UbigeoDistritoSunat').append(option);
+                            })
+                    });
+                });
+        }
+
+        var req_vi = $("input[type=checkbox]:checked").val();
+        if (req_vi == undefined) {
+            $("input[type=checkbox]:checked").val(false);
+        }
+
+        function VerificarSolicitudPago2daFirma(vieneDeRegistrarSolicitud) {
+            if (vieneDeRegistrarSolicitud == '') {
+                vieneDeRegistrarSolicitud = 'N';
+            }
+            var formData = new FormData();
+            formData.append('vieneDeRegistrarSolicitud', vieneDeRegistrarSolicitud);
+            $.ajax({
+                url: '/GestionarEmpleador/Empleador/VerificarSolicitudPago2daFirma',
+                async: true,
+                data: formData,
+                method: 'POST',
+                processData: false,
+                contentType: false,
+                beforeSend: function() {
+                    mostrarLoader();
+                },
+                success: function(response) {
+                    showAFPModal({ size: 'md', type: 's', message: response });
+                },
+                error: function(xhr) {
+                    notificacionError("No se ha podido realizar la operación, por favor intente nuevamente, gracias.");
+                },
+                complete: function(data) {
+                    esconderLoader();
+                }
+            });
+        }
+
+        function SolicitarAccionPago2daFirma() {
+
+        }
+        //QA-17(OCT) CPU: Corrección.
+        //Cuando la caja de texto se pone vacía y se graba, en el campo db se graba CERO.
+        //Luego de mensaje de grabado con éxito, la caja de texto se muestra vacía, y debe aparecer el CERO.
+        //Para los demás valores normal se muestran.
+        //Esto solo cuando se modifica y es usuario SIS.
+        $("#NumeroMaxConsultasRENIEC").change(function ()
+        {
+            if ($.trim($('#NumeroMaxConsultasRENIEC').val()) == "") {
+                $('#NumeroMaxConsultasRENIEC').val(0);
+            }
+        });
+        //
+
+        //QA-22 Testing 2da.Ite.CPU: Correcciones.
+        $(document).keydown(function (e) {
+            var doPrevent;
+            if (e.keyCode == 8) {
+                var d = e.srcElement || e.target;
+                if (d.tagName.toUpperCase() == 'INPUT' || d.tagName.toUpperCase() == 'TEXTAREA') {
+                    doPrevent = d.readOnly || d.disabled;
+                }
+                else
+                    doPrevent = true;
+            }
+            else
+                doPrevent = false;
+
+            if (doPrevent)
+                e.preventDefault();
+        });
+        //
+    </script>
+
+
+
+
+    <script type="text/javascript">
+
+        function sessionKeepAlive() {
+            var user = 665866;
+            $.get("/Seguridad/KeepAlive", function (data) { });
+        }
+
+        $(document).ready(function () {
+            $(document).ajaxError(function (event, jqxhr, settings) {
+                if (jqxhr.status == 408) {
+                    url = '/Empleador/IniciarSesion',
+                    window.location.href = url;
+                }
+            });
+
+            $.sessionTimeout({
+                logoutButton: 'Cerrar Sesión',
+                keepAliveButton: 'Seguir conectado',
+                logoutUrl: '/seguridad/cerrarsesionasync',
+                redirUrl: '/error/PaginaExpirada',
+                //warnAfter: 10e3,
+                //redirAfter: 10e3 + 10e3,
+                warnAfter: 1735000,
+                redirAfter: 1795000,
+                countdownBar: true
+            });
+
+            if ($("#Guid").val() == "" || $("#pageNumber").val() != "0") $("#pageNumber").val("0");
+               var tituloTemporal = "Modificar Datos Empresa";
+
+            //Titulo acorde a las opciones del menu , cuando no se defina uno desde la vista
+            var menuItem = $('.list-group-item.menu-item.active').first().html();
+            var menuParent = $('.list-group-item.menu-item.active').first().parent().prev().text();
+            var titulo = $('.page-header-title').first()[0].innerText;
+
+            if (localStorage.getItem("Title") != null && localStorage.getItem("Title") != undefined && localStorage.getItem("Title") != "") {
+                $('.page-header-title').first()[0].innerText = localStorage.getItem("Title");
+                localStorage.removeItem("Title");
+            }
+            else {
+                if (tituloTemporal != null && tituloTemporal != undefined && tituloTemporal != "") {
+                    $('.page-header-title').first()[0].innerText = tituloTemporal;
+                } else {
+                    if (menuParent != null && menuParent != undefined && menuParent != "")
+                        $('.page-header-title').first()[0].innerText = menuParent + ' > ' + menuItem;
+                    else
+                        $('.page-header-title').first()[0].innerText = menuItem;
+                }
+            }
+        });
+    </script>
+
+
+
+        <script type="text/javascript">
+            var strli = "";
+            var strul_ini = '<li>'
+            var strul_fin = '</li>';
+
+            if (xa == 0)
+                $("#btnnotificacion *").prop('disabled', true);
+
+            function agregarNotificacion(notificacion) {
+                /*AGREGAR COMPORTAMIENTO DE CAMPROSA*/
+                $('#strulnotify').html('');
+                xa++;
+                $('#noticontar').text(xa);
+
+                creacionFecha = new Date(notificacion.creacionFecha);
+
+                var fechaNotif = [(creacionFecha.getFullYear() + ""), ((creacionFecha.getMonth() + 1) + "").padStart(2, "0"), (creacionFecha.getDate() + "").padStart(2, "0")].join('/');
+                mensajeNotificacion = notificacion.mensaje + " <br><span style='color: #1C3997; font-weight:bold;'>" + fechaNotif + " " + formatAMPM(creacionFecha) + "</span>";
+
+
+                if (xa > 0) {
+
+                    strli += strul_ini + mensajeNotificacion + strul_fin;
+                    $('#strulnotify').append(strli);
+                    $('a').css('color', '#0056b3');
+                    $('#hdcontadornoti').val(xa);
+                }
+                $("#btnnotificacion *").prop('disabled', false);
+                btnNotificacion = true;
+            }
+
+             function LimpiarNotificacion() {
+                if (btnNotificacion) {
+                    connection.invoke("LimpiarNotificaciones", "n0VRwV2RRe041bmwa1bQ")
+                        .catch(function (err) {
+                            console.log(err);
+                        });
+
+                    $('#noticontar').text(0);
+                    strli = "";
+                    xa = 0;
+                    btnNotificacion = false;
+                }
+            }
+
+            $('#btnnotificacion').click(function (e) {
+                LimpiarNotificacion();
+            });
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl("/notificaciones")
+                .configureLogging(signalR.LogLevel.Error)
+                .build();
+
+
+            connection.on("RecibirNotificacion", function (notificacion) {
+                var mensajeInicial = notificacion.mensaje;
+                var mensajeFinal = mensajeInicial.replace('<a', '<a class="alert-link"');
+                notificacionInfo(mensajeFinal);
+                agregarNotificacion(notificacion);
+            });
+
+            connection.start().then(function () {
+                connection.invoke("Matricula", "n0VRwV2RRe041bmwa1bQ")
+                    .catch(function (err) { console.log(err); })
+                    .then(function (result) {
+                        $.each(result, function (index, value) {
+                            agregarNotificacion(value);
+                        });
+                    });
+            });
+
+        </script>
+
+
+    <script>
+        function validarIE() {
+            var userAgent = window.navigator.userAgent.toLowerCase();
+            var es_chrome = userAgent.indexOf('chrome') > -1;
+            var es_firefox = userAgent.indexOf('firefox') > -1;
+            var es_opera = userAgent.indexOf('opera') > -1;
+            var es_ie = userAgent.indexOf("msie") > -1;
+            var es_ie11 = userAgent.indexOf("trident") > -1;
+
+            if (es_chrome) {
+                return false;
+            }
+            else if (es_firefox) {
+                return false;
+            }
+            else if (es_opera) {
+                return false;
+            }
+            else if (es_ie) {
+                return true;
+            }
+            else if (es_ie11) {
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+
+        function reloadBrowser(ie) {
+            if (ie) {
+                window.location.reload();
+            }
+            else {
+                window.location = window.location;
+            }
+        }
+
+        function AFPnetObtenerDisponibilidad() {
+            var esIE = validarIE();
+
+            $.ajax({
+                url: '/AFPnet/Disponibilidad',
+                method: 'POST',
+                cache: false,
+                error: function (xhr) {
+                    hideAFPModal();
+                },
+                success: function (response) {
+                    try {
+                        var data = JSON.parse(response);
+
+                        if (data.Item1 <= 0) {
+                            $('body div.modal-backdrop.show.modal-warn-afp-disp').remove();
+                            hideAFPModal('modal-warn-afp-disp');
+                            showAFPModal({ id: 'modal-warn-afp-disp', type: 'd', title: 'Mensaje del Sistema', message: configurarMensajeAFPModal(data.Item2) });
+                        }
+                        else if (data.Item1 == 1) {
+                            $('body div.modal-backdrop.show.modal-warn-afp-disp').remove();
+                            hideAFPModal('modal-warn-afp-disp');
+                            showAFPModal({ id: 'modal-warn-afp-disp', type: 'w', size: 'md', title: 'Mensaje del Sistema', message: configurarMensajeAFPModal(data.Item2) });
+                        }
+                    }
+                    catch (e) {
+                        hideAFPModal('modal-warn-afp-disp');
+                        reloadBrowser(esIE);
+                    }
+                }
+            });
+        }
+
+        AFPnetObtenerDisponibilidad();
+        setInterval(AFPnetObtenerDisponibilidad, 60000);
+    </script>
+</body>
+</html>

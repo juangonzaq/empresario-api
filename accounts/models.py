@@ -97,6 +97,31 @@ class OrganizationQuerySet(models.QuerySet):
         return self.filter(memberships__user=user, memberships__is_active=True)
 
 
+class TaxRegime(models.TextChoices):
+    """Régimen tributario. **No sale de ninguna fuente que sincronicemos**:
+    la ficha RUC no lo publica. Lo declara la empresa una vez y se guarda,
+    porque de él dependen los vencimientos que le tocan —el RER y el RUS no
+    presentan Declaración Jurada Anual— y preguntarlo en cada carga de pantalla
+    convertía el calendario en un formulario."""
+
+    RUS = "RUS", "Nuevo RUS"
+    RER = "RER", "Régimen Especial"
+    RMT = "RMT", "MYPE Tributario"
+    RG = "RG", "Régimen General"
+
+
+def _nuevo_token_calendario() -> str:
+    """Token de suscripción al calendario.
+
+    Va en la URL de un .ics que abren Google Calendar y Apple Calendar, y esos
+    clientes **no mandan cabeceras de autenticación**: la URL es la única
+    credencial. Por eso es largo y aleatorio, y se puede rotar sin tocar nada
+    más. Lo que expone es un cronograma derivado del dígito del RUC, no datos
+    contables, pero aun así no debe ser adivinable a partir del RUC.
+    """
+    return secrets.token_urlsafe(32)
+
+
 class Organization(BaseModel):
     """Una empresa. El RUC es la llave con la que se cruzan los datos
     scrapeados, así que es único en todo el sistema."""
@@ -106,6 +131,19 @@ class Organization(BaseModel):
     )
     name = models.CharField("razón social", max_length=200, blank=True)
     trade_name = models.CharField("nombre comercial", max_length=200, blank=True)
+    tax_regime = models.CharField(
+        "régimen tributario",
+        max_length=3,
+        choices=TaxRegime,
+        blank=True,
+        help_text="Vacío mientras la empresa no lo haya declarado.",
+    )
+    calendar_token = models.CharField(
+        max_length=64,
+        unique=True,
+        default=_nuevo_token_calendario,
+        help_text="Credencial de la URL de suscripción al calendario.",
+    )
 
     objects = OrganizationQuerySet.as_manager()
 
@@ -118,6 +156,14 @@ class Organization(BaseModel):
     @property
     def display_name(self) -> str:
         return self.trade_name or self.name or self.ruc
+
+    def rotar_token_calendario(self) -> str:
+        """Invalida la URL de suscripción anterior. Es el único remedio si esa
+        URL se compartió por error: no se puede «cerrar sesión» en el
+        calendario de otro."""
+        self.calendar_token = _nuevo_token_calendario()
+        self.save(update_fields=["calendar_token", "updated_at"])
+        return self.calendar_token
 
 
 class Role(models.TextChoices):

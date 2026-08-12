@@ -56,6 +56,32 @@ def run_sync_job(job_id: str) -> dict[str, Any]:
     }
 
 
+@shared_task(
+    name="sync.run_step",
+    # Misma cola que el trabajo completo: un reintento abre el mismo navegador
+    # contra el mismo portal, y debe competir por los mismos huecos.
+    queue="scraping",
+    time_limit=60 * 120,
+    soft_time_limit=60 * 115,
+)
+def run_sync_step(job_id: str, step_key: str) -> dict[str, Any]:
+    """Relanza un paso suelto de un trabajo que ya terminó."""
+    from .services import execute_step
+
+    job = SyncJob.objects.filter(pk=job_id).select_related("organization").first()
+    if job is None:
+        logger.warning("Trabajo de sincronización %s ya no existe", job_id)
+        return {"status": "desaparecido"}
+    execute_step(job, step_key)
+    step = next((s for s in job.steps if s.get("key") == step_key), {})
+    return {
+        "status": job.status,
+        "paso": step_key,
+        "paso_status": step.get("status", ""),
+        "ruc": job.organization.ruc,
+    }
+
+
 @shared_task(name="sync.sync_all")
 def sync_all(kind: str = JobKind.DAILY) -> dict[str, Any]:
     """Encola la sincronización de todas las empresas conectadas.

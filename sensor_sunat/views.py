@@ -16,7 +16,29 @@ def _ip_cliente(request) -> str:
     return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR", "")
 
 
+def _autenticado(request) -> bool:
+    """¿Viene de alguien con sesión en la aplicación?
+
+    La vista nació como lead magnet abierto, y el tope por IP está para que
+    nadie la use de scraper. Ahora también la consume el calendario de la
+    aplicación, donde el mismo usuario cambia de régimen o marca la planilla
+    varias veces seguidas: con veinte peticiones por hora y una oficina detrás
+    de una sola IP, la pantalla se quedaría sin calendario a media tarde. Se
+    valida el token de verdad —no basta con que venga la cabecera— porque si
+    no, saltarse el límite sería tan fácil como inventarse una.
+    """
+    from rest_framework.exceptions import AuthenticationFailed
+    from rest_framework_simplejwt.authentication import JWTAuthentication
+
+    try:
+        return JWTAuthentication().authenticate(request) is not None
+    except AuthenticationFailed:
+        return False
+
+
 def _throttled(request) -> bool:
+    if _autenticado(request):
+        return False
     clave = f"calendario_throttle:{_ip_cliente(request)}"
     actual = cache.get(clave, 0)
     if actual >= THROTTLE_MAX:

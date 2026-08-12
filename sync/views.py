@@ -8,10 +8,11 @@ from rest_framework.response import Response
 
 from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
 
-from .models import SyncJob
+from .models import JobKind, SyncJob
 from .serializers import SyncJobSerializer
-from .models import JobKind
-from .services import NotConnected, start_sync
+from .services import (
+    CannotRetry, NotConnected, retry_step, run_source, start_sync,
+)
 
 
 class SyncStatusView(OrganizationAPIView):
@@ -40,6 +41,42 @@ class SyncStartView(ManagedOrganizationAPIView):
             return Response(
                 {"detail": str(exc)}, status=status.HTTP_409_CONFLICT
             )
+        return Response(
+            SyncJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
+        )
+
+
+class SyncStepRetryView(ManagedOrganizationAPIView):
+    """Relanza un solo paso del último trabajo.
+
+    Cuando una fuente se cae —el portal no respondió, la clave estaba mal—
+    repetir la sincronización entera para arreglar ese paso obliga a rehacer
+    los que sí funcionaron, y el histórico de comprobantes tarda minutos.
+    """
+
+    def post(self, request: Request, key: str) -> Response:
+        try:
+            job = retry_step(request.organization, key, requested_by=request.user)
+        except CannotRetry as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(
+            SyncJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
+        )
+
+
+class SyncSourceRunView(ManagedOrganizationAPIView):
+    """Vuelve a traer UNA fuente a pedido, haya ido bien o mal la última vez.
+
+    Es lo que necesita el botón «sincronizar» de cada sección: preguntar por lo
+    último de SUNAFIL tiene sentido justo cuando la sincronización anterior
+    terminó bien, que es cuando el reintento por paso se niega a correr.
+    """
+
+    def post(self, request: Request, key: str) -> Response:
+        try:
+            job = run_source(request.organization, key, requested_by=request.user)
+        except CannotRetry as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(
             SyncJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
         )

@@ -1,0 +1,17 @@
+Reporte de deuda en el SPP
+
+20604442533 - PATTERN GROUP S.A.C
+
+Devengue Máximo          : 2026-06
+Fecha de Actualización   : 2026-07-31
+Disclaimer               : Estimado empleador recuerde que mantener deudas por los aportes de sus trabajadores impide que estos puedan acceder al seguro de invalidez, sobrevivencia y gastos de sepelio en caso lo requieran.
+Emisor                   : AFPnet
+ID                       : 
+
+CUSPP|Tipo y número de documento de identidad|Nombre Afiliado|AFP|Devengue|Tipo de Deuda|Deuda Nominal Fondo|Deuda Nominal Seguro|Deuda Nominal Comision|Estado Cobranza|Origen Deuda
+
+Leyenda:
+- Tipo de deuda: (C: Cierta / P: Presunta)
+- Estado cobranza: (A: Administrativa / J: Judicial)
+- Origen de deuda: (1: DSP, 2: Boleta, 3: Decl Empl, 4: Defecto, 5: Con historia, 6: Sin historia, 7: REPRO antiguo/Fraccionamiento)
+

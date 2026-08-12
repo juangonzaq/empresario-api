@@ -53,8 +53,19 @@ class CadenceTests(TestCase):
     def test_monthly_brings_the_slow_sources(self):
         keys = {s.key for s in sources_for(Cadence.MONTHLY)}
         self.assertEqual(
-            keys, {"itf", "compliance", "ruc_profile", "remype", "analytics"}
+            keys,
+            # AFPnet entra aquí y no en la diaria por dos motivos: los aportes
+            # se declaran una vez al mes, y cada sesión cuesta que una persona
+            # resuelva un CAPTCHA.
+            {"itf", "compliance", "ruc_profile", "remype", "analytics", "afpnet"},
         )
+
+    def test_afpnet_no_se_pide_a_diario(self):
+        """Su sesión la abre una persona resolviendo un CAPTCHA: pedirla cada
+        día la gastaría sin traer nada nuevo."""
+        keys = {s.key for s in sources_for(Cadence.DAILY)}
+
+        self.assertNotIn("afpnet", keys)
 
     def test_manual_and_initial_run_everything(self):
         for cadence in (Cadence.MANUAL, Cadence.INITIAL):
@@ -189,9 +200,12 @@ class StaleJobTests(TestCase):
             organization=self.org, kind=JobKind.INITIAL, status=status,
             steps=[{"key": "cpe", "label": "Comprobantes", "status": "pendiente"}],
         )
-        # created_at es auto_now_add: se reescribe sin pasar por save().
+        # Las marcas de tiempo son automáticas: se reescriben sin pasar por
+        # save(). Abandonado significa «nadie lo ha tocado desde entonces», así
+        # que el que cuenta para el plazo es `updated_at`.
         SyncJob.objects.filter(pk=job.pk).update(
-            created_at=timezone.now() - datetime.timedelta(hours=hours)
+            created_at=timezone.now() - datetime.timedelta(hours=hours),
+            updated_at=timezone.now() - datetime.timedelta(hours=hours),
         )
         return job
 
@@ -233,6 +247,19 @@ class StaleJobTests(TestCase):
         abandoned.refresh_from_db()
         # La pantalla no debe seguir mostrando un paso «trayendo…» eterno.
         self.assertEqual(abandoned.steps[0]["status"], "omitido")
+
+    def test_a_long_job_that_keeps_advancing_is_not_reclaimed(self):
+        """La primera carga de una empresa con años de comprobantes puede
+        pasar de tres horas. Mientras siga marcando pasos está viva, y matarla
+        a mitad dejaría los datos incompletos sin que nadie lo pidiera."""
+        viejo = self._abandoned(status=JobStatus.RUNNING, hours=5)
+        viejo.mark_step("cpe", "ejecutando")  # acaba de dar señales de vida
+
+        result = sync_all(JobKind.DAILY)
+
+        viejo.refresh_from_db()
+        self.assertEqual(viejo.status, JobStatus.RUNNING)
+        self.assertEqual(result["omitidas_en_curso"], 1)
 
     def test_manual_start_also_releases_a_stuck_job(self):
         from sync.services import start_sync

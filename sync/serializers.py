@@ -11,6 +11,19 @@ class SyncJobSerializer(serializers.ModelSerializer):
     finished_steps = serializers.IntegerField(read_only=True)
     current_step = serializers.DictField(read_only=True, allow_null=True)
     ruc = serializers.CharField(source="organization.ruc", read_only=True)
+    steps = serializers.SerializerMethodField()
+
+    def get_steps(self, job: SyncJob) -> list[dict]:
+        """Los pasos con la marca de si se pueden relanzar solos.
+
+        La decide el modelo, no el frontend: así el botón «Reintentar» aparece
+        exactamente cuando el endpoint lo aceptaría, en lugar de repetir la
+        regla en dos sitios y que se desincronicen.
+        """
+        return [
+            {**step, "retryable": job.can_retry(step.get("key", ""))}
+            for step in job.steps
+        ]
 
     class Meta:
         model = SyncJob

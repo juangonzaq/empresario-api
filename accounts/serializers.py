@@ -124,8 +124,10 @@ class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
         fields = ("id", "ruc", "name", "trade_name", "display_name", "role",
-                  "sunat_status")
-        read_only_fields = ("id", "ruc")
+                  "sunat_status", "tax_regime")
+        # El régimen se declara desde el calendario (PATCH /api/calendario/mio/),
+        # que es donde se nota su efecto; aquí solo se lee.
+        read_only_fields = ("id", "ruc", "tax_regime")
 
     def get_role(self, org: Organization) -> str | None:
         roles = self.context.get("roles") or {}
