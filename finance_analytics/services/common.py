@@ -41,6 +41,19 @@ THRESHOLDS = {
     "lost_client_share_pct": _env_number("FINANCE_LOST_CLIENT_SHARE_PCT", 10),
     # Months without invoicing after which a customer counts as stopped.
     "lost_client_gap_months": int(_env_number("FINANCE_LOST_CLIENT_GAP_MONTHS", 3)),
+    # Semáforo de gastos sobre ingresos: hasta dónde llega el verde y hasta
+    # dónde el amarillo (en % de los ingresos netos PEN del mes); más allá es
+    # rojo. Los de personal siguen la regla práctica 25-28 / 30-35 / 40.
+    "semaforo_personal_verde_pct": _env_number("FINANCE_SEMAFORO_PERSONAL_VERDE_PCT", 28),
+    "semaforo_personal_amarillo_pct": _env_number("FINANCE_SEMAFORO_PERSONAL_AMARILLO_PCT", 35),
+    "semaforo_otros_verde_pct": _env_number("FINANCE_SEMAFORO_OTROS_VERDE_PCT", 40),
+    "semaforo_otros_amarillo_pct": _env_number("FINANCE_SEMAFORO_OTROS_AMARILLO_PCT", 55),
+    "semaforo_total_verde_pct": _env_number("FINANCE_SEMAFORO_TOTAL_VERDE_PCT", 70),
+    "semaforo_total_amarillo_pct": _env_number("FINANCE_SEMAFORO_TOTAL_AMARILLO_PCT", 85),
+    # Aporte EsSalud a cargo del empleador: 9 % de la remuneración, con base
+    # mínima la RMV vigente. Configurables porque cambian por decreto.
+    "essalud_pct": _env_number("FINANCE_ESSALUD_PCT", 9),
+    "rmv_pen": _env_number("FINANCE_RMV_PEN", 1130),
 }
 
 

@@ -56,6 +56,10 @@ SUNAT = {
 }
 MEDIA_SUNAT_DIR = BASE_DIR / "media" / "sunat_raw"   # raw ZIPs and TXTs on local disk
 
+# Archivos subidos (contratos firmados, etc.). No se sirven por URL pública:
+# cada descarga pasa por un endpoint con permisos de la empresa.
+MEDIA_ROOT = BASE_DIR / "media"
+
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
@@ -113,6 +117,9 @@ INSTALLED_APPS = [
     'sunat_intel',
     'finance_analytics',
     'afpnet',
+    'colaboradores',
+    'payroll',
+    'financials',
 ]
 
 MIDDLEWARE = [

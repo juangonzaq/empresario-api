@@ -48,3 +48,4 @@ tzlocal==5.4.4
 urllib3==2.7.0
 vine==5.1.0
 wcwidth==0.8.2
+reportlab==5.0.0

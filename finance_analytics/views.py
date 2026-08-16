@@ -20,14 +20,19 @@ from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
 
 from . import cache as overview_cache
 
-from .models import SEVERITY_RANK, ActionStatus, AlertStatus, FinanceAlert
+from .models import (
+    SEVERITY_RANK, ActionStatus, AlertStatus, FinanceAlert, InvoiceOverride,
+    ManualEntry,
+)
 from .services import ai_summary as ai_service
 from .services import consistency as consistency_service
 from .services import itf_summary as itf_service
 from .services import parties as parties_service
+from .services import semaforo as semaforo_service
 from .services.common import clean_name, money
 from .services.cpe_summary import (
-    credit_notes_detail, load_documents, period_documents_for,
+    credit_notes_detail, document_amount, document_is_edited, load_documents,
+    load_manual_entries, manual_entry_payload, period_documents_for,
     purchases_summary, sales_summary,
 )
 
@@ -36,12 +41,20 @@ logger = logging.getLogger(__name__)
 
 class SalesView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(sales_summary(load_documents(request.ruc)))
+        return Response(
+            sales_summary(
+                load_documents(request.ruc), manual=load_manual_entries(request.ruc)
+            )
+        )
 
 
 class PurchasesView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(purchases_summary(load_documents(request.ruc)))
+        return Response(
+            purchases_summary(
+                load_documents(request.ruc), manual=load_manual_entries(request.ruc)
+            )
+        )
 
 
 class CustomersView(OrganizationAPIView):
@@ -112,8 +125,9 @@ class OverviewView(OrganizationAPIView):
 
     def _build(self, request: Request) -> dict:
         docs = load_documents(request.ruc)
-        sales = sales_summary(docs, months=13)
-        purchases = purchases_summary(docs, months=13)
+        manual = load_manual_entries(request.ruc)
+        sales = sales_summary(docs, months=13, manual=manual)
+        purchases = purchases_summary(docs, months=13, manual=manual)
         customers = parties_service.customers_analysis(docs)
         itf = itf_service.itf_summary(request.ruc)
         consistency = consistency_service.consistency_analysis(docs, request.ruc)
@@ -136,6 +150,9 @@ class OverviewView(OrganizationAPIView):
                 "series": sales["periods"],
             },
             "purchases": {"current": purchases["current"], "series": purchases["periods"]},
+            # Semáforo de gastos sobre ingresos: personal (planilla), otros
+            # gastos (compras + manuales) y el total, en % del mes.
+            "semaforo": semaforo_service.semaforo(request.ruc, sales, purchases),
             "customers": customers["summary"],
             "top_customers": customers["parties"][:5],
             "itf": {
@@ -221,6 +238,197 @@ class AlertStatusView(ManagedOrganizationAPIView):
         return Response(_alert_payload(alert))
 
 
+class _InvalidField(Exception):
+    """Un campo del cuerpo no pasó la validación; el mensaje va al cliente."""
+
+
+def _parse_amount(raw, *, minimum_exclusive: bool = True) -> "Decimal":
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        amount = Decimal(str(raw)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        raise _InvalidField("Monto no válido.")
+    if amount >= Decimal("1e14") or amount < 0 or (minimum_exclusive and amount == 0):
+        raise _InvalidField("El monto debe ser mayor a cero.")
+    return amount
+
+
+def _parse_direction(raw) -> dict:
+    if raw not in Direction.values:
+        raise _InvalidField("Indica si es ingreso (emitida) o gasto (recibida).")
+    return {"direction": raw}
+
+
+def _parse_entry_date(raw) -> dict:
+    import datetime
+
+    try:
+        entry_date = datetime.date.fromisoformat(str(raw or ""))
+    except ValueError:
+        raise _InvalidField("Indica la fecha como aaaa-mm-dd.")
+    return {
+        "entry_date": entry_date,
+        "period": f"{entry_date.year}{entry_date.month:02d}",
+    }
+
+
+def _parse_description(raw) -> dict:
+    description = str(raw or "").strip()
+    if not description:
+        raise _InvalidField("Describe el registro.")
+    return {"description": description[:200]}
+
+
+def _parse_currency(raw) -> dict:
+    currency = str(raw or "PEN").strip().upper() or "PEN"
+    if len(currency) != 3 or not currency.isalpha():
+        raise _InvalidField("Moneda no válida.")
+    return {"currency": currency}
+
+
+_MANUAL_REQUIRED = {
+    "direction": _parse_direction,
+    "entry_date": _parse_entry_date,
+    "description": _parse_description,
+}
+
+
+def _validate_manual_fields(data: dict, *, partial: bool) -> tuple[dict, str | None]:
+    """Valida el cuerpo de un registro manual. Con ``partial`` solo se
+    validan las claves presentes (PATCH); sin él, todas son obligatorias."""
+    fields: dict = {}
+    try:
+        for key, parse in _MANUAL_REQUIRED.items():
+            if key in data or not partial:
+                fields.update(parse(data.get(key)))
+        if "amount" in data or not partial:
+            fields["amount"] = _parse_amount(data.get("amount"))
+        if "currency" in data:
+            fields.update(_parse_currency(data.get("currency")))
+        if "counterparty" in data:
+            fields["counterparty"] = str(data.get("counterparty") or "").strip()[:200]
+        if "note" in data:
+            fields["note"] = str(data.get("note") or "").strip()
+    except _InvalidField as error:
+        return {}, str(error)
+    return fields, None
+
+
+class ManualEntriesView(ManagedOrganizationAPIView):
+    """Registros manuales de ingresos y gastos.
+
+    Se listan y crean aquí; ya vienen incluidos en los totales de ventas,
+    compras y en el detalle de cada mes. La sincronización con SUNAT nunca
+    los toca.
+    """
+
+    def get(self, request: Request) -> Response:
+        entries = ManualEntry.objects.filter(account_ruc=request.ruc)
+        period = (request.query_params.get("period") or "").strip()
+        if period:
+            entries = entries.filter(period=period)
+        direction = (request.query_params.get("direction") or "").strip()
+        if direction:
+            entries = entries.filter(direction=direction)
+        return Response([manual_entry_payload(e) for e in entries])
+
+    def post(self, request: Request) -> Response:
+        fields, error = _validate_manual_fields(request.data, partial=False)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        entry = ManualEntry.objects.create(account_ruc=request.ruc, **fields)
+        overview_cache.invalidate(request.ruc)
+        return Response(manual_entry_payload(entry), status=status.HTTP_201_CREATED)
+
+
+class ManualEntryView(ManagedOrganizationAPIView):
+    def patch(self, request: Request, pk: str) -> Response:
+        entry = get_object_or_404(ManualEntry, pk=pk, account_ruc=request.ruc)
+        fields, error = _validate_manual_fields(request.data, partial=True)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        for name, value in fields.items():
+            setattr(entry, name, value)
+        entry.save(update_fields=[*fields, "updated_at"])
+        overview_cache.invalidate(request.ruc)
+        return Response(manual_entry_payload(entry))
+
+    def delete(self, request: Request, pk: str) -> Response:
+        entry = get_object_or_404(ManualEntry, pk=pk, account_ruc=request.ruc)
+        entry.delete()
+        overview_cache.invalidate(request.ruc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class InvoiceOverrideView(ManagedOrganizationAPIView):
+    """Corrección manual de un comprobante extraído de SUNAT.
+
+    PATCH crea o actualiza la corrección; DELETE la elimina y el comprobante
+    vuelve a mostrar los valores de SUNAT. El original nunca se toca, así
+    que ninguna sincronización chanca lo editado.
+    """
+
+    def patch(self, request: Request, pk: str) -> Response:
+        invoice = get_object_or_404(
+            ElectronicInvoice, pk=pk, account_ruc=request.ruc
+        )
+        data = request.data
+        fields: dict = {}
+
+        if "total_amount" in data:
+            raw = data.get("total_amount")
+            if raw is None or raw == "":
+                fields["total_amount"] = None
+            else:
+                try:
+                    fields["total_amount"] = _parse_amount(raw, minimum_exclusive=False)
+                except _InvalidField as error:
+                    return Response(
+                        {"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST
+                    )
+        if "counterparty" in data:
+            fields["counterparty"] = str(data.get("counterparty") or "").strip()[:200]
+        if "note" in data:
+            fields["note"] = str(data.get("note") or "").strip()
+
+        if not fields:
+            return Response(
+                {"detail": "No hay nada que corregir."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        override, _ = InvoiceOverride.objects.update_or_create(
+            invoice=invoice,
+            defaults={"account_ruc": request.ruc, **fields},
+        )
+        if override.total_amount is None and not override.counterparty and not override.note:
+            # Quedó vacía: mejor no dejar una corrección fantasma.
+            override.delete()
+            override = None
+        overview_cache.invalidate(request.ruc)
+        return Response(_override_payload(override))
+
+    def delete(self, request: Request, pk: str) -> Response:
+        invoice = get_object_or_404(
+            ElectronicInvoice, pk=pk, account_ruc=request.ruc
+        )
+        InvoiceOverride.objects.filter(invoice=invoice).delete()
+        overview_cache.invalidate(request.ruc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _override_payload(override: InvoiceOverride | None) -> dict | None:
+    if override is None:
+        return None
+    return {
+        "total_amount": money(override.total_amount),
+        "counterparty": override.counterparty,
+        "note": override.note,
+        "updated_at": override.updated_at,
+    }
+
+
 class InvoiceInsightView(OrganizationAPIView):
     """Normalized detail of one comprobante for the UI drawer.
 
@@ -230,11 +438,17 @@ class InvoiceInsightView(OrganizationAPIView):
 
     def get(self, request: Request, pk: str) -> Response:
         invoice = get_object_or_404(
-            ElectronicInvoice.objects.select_related("extract"),
+            ElectronicInvoice.objects.select_related("extract", "override"),
             pk=pk, account_ruc=request.ruc,
         )
         extract = getattr(invoice, "extract", None)
+        override = getattr(invoice, "override", None)
         return Response({
+            # Corrección manual, si existe: sobrevive a las sincronizaciones
+            # y `effective_total` ya la tiene aplicada.
+            "override": _override_payload(override),
+            "edited": document_is_edited(invoice),
+            "effective_total": money(document_amount(invoice)),
             "id": str(invoice.id),
             "direction": invoice.direction,
             "document_class": invoice.document_class,

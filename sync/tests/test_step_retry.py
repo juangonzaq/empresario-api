@@ -72,7 +72,9 @@ class RetryStepTests(TestCase):
         # Y lo que sí trajo datos se queda como estaba: ese es el ahorro.
         self.assertEqual(pasos["cpe"]["status"], StepStatus.DONE)
         self.assertEqual(job.status, JobStatus.QUEUED)
-        self.enqueue.assert_called_once_with((str(job.id), "mailbox"))
+        # Sin cadencia: reintentar un paso fallido repite lo que ese paso
+        # tenía que hacer, con la del trabajo al que pertenece.
+        self.enqueue.assert_called_once_with((str(job.id), "mailbox", None))
 
     def test_un_paso_omitido_tambien_se_puede_relanzar(self):
         """Se omiten justo los que quedaron sin correr por culpa de otro."""

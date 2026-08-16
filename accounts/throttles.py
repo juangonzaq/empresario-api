@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.throttling import SimpleRateThrottle
 
 
@@ -80,11 +81,21 @@ class SunatConexionThrottle(SimpleRateThrottle):
 
     Además, repetir intentos con credenciales equivocadas puede acabar
     bloqueando el usuario SOL del cliente en SUNAT.
+
+    Cuenta **solo lo que escribe**. Preguntar «¿cómo está mi conexión?» no
+    cuesta nada ni toca SUNAT, y sin embargo gastaba cupo: el perfil y el
+    onboarding hacen ese GET al abrirse, así que entrar cuatro veces a mirar
+    dejaba al usuario sin poder conectar durante una hora —justo cuando venía
+    a conectar—. Los límites de la casa (``UserRateThrottle``) siguen cubriendo
+    la lectura.
     """
 
     scope = "sunat_conexion"
 
     def get_cache_key(self, request, view):
+        # None significa «no cuentes esta petición» para DRF.
+        if request.method in SAFE_METHODS:
+            return None
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
             return f"throttle_sunat_ip_{self.get_ident(request)}"

@@ -30,13 +30,32 @@ from sunat_mailbox.services.constants import (
     USER_AGENT,
 )
 
-from .constants import API_BASE, API_MARKER, APP_ORIGIN, MENU_PATH, MENU_URL
+from .constants import (
+    API_BASE, API_MARKER, APP_ORIGIN, CAMPAIGN_OVERLAYS, CLICK_TIMEOUT_MS,
+    MENU_PATH, MENU_URL,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class CompliancePortalError(RuntimeError):
     """Raised when the SOL login does not yield a compliance API token."""
+
+
+class ComplianceLoginRejected(CompliancePortalError):
+    """SOL no aceptó el usuario o la clave.
+
+    Se distingue del resto de fallos porque tiene una consecuencia que ninguno
+    de los demás debe provocar: marca la credencial de la empresa como
+    inválida y corta el resto de la sincronización. Insistir con una clave que
+    SUNAT acaba de rechazar puede bloquear el usuario SOL del cliente.
+
+    El único momento en que se puede afirmar eso es cuando el portal nos deja
+    en la pantalla de login. Que después se atragante un menú, cambie una
+    opción o se cruce una campaña no dice nada sobre la clave —y tratarlo como
+    si lo dijera le contaba al usuario que sus credenciales estaban mal
+    mientras el problema era un pop-up—.
+    """
 
 
 @dataclass
@@ -121,7 +140,58 @@ class CompliancePortalClient:
         page.fill("#txtUsuario", self.username)
         page.fill("#txtContrasena", self.password)
         page.click("#btnAceptar")
-        page.wait_for_url(lambda url: "loginMenuSol" not in url, timeout=self.timeout_ms)
+        try:
+            page.wait_for_url(
+                lambda url: "loginMenuSol" not in url, timeout=self.timeout_ms
+            )
+        except PlaywrightError as exc:
+            # Seguimos en la pantalla de login: SOL no nos dejó pasar. No se
+            # mira el texto del mensaje para decidirlo —cambia y se traduce—,
+            # sino el hecho de no haber salido de ahí.
+            raise ComplianceLoginRejected(
+                self._login_error(page)
+                or "SUNAT no aceptó el usuario o la clave SOL."
+            ) from exc
+
+    @staticmethod
+    def _login_error(page: Any) -> str:
+        """Lo que SOL escribe en pantalla al rechazar, si lo escribe."""
+        for selector in ("#spanMensaje", ".msgError", ".alert-danger"):
+            try:
+                elemento = page.locator(selector).first
+                if elemento.is_visible():
+                    texto = (elemento.inner_text() or "").strip()
+                    if texto:
+                        return texto[:300]
+            except PlaywrightError:
+                continue
+        return ""
+
+    @staticmethod
+    def _dismiss_campaigns(page: Any) -> None:
+        """Quita las campañas que SUNAT superpone al menú.
+
+        Se llama antes de cada clic y no una sola vez: la campaña no está al
+        terminar el login, aparece cuando le llega su respuesta, así que puede
+        interponerse a mitad del recorrido del menú.
+        """
+        try:
+            page.evaluate(
+                """(selectores) => {
+                    for (const selector of selectores) {
+                        for (const nodo of document.querySelectorAll(selector)) {
+                            nodo.remove();
+                        }
+                    }
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                }""",
+                list(CAMPAIGN_OVERLAYS),
+            )
+        except PlaywrightError:
+            # Limpiar es un apaño oportunista: si la página no deja evaluar
+            # ahora mismo, el clic siguiente dirá si de verdad hacía falta.
+            logger.debug("No se pudo limpiar la campaña de SUNAT", exc_info=True)
 
     def _open_compliance_app(self, page: Any, tokens: list[str]) -> None:
         """Walk the menu tree to "Calificación Vigente", which mints the token."""
@@ -129,6 +199,7 @@ class CompliancePortalClient:
         for index, label in enumerate(MENU_PATH):
             if tokens:
                 return  # the app is already open
+            self._dismiss_campaigns(page)
             upcoming = MENU_PATH[index + 1] if index + 1 < len(MENU_PATH) else None
             if upcoming and upcoming != label and self._last_visible(page, upcoming):
                 continue  # this level is already expanded
@@ -142,8 +213,28 @@ class CompliancePortalClient:
                     f"Menu option '{label}' was never shown. SUNAT may have moved "
                     "the Perfil de Cumplimiento entry; run with --headful to check."
                 )
-            element.click()
+            self._click_menu(page, element, label)
             page.wait_for_timeout(ATTEMPT_POLL_MS)
+
+    def _click_menu(self, page: Any, element: Any, label: str) -> None:
+        """Pulsa una opción del menú, aunque haya una campaña encima.
+
+        Primero se intenta el clic de verdad, que es el que más se parece a lo
+        que hace una persona. Si algo lo intercepta, se quita la capa y se
+        pulsa el nodo por JavaScript: ese clic no viaja por el puntero, así que
+        no hay capa que pueda comérselo. Quitar la campaña no bastaba —vuelve a
+        mostrarse sola, y cada intento fallido costaba media espera entera—.
+        """
+        try:
+            element.click(timeout=CLICK_TIMEOUT_MS)
+            return
+        except PlaywrightError:
+            logger.info(
+                "Clic en «%s» interceptado; se aparta la campaña y se pulsa "
+                "el nodo directamente", label,
+            )
+        self._dismiss_campaigns(page)
+        element.evaluate("nodo => nodo.click()")
 
     @staticmethod
     def _last_visible(page: Any, text: str) -> Any | None:

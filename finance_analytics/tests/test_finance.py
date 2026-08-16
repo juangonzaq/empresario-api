@@ -494,3 +494,285 @@ class BriefingTests(TenantAPITestCase):
         self.assertIn("Comprobantes electrónicos", labels)
         self.assertIn("Movimientos bancarios reportados", labels)
         self.assertIn("BANCO DE CREDITO", str(sources))
+
+
+@override_settings(SUNAT_RUC=RUC)
+class ManualEntryTests(TenantAPITestCase):
+    """Registros manuales: suman al total del mes y ninguna corrida los toca."""
+
+    def _create(self, **overrides):
+        payload = {
+            "direction": "emitida",
+            "entry_date": "2026-07-10",
+            "description": "Venta al contado sin comprobante",
+            "amount": "250.50",
+            **overrides,
+        }
+        return self.client.post(
+            reverse("finance_analytics:manual-entries"), payload, format="json"
+        )
+
+    def test_monthly_total_includes_manual_and_automatic(self):
+        make_doc(period="202607", total_amount=Decimal("1000"))
+        self._create()
+
+        data = self.client.get(reverse("finance_analytics:sales")).data
+        bucket = data["current"]["by_currency"]["PEN"]
+        self.assertEqual(bucket["manual"], 250.5)
+        self.assertEqual(bucket["manual_count"], 1)
+        # El neto del mes = comprobantes + registros manuales.
+        self.assertEqual(bucket["net"], 1250.5)
+
+    def test_manual_expense_goes_to_purchases_not_sales(self):
+        make_doc(period="202607", total_amount=Decimal("1000"))
+        self._create(direction="recibida", description="Compra de utiles")
+
+        sales = self.client.get(reverse("finance_analytics:sales")).data
+        purchases = self.client.get(reverse("finance_analytics:purchases")).data
+        self.assertEqual(sales["current"]["by_currency"]["PEN"]["manual"], 0)
+        self.assertEqual(
+            purchases["current"]["by_currency"]["PEN"]["manual"], 250.5
+        )
+
+    def test_month_with_only_manual_entries_appears(self):
+        response = self._create()
+        self.assertEqual(response.status_code, 201)
+        data = self.client.get(reverse("finance_analytics:sales")).data
+        self.assertEqual(data["latest_period"], "202607")
+        self.assertEqual(data["current"]["by_currency"]["PEN"]["net"], 250.5)
+
+    def test_period_documents_list_manual_entries_and_totals_match(self):
+        make_doc(period="202607", total_amount=Decimal("1000"))
+        self._create()
+        data = self.client.get(
+            reverse("finance_analytics:period-documents"),
+            {"period": "202607", "direction": "emitida", "currency": "PEN"},
+        ).data
+        self.assertEqual(len(data["manual_entries"]), 1)
+        self.assertEqual(data["manual_entries"][0]["origin"], "manual")
+        self.assertEqual(data["manual_entries"][0]["kind"], "ingreso")
+        self.assertEqual(data["totals"]["net"], 1250.5)
+        # Los comprobantes de SUNAT se distinguen de lo manual.
+        self.assertTrue(all(d["origin"] == "sunat" for d in data["documents"]))
+
+    def test_patch_moves_period_and_delete_removes_from_totals(self):
+        entry_id = self._create().data["id"]
+        patched = self.client.patch(
+            reverse("finance_analytics:manual-entry", args=[entry_id]),
+            {"entry_date": "2026-06-05", "amount": "100"},
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 200)
+        self.assertEqual(patched.data["period"], "202606")
+        self.assertEqual(patched.data["amount"], 100.0)
+
+        deleted = self.client.delete(
+            reverse("finance_analytics:manual-entry", args=[entry_id])
+        )
+        self.assertEqual(deleted.status_code, 204)
+        data = self.client.get(reverse("finance_analytics:sales")).data
+        self.assertIsNone(data["current"])
+
+    def test_rejects_bad_input(self):
+        self.assertEqual(self._create(amount="-5").status_code, 400)
+        self.assertEqual(self._create(amount="no").status_code, 400)
+        self.assertEqual(self._create(direction="inventada").status_code, 400)
+        self.assertEqual(self._create(entry_date="julio").status_code, 400)
+        self.assertEqual(self._create(description="  ").status_code, 400)
+
+
+@override_settings(SUNAT_RUC=RUC)
+class InvoiceOverrideTests(TenantAPITestCase):
+    """Correcciones a comprobantes de SUNAT: se aplican al leer y las
+    sincronizaciones no las chancan."""
+
+    def setUp(self):
+        self.invoice = make_doc(period="202607", total_amount=Decimal("1000"))
+        self.url = reverse(
+            "finance_analytics:invoice-override", args=[self.invoice.id]
+        )
+
+    def test_override_changes_totals_and_marks_row_as_edited(self):
+        response = self.client.patch(
+            self.url, {"total_amount": "800", "note": "Monto corregido"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = self.client.get(reverse("finance_analytics:sales")).data
+        self.assertEqual(data["current"]["by_currency"]["PEN"]["net"], 800.0)
+
+        docs = self.client.get(
+            reverse("finance_analytics:period-documents"),
+            {"period": "202607", "direction": "emitida", "currency": "PEN"},
+        ).data
+        self.assertTrue(docs["documents"][0]["edited"])
+        self.assertEqual(docs["documents"][0]["amount"], 800.0)
+
+    def test_override_survives_a_new_sync(self):
+        self.client.patch(self.url, {"total_amount": "800"}, format="json")
+        # La corrida diaria re-escribe el comprobante con lo que dice SUNAT.
+        ElectronicInvoice.objects.update_or_create(
+            account_ruc=self.invoice.account_ruc,
+            issuer_ruc=self.invoice.issuer_ruc,
+            document_type=self.invoice.document_type,
+            series=self.invoice.series,
+            number=self.invoice.number,
+            defaults={"total_amount": Decimal("1000"), "period": "202607"},
+        )
+        data = self.client.get(reverse("finance_analytics:sales")).data
+        self.assertEqual(data["current"]["by_currency"]["PEN"]["net"], 800.0)
+
+    def test_delete_restores_sunat_values(self):
+        self.client.patch(self.url, {"total_amount": "800"}, format="json")
+        self.assertEqual(self.client.delete(self.url).status_code, 204)
+        data = self.client.get(reverse("finance_analytics:sales")).data
+        self.assertEqual(data["current"]["by_currency"]["PEN"]["net"], 1000.0)
+
+    def test_insight_exposes_override_and_effective_total(self):
+        self.client.patch(
+            self.url, {"total_amount": "800", "counterparty": "CLIENTE REAL SAC"},
+            format="json",
+        )
+        data = self.client.get(
+            reverse("finance_analytics:invoice-insight", args=[self.invoice.id])
+        ).data
+        self.assertTrue(data["edited"])
+        self.assertEqual(data["effective_total"], 800.0)
+        self.assertEqual(data["override"]["counterparty"], "CLIENTE REAL SAC")
+        # El total original de SUNAT sigue visible para auditoría.
+        self.assertEqual(data["total_amount"], 1000.0)
+
+    def test_empty_override_is_removed(self):
+        self.client.patch(self.url, {"total_amount": "800"}, format="json")
+        response = self.client.patch(
+            self.url, {"total_amount": None, "note": ""}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data)
+        data = self.client.get(
+            reverse("finance_analytics:invoice-insight", args=[self.invoice.id])
+        ).data
+        self.assertFalse(data["edited"])
+
+
+@override_settings(SUNAT_RUC=RUC)
+class SemaforoTests(TenantAPITestCase):
+    """El semáforo de gastos: personal, otros gastos y total sobre ingresos."""
+
+    def _semaforo(self):
+        return self.client.get(reverse("finance_analytics:overview")).data["semaforo"]
+
+    def _fila(self, data, key):
+        return next(r for r in data["rows"] if r["key"] == key)
+
+    def test_calcula_los_tres_porcentajes_sobre_los_ingresos(self):
+        from colaboradores.models import Colaborador
+
+        make_doc(period="202607", total_amount=Decimal("10000"))
+        make_doc(
+            period="202607", direction=Direction.RECEIVED,
+            issuer_ruc="20111111111", total_amount=Decimal("3000"),
+        )
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Juana Pérez", document_number="45678912",
+            monthly_salary=Decimal("2700"),
+        )
+
+        data = self._semaforo()
+        self.assertEqual(data["ingresos_pen"], 10000.0)
+
+        # Personal = sueldo 2700 + EsSalud 9 % (243) = 2943 → 29.4 %.
+        personal = self._fila(data, "personal")
+        self.assertEqual(personal["amount_pen"], 2943.0)
+        self.assertEqual(personal["pct"], 29.4)
+        self.assertEqual(personal["estado"], "amarillo")
+        self.assertEqual(
+            [c["amount_pen"] for c in personal["breakdown"]], [2700.0, 243.0]
+        )
+        self.assertIn("EsSalud", personal["breakdown"][1]["label"])
+
+        otros = self._fila(data, "otros")
+        self.assertEqual(otros["pct"], 30.0)
+        self.assertEqual(otros["estado"], "verde")
+
+        total = self._fila(data, "total")
+        self.assertEqual(total["pct"], 59.4)
+        self.assertEqual(total["estado"], "verde")
+
+    def test_amarillo_y_rojo_segun_umbral_de_personal(self):
+        from colaboradores.models import Colaborador
+
+        make_doc(period="202607", total_amount=Decimal("10000"))
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Juana Pérez", document_number="45678912",
+            monthly_salary=Decimal("3000"),  # +EsSalud = 3270 → 32.7 %: amarillo
+        )
+        self.assertEqual(self._fila(self._semaforo(), "personal")["estado"], "amarillo")
+
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Pedro Rojas", document_number="87654321",
+            monthly_salary=Decimal("2000"),  # juntos 5450 → 54.5 %: rojo
+        )
+        from finance_analytics import cache as overview_cache
+        overview_cache.invalidate(RUC)
+        self.assertEqual(self._fila(self._semaforo(), "personal")["estado"], "rojo")
+
+    def test_essalud_respeta_el_piso_de_la_rmv(self):
+        from colaboradores.models import Colaborador
+
+        make_doc(period="202607", total_amount=Decimal("10000"))
+        # Sueldo por debajo de la RMV (1130): el aporte se calcula sobre la
+        # RMV, no sobre el sueldo registrado.
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Juana Pérez", document_number="45678912",
+            monthly_salary=Decimal("800"),
+        )
+        personal = self._fila(self._semaforo(), "personal")
+        essalud = next(c for c in personal["breakdown"] if "EsSalud" in c["label"])
+        self.assertEqual(essalud["amount_pen"], round(1130 * 0.09, 2))
+
+    def test_los_gastos_manuales_entran_a_otros_gastos(self):
+        make_doc(period="202607", total_amount=Decimal("10000"))
+        self.client.post(
+            reverse("finance_analytics:manual-entries"),
+            {
+                "direction": "recibida", "entry_date": "2026-07-05",
+                "description": "Compra sin comprobante", "amount": "500",
+            },
+            format="json",
+        )
+        self.assertEqual(self._fila(self._semaforo(), "otros")["pct"], 5.0)
+
+    def test_sin_ingresos_no_hay_base_y_se_dice(self):
+        from colaboradores.models import Colaborador
+
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Juana Pérez", document_number="45678912",
+            monthly_salary=Decimal("2700"),
+        )
+        data = self._semaforo()
+        self.assertEqual(self._fila(data, "personal")["estado"], "sin_base")
+        self.assertTrue(any("Sin ingresos" in a for a in data["avisos"]))
+
+    def test_avisa_de_sueldos_sin_registrar(self):
+        from colaboradores.models import Colaborador
+
+        make_doc(period="202607", total_amount=Decimal("10000"))
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Juana Pérez", document_number="45678912",
+        )
+        data = self._semaforo()
+        self.assertTrue(any("sin sueldo" in a for a in data["avisos"]))
+
+    def test_compara_compras_del_mismo_mes_que_los_ingresos(self):
+        # Ingresos en julio; compras solo en junio: «otros gastos» de julio es 0,
+        # no el neto de junio.
+        make_doc(period="202607", total_amount=Decimal("10000"))
+        make_doc(
+            period="202606", direction=Direction.RECEIVED,
+            issuer_ruc="20111111111", total_amount=Decimal("9000"),
+        )
+        data = self._semaforo()
+        self.assertEqual(data["period"], "202607")
+        self.assertEqual(self._fila(data, "otros")["pct"], 0.0)

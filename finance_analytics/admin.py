@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import FinanceAiSummary, FinanceAlert, InvoiceExtract
+from .models import (
+    FinanceAiSummary, FinanceAlert, InvoiceExtract, InvoiceOverride,
+    ManualEntry,
+)
 
 
 @admin.register(InvoiceExtract)
@@ -20,3 +23,18 @@ class FinanceAlertAdmin(admin.ModelAdmin):
 @admin.register(FinanceAiSummary)
 class FinanceAiSummaryAdmin(admin.ModelAdmin):
     list_display = ("period", "model_name", "created_at")
+
+
+@admin.register(ManualEntry)
+class ManualEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        "description", "direction", "period", "currency", "amount", "account_ruc",
+    )
+    list_filter = ("direction", "currency")
+    search_fields = ("description", "counterparty", "account_ruc")
+
+
+@admin.register(InvoiceOverride)
+class InvoiceOverrideAdmin(admin.ModelAdmin):
+    list_display = ("invoice", "total_amount", "counterparty", "updated_at")
+    search_fields = ("invoice__full_number", "counterparty", "account_ruc")

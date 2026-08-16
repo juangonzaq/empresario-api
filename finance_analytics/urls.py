@@ -3,7 +3,8 @@ from django.urls import path
 from .views import (
     AiSummaryActionView, AiSummaryView, AlertStatusView, AlertsView,
     ConsistencyView, CreditNotesView, CustomersView, InvoiceInsightView,
-    ItfView, OverviewView, PeriodDocumentsView, PurchasesView, SalesView,
+    InvoiceOverrideView, ItfView, ManualEntriesView, ManualEntryView,
+    OverviewView, PeriodDocumentsView, PurchasesView, SalesView,
     SuppliersView,
 )
 
@@ -22,6 +23,13 @@ urlpatterns = [
     path("finance/alerts/", AlertsView.as_view(), name="alerts"),
     path("finance/alerts/<uuid:pk>/", AlertStatusView.as_view(), name="alert-status"),
     path("finance/invoices/<uuid:pk>/", InvoiceInsightView.as_view(), name="invoice-insight"),
+    path(
+        "finance/invoices/<uuid:pk>/override/",
+        InvoiceOverrideView.as_view(),
+        name="invoice-override",
+    ),
+    path("finance/entries/", ManualEntriesView.as_view(), name="manual-entries"),
+    path("finance/entries/<uuid:pk>/", ManualEntryView.as_view(), name="manual-entry"),
     path("finance/ai-summary/", AiSummaryView.as_view(), name="ai-summary"),
     path(
         "finance/ai-summary/actions/<str:action_id>/",

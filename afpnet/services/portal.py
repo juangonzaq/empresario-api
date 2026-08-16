@@ -32,6 +32,12 @@ RUTA_EMPRESA = "/GestionarEmpleador/Empleador/ModificarDatosEmpresa"
 RUTA_PLANILLAS = "/GestionarPlanilla/Planilla/Listar"
 RUTA_RESUMEN_OP = "/GestionarObligacionPago/Devengue/ListarResumenSituacionOpPorDevengue"
 RUTA_PAGINA_RESUMEN = "/GestionarObligacionPago/Afiliado/Listar"
+# Misma ruta, en POST: es el buscador de la pantalla de obligación de pago y lo
+# que fija el afiliado en la sesión. Sin pasar por aquí, `getSessionOpListJson`
+# responde 500 — no basta con abrir la página, hay que buscar.
+RUTA_SELECCION_OP = RUTA_PAGINA_RESUMEN
+FILTRO_CUSPP = "C"
+FILTRO_DOCUMENTO = "D"
 RUTA_DEUDAS = "/GestionarDeuda/Reporte/DeudasCiertasYPresuntas"
 RUTA_AFILIADO = "/GestionarAfiliado/Afiliado/ConsultarAfiliado"
 RUTA_HISTORIAL = "/GestionarObligacionPago/Afiliado/getSessionOpListJson"
@@ -225,14 +231,35 @@ class Portal:
         })
         return parsers.parsear_afiliado(html)
 
-    def historial_aportes(self) -> list[parsers.AporteMensual]:
-        """El historial mes a mes del afiliado fijado en la sesión.
+    def fijar_afiliado_op(self, cuspp: str = "", documento: str = "") -> None:
+        """Selecciona al afiliado dentro de la pantalla de obligación de pago.
 
-        Depende del estado de la sesión, no de un parámetro: hay que llamar
-        antes a ``consultar_afiliado``, o se estará leyendo el historial de
-        quien se consultara la última vez. Exige ``Content-Length: 0``
-        explícito o el portal responde 411.
+        Es el paso que faltaba para el historial. `getSessionOpListJson` no
+        acepta parámetros: lee al afiliado que esté fijado en la sesión, y solo
+        este buscador lo fija. Abrir la página —con o sin ``parguid``— no basta:
+        el historial seguía respondiendo 500.
         """
+        if not cuspp and not documento:
+            raise PortalError("Hace falta el CUSPP o el documento del afiliado.")
+        self._post(RUTA_SELECCION_OP, {
+            "TipoFiltro": FILTRO_CUSPP if cuspp else FILTRO_DOCUMENTO,
+            "CUSPP": cuspp,
+            "TipoDocumento": "0",
+            "NumeroDocumento": documento,
+            "Ruc": "",
+        })
+
+    def historial_aportes(
+        self, cuspp: str = "", documento: str = ""
+    ) -> list[parsers.AporteMensual]:
+        """El historial mes a mes de un afiliado.
+
+        Si se le pasa el CUSPP o el documento lo fija antes; sin eso lee al que
+        hubiera quedado seleccionado, que casi nunca es lo que se quiere.
+        Exige ``Content-Length: 0`` explícito o el portal responde 411.
+        """
+        if cuspp or documento:
+            self.fijar_afiliado_op(cuspp=cuspp, documento=documento)
         try:
             respuesta = self._sesion.post(
                 f"{client.BASE}{RUTA_HISTORIAL}",

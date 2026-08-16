@@ -49,9 +49,25 @@ def load_documents(
     """
     queryset = (
         ElectronicInvoice.objects.for_account(account_ruc)
-        .select_related("extract")
+        .select_related("extract", "override")
         .defer("xml_content", "raw")
     )
+    if months:
+        floor = _period_floor(months)
+        if floor:
+            queryset = queryset.filter(period__gte=floor)
+    return list(queryset)
+
+
+def load_manual_entries(
+    account_ruc: str, months: int | None = DEFAULT_WINDOW_MONTHS
+) -> list["ManualEntry"]:
+    """Los registros manuales de la empresa, con la misma ventana que los
+    comprobantes: los totales mensuales suman lo manual y lo automático, así
+    que ambos deben cubrir los mismos meses."""
+    from finance_analytics.models import ManualEntry
+
+    queryset = ManualEntry.objects.filter(account_ruc=account_ruc)
     if months:
         floor = _period_floor(months)
         if floor:
@@ -79,14 +95,37 @@ def _period_floor(months: int) -> str:
 
 
 def document_amount(doc: ElectronicInvoice) -> Decimal:
-    """Importe del comprobante: total declarado o, si falta, el del extracto
-    XML. Compartido por todos los agregados para que los totales cuadren."""
+    """Importe del comprobante: la corrección manual manda; si no hay, el
+    total declarado o, si falta, el del extracto XML. Compartido por todos
+    los agregados para que los totales cuadren."""
+    override = getattr(doc, "override", None)
+    if override and override.total_amount is not None:
+        return override.total_amount
     if doc.total_amount is not None:
         return doc.total_amount
     extract = getattr(doc, "extract", None)
     if extract and extract.total_amount is not None:
         return extract.total_amount
     return Decimal("0")
+
+
+def document_is_edited(doc: ElectronicInvoice) -> bool:
+    """True cuando el comprobante tiene una corrección manual aplicada."""
+    override = getattr(doc, "override", None)
+    return bool(
+        override
+        and (override.total_amount is not None or override.counterparty or override.note)
+    )
+
+
+def document_counterparty(doc: ElectronicInvoice, direction: str) -> str:
+    """La contraparte mostrada: la corregida a mano si existe."""
+    override = getattr(doc, "override", None)
+    if override and override.counterparty:
+        return override.counterparty
+    return (
+        doc.receiver_name if direction == Direction.ISSUED else doc.issuer_name
+    )
 
 
 def _igv(doc: ElectronicInvoice) -> Decimal | None:
@@ -103,6 +142,9 @@ def _blank_bucket() -> dict[str, Any]:
         "gross": Decimal("0"),
         "credit_notes": Decimal("0"),
         "debit_notes": Decimal("0"),
+        # Registros manuales del mes: entran al neto junto con lo automático.
+        "manual": Decimal("0"),
+        "manual_count": 0,
         "net": Decimal("0"),
         "igv": Decimal("0"),
         "igv_available": 0,
@@ -129,8 +171,15 @@ def _accumulate(bucket: dict[str, Any], doc: ElectronicInvoice) -> None:
         bucket["debit_notes"] += amount
 
 
-def summarize_documents(docs: Iterable[ElectronicInvoice]) -> dict[str, Any]:
-    """Aggregate one period's documents of a single direction, per currency."""
+def summarize_documents(
+    docs: Iterable[ElectronicInvoice], manual: Iterable[Any] = (),
+) -> dict[str, Any]:
+    """Aggregate one period's documents of a single direction, per currency.
+
+    ``manual`` son los :class:`~finance_analytics.models.ManualEntry` del
+    mismo mes y dirección: entran a su moneda y el neto los incluye, porque
+    el total mensual se calcula sobre lo manual y lo automático juntos.
+    """
     by_currency: dict[str, dict[str, Any]] = {}
     cancelled = rejected = 0
     for doc in docs:
@@ -141,8 +190,16 @@ def summarize_documents(docs: Iterable[ElectronicInvoice]) -> dict[str, Any]:
         else:
             _accumulate(by_currency.setdefault(_currency(doc), _blank_bucket()), doc)
 
+    for entry in manual:
+        bucket = by_currency.setdefault(entry.currency or "PEN", _blank_bucket())
+        bucket["manual"] += entry.amount
+        bucket["manual_count"] += 1
+
     for bucket in by_currency.values():
-        bucket["net"] = bucket["gross"] - bucket["credit_notes"] + bucket["debit_notes"]
+        bucket["net"] = (
+            bucket["gross"] - bucket["credit_notes"] + bucket["debit_notes"]
+            + bucket["manual"]
+        )
 
     return {
         "by_currency": {
@@ -155,11 +212,18 @@ def summarize_documents(docs: Iterable[ElectronicInvoice]) -> dict[str, Any]:
 
 
 def direction_series(
-    docs: list[ElectronicInvoice], direction: str, months: int = DEFAULT_MONTHS
+    docs: list[ElectronicInvoice], direction: str, months: int = DEFAULT_MONTHS,
+    manual: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """Per-period series for one direction, ending at the latest period seen."""
+    """Per-period series for one direction, ending at the latest period seen.
+
+    ``manual`` (los ``ManualEntry`` de la empresa) se filtra por dirección y
+    entra a cada mes junto con los comprobantes: un mes con solo registros
+    manuales también aparece en la serie.
+    """
     relevant = [d for d in docs if d.direction == direction]
-    if not relevant:
+    manual_relevant = [e for e in (manual or []) if e.direction == direction]
+    if not relevant and not manual_relevant:
         # Mismas claves que el caso con datos: una empresa recién creada no
         # tiene comprobantes, y el contrato de salida no puede cambiar de
         # forma según haya datos o no.
@@ -168,12 +232,19 @@ def direction_series(
             "latest_period": None,
         }
 
-    latest = max(d.period for d in relevant if d.period)
+    latest = max(
+        [d.period for d in relevant if d.period]
+        + [e.period for e in manual_relevant if e.period]
+    )
     window = period_range_desc(latest, months)
     by_period: dict[str, list[ElectronicInvoice]] = {p: [] for p in window}
     for doc in relevant:
         if doc.period in by_period:
             by_period[doc.period].append(doc)
+    manual_by_period: dict[str, list[Any]] = {p: [] for p in window}
+    for entry in manual_relevant:
+        if entry.period in manual_by_period:
+            manual_by_period[entry.period].append(entry)
 
     periods = []
     # La variación mensual compara SIEMPRE neto PEN contra neto PEN del mes
@@ -182,7 +253,7 @@ def direction_series(
     # «vs mes anterior».
     previous: tuple[str, float] | None = None
     for period in window:
-        summary = summarize_documents(by_period[period])
+        summary = summarize_documents(by_period[period], manual_by_period[period])
         net_pen = summary["by_currency"].get("PEN", {}).get("net")
         row = {
             "period": period,
@@ -207,20 +278,26 @@ def direction_series(
     }
 
 
-def sales_summary(docs: list[ElectronicInvoice], months: int = DEFAULT_MONTHS) -> dict[str, Any]:
-    data = direction_series(docs, Direction.ISSUED, months)
+def sales_summary(
+    docs: list[ElectronicInvoice], months: int = DEFAULT_MONTHS,
+    manual: list[Any] | None = None,
+) -> dict[str, Any]:
+    data = direction_series(docs, Direction.ISSUED, months, manual)
     data["meaning"] = (
-        "Facturación emitida según CPE. Representa ventas facturadas, no "
-        "cobranza ni caja."
+        "Facturación emitida según CPE más ingresos registrados a mano. "
+        "Representa ventas facturadas, no cobranza ni caja."
     )
     return data
 
 
-def purchases_summary(docs: list[ElectronicInvoice], months: int = DEFAULT_MONTHS) -> dict[str, Any]:
-    data = direction_series(docs, Direction.RECEIVED, months)
+def purchases_summary(
+    docs: list[ElectronicInvoice], months: int = DEFAULT_MONTHS,
+    manual: list[Any] | None = None,
+) -> dict[str, Any]:
+    data = direction_series(docs, Direction.RECEIVED, months, manual)
     data["meaning"] = (
-        "Comprobantes recibidos de proveedores. Son compras registradas, no "
-        "ingresos ni egresos de caja."
+        "Comprobantes recibidos de proveedores más gastos registrados a "
+        "mano. Son compras registradas, no ingresos ni egresos de caja."
     )
     return data
 
@@ -237,33 +314,63 @@ def period_documents_for(
     docs = list(
         ElectronicInvoice.objects.for_account(account_ruc)
         .filter(period=period, direction=direction)
-        .select_related("extract")
+        .select_related("extract", "override")
         .defer("xml_content", "raw")
     )
-    return period_documents(docs, period, direction, currency)
+    from finance_analytics.models import ManualEntry
+
+    manual = list(
+        ManualEntry.objects.filter(
+            account_ruc=account_ruc, period=period, direction=direction
+        )
+    )
+    return period_documents(docs, period, direction, currency, manual)
+
+
+def manual_entry_payload(entry: Any) -> dict[str, Any]:
+    """Un registro manual tal como lo consume la UI, en todas las vistas."""
+    return {
+        "id": str(entry.id),
+        "direction": entry.direction,
+        "kind": "ingreso" if entry.direction == Direction.ISSUED else "gasto",
+        "entry_date": entry.entry_date,
+        "period": entry.period,
+        "description": entry.description,
+        "counterparty": entry.counterparty,
+        "currency": entry.currency or "PEN",
+        "amount": money(entry.amount),
+        "note": entry.note,
+        "origin": "manual",
+    }
 
 
 def period_documents(
     docs: list[ElectronicInvoice], period: str, direction: str,
-    currency: str | None = None,
+    currency: str | None = None, manual: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Los comprobantes de un mes y una dirección, con el mismo total que la
     fila de la tabla: los importes salen de ``summarize_documents``, no de una
-    suma aparte, así el detalle nunca discrepa del resumen que lo abrió."""
+    suma aparte, así el detalle nunca discrepa del resumen que lo abrió.
+    Los registros manuales del mes van en ``manual_entries`` y ya están
+    dentro de los totales."""
     month = [d for d in docs if d.period == period and d.direction == direction]
+    month_manual = [
+        e for e in (manual or [])
+        if e.period == period and e.direction == direction
+    ]
     if currency:
         month = [d for d in month if _currency(d) == currency]
+        month_manual = [e for e in month_manual if (e.currency or "PEN") == currency]
 
-    summary = summarize_documents(month)
+    summary = summarize_documents(month, month_manual)
     rows = [
         {
             "id": str(doc.id),
             "document_class": doc.document_class,
             "full_number": doc.full_number or f"{doc.series}-{doc.number}",
             "issue_date": doc.issue_date,
-            "counterparty": clean_name(
-                doc.receiver_name if direction == Direction.ISSUED else doc.issuer_name
-            ) or "Sin identificar",
+            "counterparty": clean_name(document_counterparty(doc, direction))
+            or "Sin identificar",
             "counterparty_ruc": (
                 doc.receiver_ruc if direction == Direction.ISSUED else doc.issuer_ruc
             ),
@@ -275,6 +382,10 @@ def period_documents(
             "is_rejected": doc.is_rejected,
             "status": doc.status,
             "references_document": doc.references_document,
+            "origin": "sunat",
+            # true cuando hay corrección manual: la UI lo señala y ofrece
+            # restaurar los valores de SUNAT.
+            "edited": document_is_edited(doc),
         }
         for doc in sorted(
             month,
@@ -293,6 +404,14 @@ def period_documents(
         "cancelled": summary["cancelled"],
         "rejected": summary["rejected"],
         "documents": rows,
+        "manual_entries": [
+            manual_entry_payload(e)
+            for e in sorted(
+                month_manual,
+                key=lambda e: (e.entry_date, e.created_at),
+                reverse=True,
+            )
+        ],
     }
 
 

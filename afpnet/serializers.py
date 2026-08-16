@@ -61,10 +61,10 @@ class AfpnetPeriodSummarySerializer(serializers.ModelSerializer):
 
 
 class AfpnetContributionSerializer(serializers.ModelSerializer):
-    is_paid = serializers.BooleanField(read_only=True)
+    situacion = serializers.CharField(read_only=True)
 
     class Meta:
         model = AfpnetContribution
         fields = ("period", "kind", "has_employment", "remuneration",
                   "obliged_fund", "obliged_insurance", "obliged_commission",
-                  "declared_fund", "paid_fund", "declared_unpaid", "is_paid")
+                  "declared_fund", "paid_fund", "declared_unpaid", "situacion")

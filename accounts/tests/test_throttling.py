@@ -85,6 +85,26 @@ class ThrottlingTests(APITestCase):
         ]
         self.assertIn(429, codes)
 
+    def test_looking_at_the_sunat_connection_does_not_burn_the_quota(self):
+        """Mirar el estado no es intentar conectar.
+
+        El perfil y el onboarding piden este GET al abrirse. Cuando contaba
+        para el límite de conexión, entrar unas cuantas veces a mirar dejaba al
+        usuario una hora sin poder conectar —y el mensaje hablaba de demasiados
+        intentos, que era exactamente lo que no había hecho.
+        """
+        from core.testing import TenantAPITestCase
+
+        user, _ = TenantAPITestCase.make_tenant("20604442533", "titular@empresa.pe")
+        self.client.force_authenticate(user)
+        url = reverse("accounts:sunat-connection")
+
+        codes = {
+            self.client.get(url).status_code
+            for _ in range(limite("sunat_conexion") + 3)
+        }
+        self.assertEqual(codes, {200})
+
     def test_the_shipped_limits_are_not_absurd(self):
         """Un cambio descuidado de configuración no debe pasar inadvertido."""
         self.assertLessEqual(limite("login_por_cuenta"), 20)

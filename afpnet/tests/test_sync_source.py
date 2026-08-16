@@ -296,3 +296,48 @@ class SesionCaducadaAlEnrolarTests(TestCase):
 
         self.assertEqual(r.status_code, 409)
         self.assertEqual(r.json()["code"], "sin_sesion")
+
+
+class SituacionDelAporteTests(TestCase):
+    """AFPnet deja el importe pagado en blanco aunque la planilla esté pagada.
+
+    Con un booleano esos meses salían «pendiente» y alarmaban sin motivo. La
+    señal fiable de deuda es lo declarado y no pagado.
+    """
+
+    def setUp(self):
+        from afpnet.models import AfpnetAffiliate
+
+        org = Organization.objects.create(ruc=RUC, name="PATTERN")
+        self.afiliado = AfpnetAffiliate.objects.create(
+            taxpayer_id=RUC, cuspp="999999AAAAA1", full_name="MARIA PEREZ",
+        )
+
+    def _aporte(self, **campos):
+        from afpnet.models import AfpnetContribution
+
+        return AfpnetContribution.objects.create(
+            affiliate=self.afiliado, taxpayer_id=RUC, period="202607", **campos
+        )
+
+    def test_sin_importe_pagado_es_sin_dato_y_no_pendiente(self):
+        from decimal import Decimal
+
+        aporte = self._aporte(obliged_fund=Decimal("300.00"))
+
+        self.assertEqual(aporte.situacion, "sin_dato")
+        self.assertFalse(aporte.is_paid)
+
+    def test_con_declarado_sin_pagar_es_deuda(self):
+        from decimal import Decimal
+
+        aporte = self._aporte(declared_unpaid=Decimal("300.00"))
+
+        self.assertEqual(aporte.situacion, "con_deuda")
+
+    def test_con_importe_pagado_es_pagado(self):
+        from decimal import Decimal
+
+        aporte = self._aporte(paid_fund=Decimal("300.00"))
+
+        self.assertEqual(aporte.situacion, "pagado")

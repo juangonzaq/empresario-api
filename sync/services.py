@@ -11,7 +11,7 @@ from accounts.models import Organization, SunatConnectionStatus
 
 from .models import STALE_MESSAGE, JobKind, JobStatus, StepStatus, SyncJob
 from .sources import (
-    LoginFailed, SOURCES_BY_KEY, Source, initial_steps, sources_for,
+    Cadence, LoginFailed, SOURCES_BY_KEY, Source, initial_steps, sources_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,32 @@ def start_sync(
     return job
 
 
-def _run_source(job: SyncJob, source: Source, credentials: Credentials) -> str:
+def _sol_ya_funciono(job: SyncJob) -> bool:
+    """¿Ya entró alguna fuente a SUNAT con esta misma clave, en este trabajo?
+
+    Es la prueba de que la clave sirve, y es mejor prueba que la sospecha de
+    quien falla después. Los clientes de los portales **no saben** distinguir
+    «me rechazaron la clave» de «no llegué»: el de SUNAFIL lo dice en su propio
+    mensaje —«revisa las credenciales, *o* si SUNAT está mostrando un
+    captcha»—, y esa duda se estaba resolviendo siempre en contra del usuario.
+
+    Visto en producción: buzón trajo 225 mensajes y comprobantes 1.254 con esa
+    clave; SUNAFIL falló a continuación, la credencial quedó marcada como
+    rechazada y el ITF se saltó entero. Nada de eso era cierto.
+    """
+    for paso in job.steps:
+        fuente = SOURCES_BY_KEY.get(paso.get("key", ""))
+        if fuente and fuente.needs_sol and paso.get("status") == StepStatus.DONE:
+            return True
+    return False
+
+
+def _run_source(
+    job: SyncJob,
+    source: Source,
+    credentials: Credentials,
+    cadence: str | None = None,
+) -> str:
     """Corre una fuente y deja su resultado escrito en el paso del trabajo.
 
     Devuelve el motivo por el que no se pudo entrar a SUNAT, o cadena vacía.
@@ -90,13 +115,34 @@ def _run_source(job: SyncJob, source: Source, credentials: Credentials) -> str:
     resto que cortar.
     """
     organization = job.organization
-    credential = organization.sunat_credential
+    # Puede no existir: las fuentes que no usan la clave SOL corren igual, y
+    # leerla sin más levantaba `RelatedObjectDoesNotExist` antes siquiera de
+    # empezar. Donde se toca, el paso ya venía obligando a que hubiera clave.
+    credential = getattr(organization, "sunat_credential", None)
 
     job.mark_step(source.key, StepStatus.RUNNING)
     try:
-        result = source.run(credentials, job.kind)
+        # Sin cadencia explícita manda la del trabajo. La explícita existe
+        # porque el botón de una sección pide «lo nuevo» sobre un trabajo que
+        # pudo ser el inicial: con `job.kind` heredaría su recorrido completo
+        # del histórico, que es justo lo que ese botón no debe hacer.
+        result = source.run(credentials, cadence or job.kind)
     except LoginFailed as exc:
-        # Credenciales malas: el usuario debe volver a conectarse.
+        # Si otra fuente ya entró con esta clave, el fallo es del portal y no
+        # de la clave: se anota el paso y el trabajo sigue. Invalidar aquí le
+        # costaba al usuario los pasos que faltaban y un aviso de credenciales
+        # rechazadas que era mentira.
+        if _sol_ya_funciono(job):
+            logger.warning(
+                "%s dice que el login falló, pero otra fuente ya entró con esa "
+                "clave en este trabajo: se trata como fallo del portal (%s)",
+                source.key, organization.ruc,
+            )
+            job.mark_step(source.key, StepStatus.FAILED, str(exc)[:300])
+            return ""
+
+        # Credenciales malas: el usuario debe volver a conectarse. Si la
+        # fuente llegó a intentar un login, la credencial existe.
         credential.status = SunatConnectionStatus.INVALID
         credential.last_error = str(exc)[:500]
         credential.save(update_fields=["status", "last_error", "updated_at"])
@@ -111,7 +157,11 @@ def _run_source(job: SyncJob, source: Source, credentials: Credentials) -> str:
     detail = ", ".join(f"{k}: {v}" for k, v in (result or {}).items())
     job.mark_step(source.key, StepStatus.DONE, detail)
     # El primer portal que responde confirma que la clave sirve.
-    if source.needs_sol and credential.status != SunatConnectionStatus.CONNECTED:
+    if (
+        source.needs_sol
+        and credential is not None
+        and credential.status != SunatConnectionStatus.CONNECTED
+    ):
         credential.status = SunatConnectionStatus.CONNECTED
         credential.last_verified_at = timezone.now()
         credential.last_error = ""
@@ -158,7 +208,7 @@ def execute(job: SyncJob) -> SyncJob:
     return _wrap_up(job, fatal)
 
 
-def execute_step(job: SyncJob, key: str) -> SyncJob:
+def execute_step(job: SyncJob, key: str, cadence: str | None = None) -> SyncJob:
     """Vuelve a correr UN paso del trabajo y recalcula su estado.
 
     Los demás pasos conservan lo que ya habían traído, así que reintentar el
@@ -173,11 +223,20 @@ def execute_step(job: SyncJob, key: str) -> SyncJob:
     try:
         credentials = credentials_for(job.organization)
     except NotConnected as exc:
-        job.mark_step(key, StepStatus.SKIPPED, "Sin credenciales")
-        job.finish(error=str(exc))
-        return job
+        if source.needs_sol:
+            job.mark_step(key, StepStatus.SKIPPED, "Sin credenciales")
+            job.finish(error=str(exc))
+            return job
+        # Media docena de fuentes no pasan por SOL: consultar el RUC de un
+        # proveedor es público, y AFPnet tiene su propia sesión. Negarles la
+        # corrida por una clave que no usan dejaba el botón «revisar ahora» de
+        # Proveedores contestando «sin credenciales» a una empresa que solo
+        # quería mirar a sus proveedores.
+        credentials = Credentials(
+            ruc=job.organization.ruc, username="", password=""
+        )
 
-    fatal = _run_source(job, source, credentials)
+    fatal = _run_source(job, source, credentials, cadence)
     return _wrap_up(job, fatal)
 
 
@@ -203,7 +262,9 @@ def _job_para_un_paso(organization: Organization) -> SyncJob:
     return job
 
 
-def _encolar_paso(job: SyncJob, key: str, requested_by, accion: str) -> SyncJob:
+def _encolar_paso(
+    job: SyncJob, key: str, requested_by, accion: str, cadence: str | None = None,
+) -> SyncJob:
     if requested_by is not None:
         job.requested_by = requested_by
         job.save(update_fields=["requested_by", "updated_at"])
@@ -212,7 +273,7 @@ def _encolar_paso(job: SyncJob, key: str, requested_by, accion: str) -> SyncJob:
     from .tasks import run_sync_step
 
     try:
-        run_sync_step.apply_async((str(job.id), key))
+        run_sync_step.apply_async((str(job.id), key, cadence))
     except Exception:  # noqa: BLE001 — broker caído u ocupado
         # Igual que en `start_sync`: el paso queda en cola y se puede volver a
         # pulsar; tumbar la petición no arreglaría el broker.
@@ -250,6 +311,13 @@ def run_source(
 
     Sin esto, el botón de sincronizar de cada sección quedaba apagado siempre
     que la última sincronización hubiera funcionado, que es casi siempre.
+
+    Corre con cadencia ``NEW``: trae lo nuevo y **no recorre el histórico**.
+    Antes heredaba la del trabajo, y como el trabajo de una empresa recién
+    conectada es el inicial, pulsar «traer nuevos» en Finanzas lanzaba el
+    recorrido completo de comprobantes hacia atrás —minutos de espera para
+    volver a guardar lo que ya estaba—. Quien quiera el histórico tiene la
+    sincronización completa, que es donde eso se pide de verdad.
     """
     source = SOURCES_BY_KEY.get(key)
     if source is None:
@@ -268,7 +336,9 @@ def run_source(
             "finished_at": None,
         })
         job.save(update_fields=["steps", "updated_at"])
-    return _encolar_paso(job, key, requested_by, "el relanzamiento")
+    return _encolar_paso(
+        job, key, requested_by, "el relanzamiento", cadence=Cadence.NEW
+    )
 
 
 def reclaim_stale(organization: Organization | None = None) -> int:

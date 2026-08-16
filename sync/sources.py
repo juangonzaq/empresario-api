@@ -42,9 +42,18 @@ class Cadence:
     INITIAL = "inicial"    # primera carga, al conectar
     DAILY = "diaria"
     MONTHLY = "mensual"
-    MANUAL = "manual"      # relanzada a mano desde la interfaz
+    MANUAL = "manual"      # el «sincronizar ahora» completo, desde el perfil
 
-    ALL = (INITIAL, DAILY, MONTHLY, MANUAL)
+    # «Tráeme lo nuevo de esta sección, ahora». Es el botón que vive en cada
+    # pantalla, y se distingue de MANUAL en una cosa que importa: **no recorre
+    # el histórico**. Con MANUAL, los comprobantes caminan hacia atrás mes a
+    # mes hasta encontrar tres vacíos seguidos —minutos de espera y decenas de
+    # consultas a SUNAT— para traer, casi siempre, lo mismo que ya había. Quien
+    # pulsa en su pantalla no está pidiendo la historia: está preguntando si
+    # hay algo nuevo desde la última vez.
+    NEW = "nuevos"
+
+    ALL = (INITIAL, DAILY, MONTHLY, MANUAL, NEW)
 
 
 @dataclass(frozen=True)
@@ -57,8 +66,9 @@ class Source:
 
     def runs_on(self, cadence: str) -> bool:
         # Lo manual siempre corre todo: si alguien pulsa «sincronizar ahora»
-        # es porque quiere el cuadro completo.
-        return cadence == Cadence.MANUAL or cadence in self.cadences
+        # es porque quiere el cuadro completo. Y lo pedido a mano para UNA
+        # sección corre siempre, por definición: se pidió esa.
+        return cadence in (Cadence.MANUAL, Cadence.NEW) or cadence in self.cadences
 
 
 # ── Adaptadores ──
@@ -115,7 +125,8 @@ def _remype(creds, cadence: str) -> dict[str, Any]:
 
 def _compliance(creds, cadence: str) -> dict[str, Any]:
     from compliance_profile.services import (
-        CompliancePortalClient, CompliancePortalError, ComplianceSynchronizer,
+        ComplianceLoginRejected, CompliancePortalClient, CompliancePortalError,
+        ComplianceSynchronizer,
     )
 
     client = CompliancePortalClient(
@@ -123,8 +134,15 @@ def _compliance(creds, cadence: str) -> dict[str, Any]:
     )
     try:
         client.login()
-    except CompliancePortalError as exc:
+    except ComplianceLoginRejected as exc:
         raise LoginFailed(str(exc)) from exc
+    except CompliancePortalError as exc:
+        # Todo lo demás —un menú que tarda, una campaña superpuesta, SUNAT
+        # caída— no dice nada de la clave. Tratarlo como LoginFailed marcaba la
+        # credencial como rechazada y saltaba el buzón, los comprobantes,
+        # SUNAFIL y el ITF: un pop-up dejaba la sincronización entera en nada y
+        # al usuario mirando un «Credenciales rechazadas» que era mentira.
+        raise SourceFailed(str(exc)) from exc
     result = ComplianceSynchronizer(client).run()
     return {"periodos": getattr(result, "stored", 0)}
 
@@ -213,8 +231,9 @@ def _cpe(creds, cadence: str) -> dict[str, Any]:
         # Primera carga: se camina hacia atrás hasta que se acaban los datos.
         result = synchronizer.backfill(current_period(), stop_after_empty=3)
     else:
-        # A diario basta recontrastar los meses recientes; recorrer el
-        # histórico entero cada noche costaría horas y no traería nada nuevo.
+        # A diario —y cuando alguien pide lo nuevo desde su pantalla— basta
+        # recontrastar los meses recientes. Recorrer el histórico entero cada
+        # vez costaría minutos y no traería nada que no estuviera ya.
         result = synchronizer.sync_periods(recent_periods(CPE_DAILY_MONTHS))
     return {"comprobantes": getattr(result, "created", 0),
             "xml": getattr(result, "xml_downloaded", 0)}

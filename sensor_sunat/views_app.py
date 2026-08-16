@@ -73,7 +73,7 @@ class CalendarioPropioView(ManagedOrganizationAPIView):
         organization = request.organization
         hoy = _hoy()
         contexto = contexto_de(organization)
-        eventos = eventos_de(organization, desde=hoy)
+        eventos = eventos_de(organization, desde=hoy, con_cumpleanos=True)
 
         return Response({
             **contexto.as_dict(),

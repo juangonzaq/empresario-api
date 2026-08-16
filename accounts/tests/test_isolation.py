@@ -174,3 +174,79 @@ class EmpresaRecienRegistradaTests(APITestCase):
                 response.status_code, 404,
                 f"{url} devolvió datos a una empresa que no tiene ninguno",
             )
+
+
+class CambioDeEmpresaTests(APITestCase):
+    """Un contador con dos clientes: lo que ve depende de cuál tenga elegido.
+
+    Es el contrato del que cuelga el selector de empresa de la barra superior.
+    La empresa no viaja en la URL de cada pantalla sino en una cabecera, así
+    que si esa cabecera no mandara de verdad, cambiar de empresa movería el
+    nombre de arriba y dejaría debajo las cifras de la anterior — que es la
+    manera más silenciosa posible de que alguien decida sobre la empresa
+    equivocada.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.contador = User.objects.create_user(
+            email="contador@estudio.pe", password="una-clave-larga-99",
+            email_verified_at=timezone.now(),
+        )
+        for ruc in (UNO, DOS):
+            org = Organization.objects.create(ruc=ruc, name=f"EMPRESA {ruc}")
+            Membership.objects.create(
+                user=cls.contador, organization=org, role=Role.ACCOUNTANT
+            )
+            Message.objects.create(
+                taxpayer_id=ruc, message_code=1, message_type=1,
+                subject=f"Aviso de {ruc}", sent_on=date(2026, 7, 1),
+            )
+        ComplianceRating.objects.create(
+            taxpayer_id=UNO, period=20261, execution_period=20261,
+            rating="A", is_current=True,
+        )
+        ComplianceRating.objects.create(
+            taxpayer_id=DOS, period=20261, execution_period=20261,
+            rating="E", is_current=True,
+        )
+
+    def setUp(self):
+        self.client.force_authenticate(self.contador)
+
+    def _asuntos(self, ruc: str) -> set[str]:
+        response = self.client.get("/api/messages/", HTTP_X_ORGANIZATION=ruc)
+        self.assertEqual(response.status_code, 200)
+        datos = response.data
+        filas = datos["results"] if isinstance(datos, dict) else datos
+        return {fila["subject"] for fila in filas}
+
+    def test_la_cabecera_decide_de_quien_son_los_datos(self):
+        self.assertEqual(self._asuntos(UNO), {f"Aviso de {UNO}"})
+        self.assertEqual(self._asuntos(DOS), {f"Aviso de {DOS}"})
+
+    def test_el_cumplimiento_tambien_cambia(self):
+        """No solo los listados: también lo que se calcula por empresa."""
+        for ruc, nota in ((UNO, "A"), (DOS, "E")):
+            response = self.client.get(
+                "/api/compliance/summary/", HTTP_X_ORGANIZATION=ruc
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["taxpayer_id"], ruc)
+            self.assertEqual(response.data["rating"], nota)
+
+    def test_con_varias_empresas_hay_que_decir_cual(self):
+        """Sin cabecera no se adivina: elegir por él podría enseñarle datos de
+        una empresa mientras cree estar mirando la otra."""
+        self.assertEqual(self.client.get("/api/messages/").status_code, 404)
+
+    def test_no_se_puede_elegir_una_empresa_ajena(self):
+        ajena = Organization.objects.create(ruc="20900000009", name="AJENA")
+        Message.objects.create(
+            taxpayer_id=ajena.ruc, message_code=9, message_type=1,
+            subject="Aviso ajeno", sent_on=date(2026, 7, 1),
+        )
+        response = self.client.get(
+            "/api/messages/", HTTP_X_ORGANIZATION=ajena.ruc
+        )
+        self.assertEqual(response.status_code, 404)

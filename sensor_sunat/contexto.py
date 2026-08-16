@@ -178,15 +178,33 @@ def contexto_de(organization: Organization) -> ContextoCalendario:
     )
 
 
-def eventos_de(organization: Organization, desde: date | None = None) -> list[dict]:
-    """Los vencimientos de esta empresa, ya resueltos sus parámetros."""
+def eventos_de(
+    organization: Organization, desde: date | None = None,
+    con_cumpleanos: bool = False,
+) -> list[dict]:
+    """Los vencimientos de esta empresa, ya resueltos sus parámetros.
+
+    ``con_cumpleanos`` añade los cumpleaños de la planilla. Es opcional y
+    apagado por defecto a propósito: la suscripción por token sirve este
+    mismo generador y ahí no pueden viajar datos personales —la URL es la
+    única credencial—, así que solo el calendario autenticado lo enciende.
+    """
     from .calendario import eventos_para
 
     contexto = contexto_de(organization)
-    return eventos_para(
+    eventos = eventos_para(
         organization.ruc,
         planilla=contexto.planilla.valor,
         bc=contexto.buen_contribuyente.valor,
         regimen=contexto.regimen,
         desde=desde,
     )
+    if con_cumpleanos:
+        from colaboradores.services import eventos_cumpleanos
+
+        base = desde or date.today()
+        eventos = sorted(
+            eventos + eventos_cumpleanos(organization.ruc, base),
+            key=lambda e: e["fecha"] or base,
+        )
+    return eventos

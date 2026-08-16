@@ -255,3 +255,57 @@ class AislamientoTests(TenantAPITestCase):
         datos = self.client.get(url, {"ruc": OTRO_RUC}).json()
 
         self.assertEqual(datos["ruc"], RUC)
+
+
+class CumpleanosEnCalendarioTests(TenantAPITestCase):
+    """Los cumpleaños de la planilla entran al calendario autenticado y solo
+    a él: la suscripción por token no puede llevar datos personales."""
+
+    RUC = RUC
+
+    def setUp(self):
+        from colaboradores.models import Colaborador
+
+        self.url = reverse("sensor_sunat:calendario-mio")
+        hoy = date.today()
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Juana María Pérez Gómez",
+            document_number="45678912",
+            birth_date=hoy.replace(year=1994),
+        )
+        # Fuera de planilla: su cumpleaños no aparece.
+        Colaborador.objects.create(
+            taxpayer_id=RUC, full_name="Ex Trabajador Retirado",
+            document_number="87654321", is_active=False,
+            birth_date=hoy.replace(year=1990),
+        )
+
+    def test_aparecen_en_el_calendario_propio(self):
+        eventos = self.client.get(self.url).json()["eventos"]
+        cumples = [e for e in eventos if e["tipo"] == "CUMPLEANOS"]
+        self.assertEqual(len(cumples), 1)
+        self.assertIn("Juana María Pérez Gómez", cumples[0]["titulo"])
+        self.assertEqual(cumples[0]["fecha"], date.today().isoformat())
+        self.assertIn("32 años", cumples[0]["descripcion"])
+
+    def test_no_salen_por_la_suscripcion_de_token(self):
+        ruta = reverse(
+            "sensor_sunat:calendario-suscripcion",
+            args=[self.organization.calendar_token],
+        )
+        ics = self.client.get(ruta).content.decode()
+        self.assertNotIn("Juana", ics)
+        self.assertNotIn("CUMPLEANOS", ics)
+
+    def test_29_de_febrero_cae_en_1_de_marzo_los_anios_no_bisiestos(self):
+        from colaboradores.services import proximo_cumple
+
+        nacimiento = date(1996, 2, 29)
+        # 2026 no es bisiesto: se celebra el 1 de marzo.
+        self.assertEqual(
+            proximo_cumple(nacimiento, date(2026, 2, 15)), date(2026, 3, 1)
+        )
+        # 2028 sí lo es: vuelve al 29 de febrero.
+        self.assertEqual(
+            proximo_cumple(nacimiento, date(2028, 1, 10)), date(2028, 2, 29)
+        )

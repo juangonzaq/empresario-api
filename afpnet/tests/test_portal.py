@@ -154,3 +154,38 @@ class RangosTests(SimpleTestCase):
         rangos = portal.anios_hasta_hoy(2026, hoy=date(2026, 3, 5))
 
         self.assertEqual(rangos, [("202601", "202603")])
+
+
+class HistorialTests(SimpleTestCase):
+    """El historial exige fijar antes al afiliado.
+
+    `getSessionOpListJson` no acepta parámetros: lee al que esté seleccionado
+    en la sesión, y solo lo fija el buscador de la pantalla de obligación de
+    pago. Sin ese POST el portal responde 500.
+    """
+
+    def test_fija_al_afiliado_antes_de_pedir_el_historial(self):
+        p, grabadora = _portal('{"result": []}')
+
+        p.historial_aportes(cuspp="334900EYRQG7")
+
+        rutas = [url for url, _ in grabadora.posts]
+        self.assertIn(f"{client.BASE}{portal.RUTA_SELECCION_OP}", rutas[0])
+        _, datos = grabadora.posts[0]
+        self.assertEqual(datos["TipoFiltro"], portal.FILTRO_CUSPP)
+        self.assertEqual(datos["CUSPP"], "334900EYRQG7")
+
+    def test_busca_por_documento_cuando_no_hay_cuspp(self):
+        p, grabadora = _portal('{"result": []}')
+
+        p.historial_aportes(documento="46887218")
+
+        _, datos = grabadora.posts[0]
+        self.assertEqual(datos["TipoFiltro"], portal.FILTRO_DOCUMENTO)
+        self.assertEqual(datos["NumeroDocumento"], "46887218")
+
+    def test_sin_identificar_al_afiliado_no_se_llama_al_portal(self):
+        p, _ = _portal()
+
+        with self.assertRaises(portal.PortalError):
+            p.fijar_afiliado_op()

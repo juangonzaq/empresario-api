@@ -64,15 +64,22 @@ def run_sync_job(job_id: str) -> dict[str, Any]:
     time_limit=60 * 120,
     soft_time_limit=60 * 115,
 )
-def run_sync_step(job_id: str, step_key: str) -> dict[str, Any]:
-    """Relanza un paso suelto de un trabajo que ya terminó."""
+def run_sync_step(
+    job_id: str, step_key: str, cadence: str | None = None
+) -> dict[str, Any]:
+    """Relanza un paso suelto de un trabajo que ya terminó.
+
+    ``cadence`` llega desde quien lo pidió: el botón de una sección manda
+    «nuevos» para que la fuente no recorra el histórico. Es opcional para que
+    los mensajes ya encolados con la firma anterior sigan siendo válidos.
+    """
     from .services import execute_step
 
     job = SyncJob.objects.filter(pk=job_id).select_related("organization").first()
     if job is None:
         logger.warning("Trabajo de sincronización %s ya no existe", job_id)
         return {"status": "desaparecido"}
-    execute_step(job, step_key)
+    execute_step(job, step_key, cadence)
     step = next((s for s in job.steps if s.get("key") == step_key), {})
     return {
         "status": job.status,

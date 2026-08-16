@@ -408,6 +408,21 @@ class AfpnetContribution(BaseModel):
         return f"{self.affiliate_id} · {self.period}"
 
     @property
+    def situacion(self) -> str:
+        """«pagado», «con_deuda» o «sin_dato».
+
+        Tres estados y no un booleano porque AFPnet **no siempre publica el
+        importe pagado** en este endpoint: llega en blanco aunque la planilla
+        del mes figure como PAGADA. Con un booleano, esos meses salían como
+        «pendiente» y alarmaban sin motivo. La señal fiable de deuda es lo
+        declarado y no pagado; lo demás, cuando falta, es que no lo sabemos.
+        """
+        if self.declared_unpaid:
+            return "con_deuda"
+        if self.paid_fund:
+            return "pagado"
+        return "sin_dato"
+
+    @property
     def is_paid(self) -> bool:
-        """Pagado de verdad: hay importe pagado y nada declarado sin pagar."""
-        return bool(self.paid_fund) and not self.declared_unpaid
+        return self.situacion == "pagado"

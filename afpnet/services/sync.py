@@ -272,8 +272,9 @@ def historial_de(organization: Organization, cuspp: str) -> int:
     sesion = sesion_de(organization)
     try:
         api = portal.Portal(cookies=sesion.cookies)
-        api.consultar_afiliado(afiliado.document_number)
-        return _guardar_aportes(afiliado, api.historial_aportes())
+        return _guardar_aportes(
+            afiliado, api.historial_aportes(cuspp=afiliado.cuspp)
+        )
     except client.SesionCaducada as exc:
         raise _caducar(sesion, exc) from exc
 
@@ -300,13 +301,9 @@ def enrolar_trabajador(
         taxpayer_id=organization.ruc, cuspp=ficha.cuspp
     )
     # El historial es un extra: si no se puede traer, el trabajador queda
-    # enrolado igualmente. `getSessionOpListJson` cuelga del módulo de
-    # obligación de pago y exige que se haya seleccionado al afiliado **dentro
-    # de esa pantalla**; llegar por la consulta de afiliado no basta y el
-    # portal responde 500. Mientras no se resuelva esa navegación, perder el
-    # historial no puede costar el alta.
+    # enrolado igualmente. Perder el historial no puede costar el alta.
     try:
-        _guardar_aportes(afiliado, api.historial_aportes())
+        _guardar_aportes(afiliado, api.historial_aportes(cuspp=afiliado.cuspp))
     except client.AfpnetError:
         logger.warning(
             "Sin historial de aportes para %s: el portal exige seleccionarlo "

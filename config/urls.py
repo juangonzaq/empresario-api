@@ -19,5 +19,8 @@ urlpatterns = [
     path("api/", include("sunat_intel.urls")),
     path("api/", include("finance_analytics.urls")),
     path("api/", include("afpnet.urls")),
+    path("api/", include("colaboradores.urls")),
+    path("api/", include("payroll.urls")),
+    path("api/", include("financials.urls")),
     path("api/auth/", include("rest_framework.urls")),  # login for the browsable API
 ]

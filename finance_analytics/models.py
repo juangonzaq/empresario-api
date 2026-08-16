@@ -9,6 +9,10 @@ stay untouched for audit; this app stores only derived artifacts:
   status.
 * ``FinanceAiSummary`` — cached monthly AI summary, keyed by a fingerprint of
   the metrics it was generated from (regenerate only when the data changes).
+* ``ManualEntry`` — ingresos y gastos registrados a mano; la sincronización
+  nunca los toca y los totales mensuales los suman junto con lo automático.
+* ``InvoiceOverride`` — correcciones manuales a comprobantes de SUNAT,
+  guardadas aparte para que ninguna sincronización las chanque.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from __future__ import annotations
 from django.db import models
 
 from core.models import BaseModel
-from sunat_cpe.models import ElectronicInvoice
+from sunat_cpe.models import Direction, ElectronicInvoice
 
 
 class ExtractStatus(models.TextChoices):
@@ -86,6 +90,72 @@ class InvoiceExtract(BaseModel):
 
     def __str__(self) -> str:
         return f"extract {self.invoice_id}"
+
+
+class ManualEntry(BaseModel):
+    """Ingreso o gasto registrado a mano por la empresa.
+
+    Vive en esta app y no en ``sunat_cpe`` a propósito: la sincronización
+    hace ``update_or_create`` sobre ``ElectronicInvoice`` y jamás toca esta
+    tabla, así que lo manual sobrevive a cualquier corrida. Los agregados
+    mensuales lo suman junto con lo automático, siempre por moneda.
+
+    ``direction`` reutiliza el vocabulario CPE: ``emitida`` = ingreso (se
+    suma a Facturación), ``recibida`` = gasto (se suma a Comprobantes
+    recibidos).
+    """
+
+    account_ruc = models.CharField(max_length=11, db_index=True)
+    direction = models.CharField(max_length=10, choices=Direction, db_index=True)
+    entry_date = models.DateField()
+    period = models.CharField(
+        max_length=6, db_index=True, help_text="aaaamm, derivado de entry_date."
+    )
+    description = models.CharField(max_length=200)
+    counterparty = models.CharField(max_length=200, blank=True)
+    currency = models.CharField(max_length=3, default="PEN")
+    amount = models.DecimalField(max_digits=16, decimal_places=2)
+    note = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name_plural = "manual entries"
+        ordering = ["-entry_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["account_ruc", "direction", "period"]),
+        ]
+
+    def __str__(self) -> str:
+        kind = "ingreso" if self.direction == Direction.ISSUED else "gasto"
+        return f"[manual {kind}] {self.description}"
+
+
+class InvoiceOverride(BaseModel):
+    """Corrección manual de un comprobante extraído de SUNAT.
+
+    El comprobante original queda intacto para auditoría y la corrección se
+    guarda aparte: la sincronización re-escribe ``ElectronicInvoice`` pero
+    nunca esta tabla, así que la edición no se chanca. Se aplica al leer:
+    los agregados y el detalle usan el monto corregido cuando existe.
+    """
+
+    invoice = models.OneToOneField(
+        ElectronicInvoice, related_name="override", on_delete=models.CASCADE
+    )
+    account_ruc = models.CharField(max_length=11, db_index=True)
+    total_amount = models.DecimalField(
+        max_digits=16, decimal_places=2, null=True, blank=True,
+        help_text="Reemplaza al total de SUNAT cuando no es nulo.",
+    )
+    counterparty = models.CharField(
+        max_length=200, blank=True, help_text="Reemplaza a la contraparte mostrada."
+    )
+    note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return f"override {self.invoice_id}"
 
 
 class AlertSeverity(models.TextChoices):
