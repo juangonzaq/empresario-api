@@ -4,14 +4,17 @@ from .views import (
     AiSummaryActionView, AiSummaryView, AlertStatusView, AlertsView,
     ConsistencyView, CreditNotesView, CustomersView, InvoiceInsightView,
     InvoiceOverrideView, ItfView, ManualEntriesView, ManualEntryView,
-    OverviewView, PeriodDocumentsView, PurchasesView, SalesView,
-    SuppliersView,
+    OverviewView, PeriodCloseView, PeriodDocumentsView, PurchasesView, RentaAssumptionsView,
+    RentaView, SalesView, SuppliersView,
 )
 
 app_name = "finance_analytics"
 
 urlpatterns = [
     path("finance/overview/", OverviewView.as_view(), name="overview"),
+    path("finance/renta/", RentaView.as_view(), name="renta"),
+    path("finance/renta/assumptions/", RentaAssumptionsView.as_view(), name="renta-assumptions"),
+    path("finance/renta/close/", PeriodCloseView.as_view(), name="renta-close"),
     path("finance/sales/", SalesView.as_view(), name="sales"),
     path("finance/purchases/", PurchasesView.as_view(), name="purchases"),
     path("finance/customers/", CustomersView.as_view(), name="customers"),

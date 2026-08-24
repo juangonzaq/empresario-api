@@ -45,6 +45,9 @@ class RegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=80, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=80, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    # Código de quien le habló de Empresario. Opcional; uno desconocido no
+    # bloquea el registro (se ignora) para no castigar un error de tipeo.
+    referral_code = serializers.CharField(max_length=12, required=False, allow_blank=True)
 
     def validate_email(self, value: str) -> str:
         return value.strip().lower()
@@ -56,12 +59,18 @@ class RegisterSerializer(serializers.Serializer):
     def create(self, validated):
         email = validated.pop("email")
         password = validated.pop("password")
+        referral_code = validated.pop("referral_code", "")
         # Un correo ya registrado no se delata aquí; la vista responde igual en
         # ambos casos y quien ya tenía cuenta recibe un aviso por correo.
         existing = User.objects.filter(email=email).first()
         if existing:
             return existing
-        return User.objects.create_user(email=email, password=password, **validated)
+        user = User.objects.create_user(email=email, password=password, **validated)
+        if referral_code:
+            from billing.services import link_referral
+
+            link_referral(user, referral_code)
+        return user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -120,14 +129,16 @@ class OrganizationSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(read_only=True)
     role = serializers.SerializerMethodField()
     sunat_status = serializers.SerializerMethodField()
+    subscription = serializers.SerializerMethodField()
 
     class Meta:
         model = Organization
         fields = ("id", "ruc", "name", "trade_name", "display_name", "role",
-                  "sunat_status", "tax_regime")
-        # El régimen se declara desde el calendario (PATCH /api/calendario/mio/),
-        # que es donde se nota su efecto; aquí solo se lee.
-        read_only_fields = ("id", "ruc", "tax_regime")
+                  "sunat_status", "tax_regime", "tax_regime_source", "tax_regime_checked_at",
+                  "subscription")
+        # El régimen lo lee la sincronización de la Ficha RUC en SOL o se
+        # declara desde el calendario (PATCH /api/calendario/mio/); aquí solo se lee.
+        read_only_fields = ("id", "ruc", "tax_regime", "tax_regime_source", "tax_regime_checked_at")
 
     def get_role(self, org: Organization) -> str | None:
         roles = self.context.get("roles") or {}
@@ -136,6 +147,13 @@ class OrganizationSerializer(serializers.ModelSerializer):
     def get_sunat_status(self, org: Organization) -> str:
         credential = getattr(org, "sunat_credential", None)
         return credential.status if credential else "sin_conectar"
+
+    def get_subscription(self, org: Organization) -> dict:
+        """Estado de la suscripción, para que el front sepa desde la sesión si
+        hay que enseñar el aviso de prueba o llevar a pagar."""
+        from billing.services import summary
+
+        return summary(org)
 
 
 class OrganizationCreateSerializer(serializers.Serializer):
@@ -164,6 +182,11 @@ class OrganizationCreateSerializer(serializers.Serializer):
             organization=organization,
             role=Role.OWNER,
         )
+        # Si esta persona ya había ganado meses por referidos antes de tener
+        # empresa, se le aplican ahora que la tiene.
+        from billing.services import apply_pending_rewards
+
+        apply_pending_rewards(self.context["request"].user)
         return organization
 
 
@@ -189,9 +212,66 @@ class SunatConnectSerializer(serializers.Serializer):
         default=False,
         help_text="El contribuyente declara que son las credenciales del usuario SOL principal.",
     )
+    # Autorización expresa: sin ella no se guarda la clave. La versión que
+    # se acepta tiene que ser la vigente, para que conste qué texto se leyó.
+    authorization_accepted = serializers.BooleanField(default=False)
+    authorization_version = serializers.CharField(max_length=10, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        from .services import consent
+
+        if not attrs.get("authorization_accepted"):
+            raise serializers.ValidationError({
+                "authorization_accepted": "Debes leer y aceptar la autorización de acceso a SUNAT.",
+            })
+        version = (attrs.get("authorization_version") or "").strip()
+        if version and version != consent.VERSION:
+            raise serializers.ValidationError({
+                "authorization_version": "La autorización cambió; vuelve a leerla y acéptala.",
+            })
+        return attrs
 
     def validate_sol_username(self, value: str) -> str:
         username = value.strip()
         if not username:
             raise serializers.ValidationError("Indica el usuario SOL.")
         return username
+
+
+# ── Equipo: invitar y administrar accesos de una empresa ──
+
+# El titular puede sumar contadores y gente de solo lectura; sumar otro titular
+# se permite pero se exige, en la vista, que quien invita sea titular.
+_ROLES_INVITABLES = [Role.OWNER, Role.ACCOUNTANT, Role.VIEWER]
+
+
+class MemberInviteSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(choices=_ROLES_INVITABLES, default=Role.VIEWER)
+
+    def validate_email(self, value: str) -> str:
+        return value.strip().lower()
+
+
+class MemberRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=_ROLES_INVITABLES)
+
+
+class BusinessProfileSerializer(serializers.ModelSerializer):
+    """Perfil breve del negocio. Todos los campos son opcionales: se puede
+    guardar a medias y completar después."""
+
+    is_complete = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        from .models import BusinessProfile
+
+        model = BusinessProfile
+        fields = ("offering", "sector", "primary_goal", "business_age",
+                  "people_count", "is_complete", "completed_at")
+        read_only_fields = ("is_complete", "completed_at")
+
+    def validate_people_count(self, value: int) -> int:
+        if value < 0 or value > 9999:
+            raise serializers.ValidationError("Indica un número de personas válido.")
+        return value

@@ -1,0 +1,8 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Confirma tu correo" subtitulo="Un paso más y tu cuenta queda lista para conectar tu RUC." %}
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">Hola{% if nombre %} {{ nombre }}{% endif %}:</p>
+<p style="margin:8px 0 0 0;font-size:15px;line-height:23px;color:#0b1d1a;">Confirma que este correo es tuyo para terminar de crear tu cuenta en Empresario.</p>
+{% include "email/_boton.html" with url=url label="Confirmar mi correo" %}
+<p style="margin:0;font-size:13px;line-height:20px;color:#4f615c;">El enlace vence en {{ horas }} horas. Si no creaste esta cuenta, ignora este mensaje.</p>
+{% endblock %}

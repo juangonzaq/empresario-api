@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 
+from django.utils import timezone
+
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.request import Request
@@ -28,6 +30,7 @@ from .services import ai_summary as ai_service
 from .services import consistency as consistency_service
 from .services import itf_summary as itf_service
 from .services import parties as parties_service
+from .services import renta as renta_service
 from .services import semaforo as semaforo_service
 from .services.common import clean_name, money
 from .services.cpe_summary import (
@@ -310,9 +313,27 @@ def _validate_manual_fields(data: dict, *, partial: bool) -> tuple[dict, str | N
             fields["counterparty"] = str(data.get("counterparty") or "").strip()[:200]
         if "note" in data:
             fields["note"] = str(data.get("note") or "").strip()
+        if "category_code" in data:
+            fields["category_code"] = _parse_category_code(data.get("category_code"))
     except _InvalidField as error:
         return {}, str(error)
     return fields, None
+
+
+def _parse_category_code(raw) -> str:
+    """Optional: coding the voucher at capture, like an accountant does.
+    Empty means «lo decido después» and the movement waits in Categorizar."""
+    code = str(raw or "").strip()
+    if not code:
+        return ""
+    from financials.models import TransactionCategory
+
+    exists = TransactionCategory.objects.filter(
+        code=code, is_active=True
+    ).exists()
+    if not exists:
+        raise _InvalidField(f"Categoría desconocida: {code}.")
+    return code
 
 
 class ManualEntriesView(ManagedOrganizationAPIView):
@@ -338,8 +359,21 @@ class ManualEntriesView(ManagedOrganizationAPIView):
         if error:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
         entry = ManualEntry.objects.create(account_ruc=request.ruc, **fields)
+        _sync_entry_to_financials(entry)
         overview_cache.invalidate(request.ruc)
         return Response(manual_entry_payload(entry), status=status.HTTP_201_CREATED)
+
+
+def _sync_entry_to_financials(entry: ManualEntry) -> None:
+    """A saved record must reach the income statement right away, not
+    when someone remembers the sync button. Fail-safe on purpose: the
+    record itself is already saved and the bulk sync can catch up."""
+    try:
+        from financials.services import ingest
+
+        ingest.sync_manual_entry(entry)
+    except Exception:  # pragma: no cover — defensive
+        logger.exception("manual entry → financials sync failed")
 
 
 class ManualEntryView(ManagedOrganizationAPIView):
@@ -351,12 +385,20 @@ class ManualEntryView(ManagedOrganizationAPIView):
         for name, value in fields.items():
             setattr(entry, name, value)
         entry.save(update_fields=[*fields, "updated_at"])
+        _sync_entry_to_financials(entry)
         overview_cache.invalidate(request.ruc)
         return Response(manual_entry_payload(entry))
 
     def delete(self, request: Request, pk: str) -> Response:
         entry = get_object_or_404(ManualEntry, pk=pk, account_ruc=request.ruc)
+        entry_pk = str(entry.pk)
         entry.delete()
+        try:
+            from financials.services import ingest
+
+            ingest.remove_manual_entry(request.ruc, entry_pk)
+        except Exception:  # pragma: no cover — defensive
+            logger.exception("manual entry → financials removal failed")
         overview_cache.invalidate(request.ruc)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -542,3 +584,86 @@ class AiSummaryActionView(ManagedOrganizationAPIView):
             )
         overview_cache.invalidate(request.ruc)
         return Response(ai_service.payload(row))
+
+
+class RentaView(OrganizationAPIView):
+    """Estimador del Impuesto a la Renta del año (``?year=``), según el régimen
+    declarado por la empresa. Referencial: no sustituye la contabilidad."""
+
+    def get(self, request: Request) -> Response:
+        try:
+            year = int(request.query_params.get("year") or timezone.localdate().year)
+        except ValueError:
+            return Response({"detail": "Indica el año como aaaa."}, status=status.HTTP_400_BAD_REQUEST)
+        manual = load_manual_entries(request.ruc)
+        data = renta_service.renta_summary(
+            request.ruc, request.organization.tax_regime or "", year, manual,
+        )
+        return Response(data)
+
+
+class RentaAssumptionsView(ManagedOrganizationAPIView):
+    """Ajustes de la proyección: base mensual de ventas, gastos y planilla.
+    Nulo = automático. No toca los actuals; solo cómo se proyectan los meses
+    que faltan."""
+
+    def put(self, request: Request) -> Response:
+        from decimal import Decimal, InvalidOperation
+
+        from .models import RentaProjection
+
+        try:
+            year = int(request.data.get("year") or timezone.localdate().year)
+        except (TypeError, ValueError):
+            return Response({"year": ["Año inválido."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        def _amount(key):
+            raw = request.data.get(key, "")
+            if raw in (None, ""):
+                return None
+            try:
+                value = Decimal(str(raw))
+            except InvalidOperation:
+                raise ValueError(key)
+            if value < 0:
+                raise ValueError(key)
+            return value
+
+        try:
+            fields = {
+                "monthly_sales": _amount("monthly_sales"),
+                "monthly_expenses": _amount("monthly_expenses"),
+                "monthly_payroll": _amount("monthly_payroll"),
+            }
+        except ValueError as bad:
+            return Response({str(bad): ["Monto inválido."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        RentaProjection.objects.update_or_create(
+            account_ruc=request.ruc, year=year,
+            defaults={**fields, "note": (request.data.get("note") or "")[:300], "updated_by": request.user},
+        )
+        data = renta_service.renta_summary(request.ruc, request.organization.tax_regime or "", year, load_manual_entries(request.ruc))
+        return Response(data)
+
+
+class PeriodCloseView(ManagedOrganizationAPIView):
+    """Cierra (POST) o reabre (DELETE) un mes financiero. Cerrado = hecho
+    firme, no se re-proyecta."""
+
+    def post(self, request: Request) -> Response:
+        from .models import FinancePeriodClose
+
+        period = (request.data.get("period") or "").strip()
+        if not (len(period) == 6 and period.isdigit()):
+            return Response({"period": ["Indica el periodo como aaaamm."]}, status=status.HTTP_400_BAD_REQUEST)
+        FinancePeriodClose.objects.get_or_create(
+            account_ruc=request.ruc, period=period, defaults={"closed_by": request.user},
+        )
+        return Response({"period": period, "closed": True}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request: Request) -> Response:
+        from .models import FinancePeriodClose
+
+        period = (request.query_params.get("period") or "").strip()
+        FinancePeriodClose.objects.filter(account_ruc=request.ruc, period=period).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

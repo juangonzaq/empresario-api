@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 from rest_framework import serializers
 
 from .models import (
     Colaborador, Contrato, Memorandum, RegimenPensionario, TipoContrato,
 )
+
+
+EXTENSIONES_DOCUMENTO_LABORAL = {
+    ".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png",
+}
+TAMANO_MAXIMO_DOCUMENTO_LABORAL = 10 * 1024 * 1024  # 10 MB
 
 
 class ColaboradorSerializer(serializers.ModelSerializer):
@@ -145,6 +152,9 @@ class MemorandumSerializer(serializers.ModelSerializer):
     colaborador_cargo = serializers.CharField(
         source="colaborador.position", read_only=True
     )
+    archivo = serializers.FileField(write_only=True, required=False)
+    tiene_archivo = serializers.SerializerMethodField()
+    archivo_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = Memorandum
@@ -152,13 +162,32 @@ class MemorandumSerializer(serializers.ModelSerializer):
             "id", "colaborador", "colaborador_nombre", "colaborador_documento",
             "colaborador_cargo", "numero", "fecha_emision", "tipo",
             "tipo_label", "asunto", "descripcion", "entregado",
-            "fecha_entrega", "firmado", "archivo", "created_at", "updated_at",
+            "fecha_entrega", "firmado", "archivo", "tiene_archivo",
+            "archivo_nombre", "created_at", "updated_at",
         )
         read_only_fields = ("created_at", "updated_at")
         extra_kwargs = {
             "numero": {"required": False, "allow_blank": True},
             "asunto": {"required": True, "allow_blank": False},
         }
+
+    def get_tiene_archivo(self, memorandum: Memorandum) -> bool:
+        return bool(memorandum.archivo)
+
+    def get_archivo_nombre(self, memorandum: Memorandum) -> str:
+        if not memorandum.archivo:
+            return ""
+        return memorandum.archivo.name.rsplit("/", 1)[-1]
+
+    def validate_archivo(self, archivo):
+        extension = Path(archivo.name).suffix.lower()
+        if extension not in EXTENSIONES_DOCUMENTO_LABORAL:
+            raise serializers.ValidationError(
+                "Formato no admitido. Sube PDF, Word o una imagen."
+            )
+        if archivo.size > TAMANO_MAXIMO_DOCUMENTO_LABORAL:
+            raise serializers.ValidationError("El archivo supera los 10 MB.")
+        return archivo
 
     def validate_colaborador(self, value: Colaborador) -> Colaborador:
         # El colaborador tiene que ser de la empresa activa: aceptar el de
@@ -208,8 +237,8 @@ class MemorandumSerializer(serializers.ModelSerializer):
 class ContratoSerializer(serializers.ModelSerializer):
     """Un contrato con todo lo derivado ya calculado para listar.
 
-    El archivo no se escribe por aquí: se sube y se borra en el endpoint
-    dedicado (multipart), y aquí solo se dice si existe y cómo se llama.
+    Acepta el archivo al crear o editar mediante multipart. La respuesta no
+    expone una URL pública: solo el nombre y la cantidad de versiones.
     """
 
     tipo_label = serializers.CharField(source="get_tipo_display", read_only=True)
@@ -223,8 +252,11 @@ class ContratoSerializer(serializers.ModelSerializer):
     fecha_fin_vigente = serializers.DateField(read_only=True)
     duracion_meses = serializers.IntegerField(read_only=True)
     dias_para_vencer = serializers.IntegerField(read_only=True)
+    archivo = serializers.FileField(write_only=True, required=False)
     tiene_archivo = serializers.SerializerMethodField()
     archivo_nombre = serializers.SerializerMethodField()
+    archivo_cargado_en = serializers.DateTimeField(read_only=True)
+    archivo_versiones = serializers.SerializerMethodField()
 
     class Meta:
         model = Contrato
@@ -233,8 +265,9 @@ class ContratoSerializer(serializers.ModelSerializer):
             "tipo", "tipo_label", "causa_objetiva", "fecha_inicio",
             "fecha_fin", "fecha_fin_vigente", "duracion_meses",
             "dias_para_vencer", "estado", "renovar", "nueva_fecha_fin",
-            "fecha_comunicacion", "tiene_archivo", "archivo_nombre", "notas",
-            "created_at", "updated_at",
+            "fecha_comunicacion", "archivo", "tiene_archivo",
+            "archivo_nombre", "archivo_cargado_en", "archivo_versiones",
+            "notas", "created_at", "updated_at",
         )
         read_only_fields = ("created_at", "updated_at")
 
@@ -244,7 +277,23 @@ class ContratoSerializer(serializers.ModelSerializer):
     def get_archivo_nombre(self, contrato: Contrato) -> str:
         if not contrato.archivo:
             return ""
-        return contrato.archivo.name.rsplit("/", 1)[-1]
+        return (
+            contrato.archivo_nombre_original
+            or contrato.archivo.name.rsplit("/", 1)[-1]
+        )
+
+    def get_archivo_versiones(self, contrato: Contrato) -> int:
+        return contrato.versiones_archivo.count() + int(bool(contrato.archivo))
+
+    def validate_archivo(self, archivo):
+        extension = Path(archivo.name).suffix.lower()
+        if extension not in EXTENSIONES_DOCUMENTO_LABORAL:
+            raise serializers.ValidationError(
+                "Formato no admitido. Sube PDF, Word o una imagen."
+            )
+        if archivo.size > TAMANO_MAXIMO_DOCUMENTO_LABORAL:
+            raise serializers.ValidationError("El archivo supera los 10 MB.")
+        return archivo
 
     def validate_colaborador(self, value: Colaborador) -> Colaborador:
         ruc = getattr(self.context.get("request"), "ruc", None)

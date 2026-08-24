@@ -1,0 +1,6 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Renovación automática cancelada" subtitulo="No te cobraremos más por esta empresa." %}
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">La suscripción de <strong>{{ empresa }}</strong> ya no se renovará sola. Sigues con acceso hasta el <strong>{{ hasta }}</strong>; después, los datos quedan en pausa hasta que elijas un plan.</p>
+{% include "email/_boton.html" with url=url label="Ver mi suscripción" %}
+{% endblock %}

@@ -37,6 +37,7 @@ class TransactionSource(models.TextChoices):
     MANUAL_SALE = "manual_sale", "Venta manual"
     MANUAL_PURCHASE = "manual_purchase", "Compra manual"
     PAYROLL = "payroll", "Planilla"
+    FEE_RECEIPT = "fee_receipt", "Recibo por honorarios"
     ADJUSTMENT = "adjustment", "Ajuste"
 
 

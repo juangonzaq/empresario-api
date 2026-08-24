@@ -19,6 +19,7 @@ from pathlib import Path
 
 from django.db import IntegrityError
 from django.http import FileResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
@@ -30,9 +31,15 @@ from rest_framework.response import Response
 
 from accounts.tenancy import CanManageOrganization, TenantScopedViewSetMixin
 
-from .models import Colaborador, Contrato, Memorandum, OrigenSueldo
+from .models import (
+    Colaborador, Contrato, ContratoArchivo, Memorandum, OrigenSueldo,
+)
 from .serializers import (
-    ColaboradorSerializer, ContratoSerializer, MemorandumSerializer,
+    EXTENSIONES_DOCUMENTO_LABORAL,
+    TAMANO_MAXIMO_DOCUMENTO_LABORAL,
+    ColaboradorSerializer,
+    ContratoSerializer,
+    MemorandumSerializer,
 )
 from .services import aplicar_sueldo_afpnet, sincronizar_desde_afpnet
 
@@ -132,9 +139,8 @@ class MemorandumViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     * ``GET /api/memorandums/?colaborador={uuid}`` — los de una persona
     * ``POST /api/memorandums/`` — emitir uno (el número se genera si falta)
     * ``PATCH/DELETE /api/memorandums/{uuid}/`` — corregir o retirar
-
-    Es el control que antes vivía en Excel; el documento firmado no se sube
-    aquí, ``archivo`` guarda su ruta o enlace.
+    * ``GET/POST/DELETE /api/memorandums/{uuid}/archivo/`` — bajar, subir o
+      quitar el documento sin exponerlo en una URL pública.
     """
 
     tenant_field = "taxpayer_id"
@@ -177,18 +183,116 @@ class MemorandumViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
             ) from exc
 
     def perform_update(self, serializer):
+        anterior = self.get_object().archivo
         try:
-            serializer.save()
+            actualizado = serializer.save()
         except IntegrityError as exc:
             raise ValidationError(
                 {"numero": "Ya existe un memorándum con ese número."}
             ) from exc
+        if anterior and anterior.name != actualizado.archivo.name:
+            anterior.delete(save=False)
+
+    def perform_destroy(self, instance):
+        if instance.archivo:
+            instance.archivo.delete(save=False)
+        instance.delete()
+
+    @action(
+        detail=True, methods=["get", "post", "delete"], url_path="archivo",
+        parser_classes=[MultiPartParser],
+    )
+    def archivo(self, request: Request, pk=None) -> Response | FileResponse:
+        memorandum = self.get_object()
+
+        if request.method == "GET":
+            if not memorandum.archivo:
+                return Response(
+                    {"detail": "Este memorándum no tiene archivo cargado."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            nombre = memorandum.archivo.name.rsplit("/", 1)[-1]
+            return FileResponse(
+                memorandum.archivo.open("rb"),
+                as_attachment=True,
+                filename=nombre,
+            )
+
+        if request.method == "DELETE":
+            if memorandum.archivo:
+                memorandum.archivo.delete(save=True)
+            return Response(self.get_serializer(memorandum).data)
+
+        subido = request.FILES.get("archivo")
+        if subido is None:
+            return Response(
+                {"detail": "Adjunta el archivo en el campo «archivo»."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        extension = Path(subido.name).suffix.lower()
+        if extension not in EXTENSIONES_DOCUMENTO_LABORAL:
+            return Response(
+                {"detail": "Formato no admitido. Sube PDF, Word o una imagen."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if subido.size > TAMANO_MAXIMO_DOCUMENTO_LABORAL:
+            return Response(
+                {"detail": "El archivo supera los 10 MB."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if memorandum.archivo:
+            memorandum.archivo.delete(save=False)
+        memorandum.archivo = subido
+        memorandum.save(update_fields=["archivo", "updated_at"])
+        return Response(self.get_serializer(memorandum).data)
 
 
 # Qué se acepta como contrato escaneado y hasta qué tamaño. La lista corta es
 # a propósito: esto guarda contratos, no un adjuntador genérico.
-EXTENSIONES_CONTRATO = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"}
-TAMANO_MAXIMO_CONTRATO = 10 * 1024 * 1024  # 10 MB
+EXTENSIONES_CONTRATO = EXTENSIONES_DOCUMENTO_LABORAL
+TAMANO_MAXIMO_CONTRATO = TAMANO_MAXIMO_DOCUMENTO_LABORAL
+
+
+def _archivar_documento_actual(contrato: Contrato) -> None:
+    """Mueve la referencia vigente al histórico sin copiar ni borrar el blob."""
+    if not contrato.archivo:
+        return
+    ContratoArchivo.objects.create(
+        taxpayer_id=contrato.taxpayer_id,
+        contrato=contrato,
+        archivo=contrato.archivo.name,
+        nombre_original=(
+            contrato.archivo_nombre_original
+            or contrato.archivo.name.rsplit("/", 1)[-1]
+        ),
+        cargado_en=contrato.archivo_cargado_en or contrato.updated_at,
+    )
+    # ``get_object`` trae la relación prefetched para listar sin N+1. Después
+    # de crear una versión hay que invalidar esa foto o el contador de la
+    # respuesta seguiría mostrando el valor anterior.
+    cache = getattr(contrato, "_prefetched_objects_cache", None)
+    if cache is not None:
+        cache.pop("versiones_archivo", None)
+
+
+def _guardar_documento_actual(contrato: Contrato, archivo) -> None:
+    _archivar_documento_actual(contrato)
+    contrato.archivo = archivo
+    contrato.archivo_nombre_original = Path(archivo.name).name
+    contrato.archivo_cargado_en = timezone.now()
+    contrato.save(update_fields=[
+        "archivo", "archivo_nombre_original", "archivo_cargado_en", "updated_at",
+    ])
+
+
+def _quitar_documento_actual(contrato: Contrato) -> None:
+    _archivar_documento_actual(contrato)
+    contrato.archivo = ""
+    contrato.archivo_nombre_original = ""
+    contrato.archivo_cargado_en = None
+    contrato.save(update_fields=[
+        "archivo", "archivo_nombre_original", "archivo_cargado_en", "updated_at",
+    ])
 
 
 class ContratoViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
@@ -204,7 +308,9 @@ class ContratoViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     tenant_field = "taxpayer_id"
     permission_classes = [IsAuthenticated, CanManageOrganization]
 
-    queryset = Contrato.objects.select_related("colaborador")
+    queryset = Contrato.objects.select_related("colaborador").prefetch_related(
+        "versiones_archivo"
+    )
     serializer_class = ContratoSerializer
     pagination_class = None
     filter_backends = (filters.OrderingFilter,)
@@ -223,13 +329,25 @@ class ContratoViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(taxpayer_id=self.request.ruc)
+        archivo = serializer.validated_data.pop("archivo", None)
+        contrato = serializer.save(taxpayer_id=self.request.ruc)
+        if archivo:
+            _guardar_documento_actual(contrato, archivo)
+
+    def perform_update(self, serializer):
+        archivo = serializer.validated_data.pop("archivo", None)
+        contrato = serializer.save()
+        if archivo:
+            _guardar_documento_actual(contrato, archivo)
 
     def perform_destroy(self, instance):
-        # El archivo se va con el contrato; dejarlo huérfano en disco solo
-        # acumula documentos personales que ya nadie puede pedir.
+        # Al borrar el contrato sí desaparece su legajo completo, incluido el
+        # documento vigente y todas sus versiones históricas.
         if instance.archivo:
             instance.archivo.delete(save=False)
+        for version in instance.versiones_archivo.all():
+            if version.archivo:
+                version.archivo.delete(save=False)
         instance.delete()
 
     @action(
@@ -245,14 +363,17 @@ class ContratoViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
                     {"detail": "Este contrato no tiene archivo cargado."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            nombre = contrato.archivo.name.rsplit("/", 1)[-1]
+            nombre = (
+                contrato.archivo_nombre_original
+                or contrato.archivo.name.rsplit("/", 1)[-1]
+            )
             return FileResponse(
                 contrato.archivo.open("rb"), as_attachment=True, filename=nombre
             )
 
         if request.method == "DELETE":
             if contrato.archivo:
-                contrato.archivo.delete(save=True)
+                _quitar_documento_actual(contrato)
             return Response(self.get_serializer(contrato).data)
 
         subido = request.FILES.get("archivo")
@@ -272,10 +393,68 @@ class ContratoViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
                 {"detail": "El archivo supera los 10 MB."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Subir de nuevo reemplaza: el contrato vigente es uno, no una pila
-        # de versiones, y el archivo anterior no debe quedar huérfano.
-        if contrato.archivo:
-            contrato.archivo.delete(save=False)
-        contrato.archivo = subido
-        contrato.save(update_fields=["archivo", "updated_at"])
+        _guardar_documento_actual(contrato, subido)
         return Response(self.get_serializer(contrato).data)
+
+    @action(detail=True, methods=["get"], url_path="archivos")
+    def archivos(self, request: Request, pk=None) -> Response:
+        contrato = self.get_object()
+        versiones = []
+        if contrato.archivo:
+            versiones.append({
+                "id": "actual",
+                "nombre": (
+                    contrato.archivo_nombre_original
+                    or contrato.archivo.name.rsplit("/", 1)[-1]
+                ),
+                "cargado_en": contrato.archivo_cargado_en or contrato.updated_at,
+                "es_actual": True,
+            })
+        versiones.extend(
+            {
+                "id": str(version.id),
+                "nombre": version.nombre_original,
+                "cargado_en": version.cargado_en,
+                "es_actual": False,
+            }
+            for version in contrato.versiones_archivo.all()
+        )
+        return Response(versiones)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"archivos/(?P<version_id>[^/.]+)",
+        url_name="archivo-version",
+    )
+    def descargar_version_archivo(
+        self, request: Request, pk=None, version_id=None
+    ) -> Response | FileResponse:
+        contrato = self.get_object()
+        if version_id == "actual":
+            if not contrato.archivo:
+                return Response(
+                    {"detail": "El contrato no tiene un archivo vigente."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return FileResponse(
+                contrato.archivo.open("rb"),
+                as_attachment=True,
+                filename=(
+                    contrato.archivo_nombre_original
+                    or contrato.archivo.name.rsplit("/", 1)[-1]
+                ),
+            )
+
+        try:
+            uuid.UUID(str(version_id))
+        except ValueError:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        version = get_object_or_404(
+            contrato.versiones_archivo.all(), pk=version_id
+        )
+        return FileResponse(
+            version.archivo.open("rb"),
+            as_attachment=True,
+            filename=version.nombre_original,
+        )

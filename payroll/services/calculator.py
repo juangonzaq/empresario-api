@@ -17,6 +17,7 @@ from decimal import Decimal
 from colaboradores.models import Colaborador, RegimenPensionario
 
 from ..models import ConceptKind, PayrollConcept
+from . import bonuses
 from .master_data import RatesSnapshot
 from .money import ZERO, D, money
 
@@ -81,6 +82,7 @@ class PayrollCalculator:
         lines += self._overtime_lines(hourly, attendance)
         lines += self._family_allowance(colaborador)
         lines += [line for line in manual_lines if line.amount != 0]
+        lines += self._statutory_bonus(colaborador, lines)
         lines += self._extraordinary_bonus(colaborador, lines)
 
         pension_base = self._base(lines, "affects_pension_base")
@@ -149,6 +151,28 @@ class PayrollCalculator:
             "FAMILY_ALLOWANCE",
             self.rates.minimum_wage * D(self.settings.family_allowance_rate),
         )]
+
+    def _statutory_bonus(
+        self, colaborador: Colaborador, lines: list[Line]
+    ) -> list[Line]:
+        """July and December pay the legal bonus automatically, prorated
+        by the semester months worked. A manually captured bonus always
+        wins — the engine only fills the omission, because a July payroll
+        without its gratificación underpays the worker AND understates
+        the fifth-category base in the very same month."""
+        if self.rates.month not in bonuses.STATUTORY_BONUS_MONTHS:
+            return []
+        if any(
+            line.concept.code in ("STATUTORY_BONUS", "TRUNCATED_STATUTORY_BONUS")
+            for line in lines
+        ):
+            return []
+        amount = bonuses.statutory_bonus_amount(
+            colaborador, self.rates, self.rates.month
+        )
+        if amount <= 0:
+            return []
+        return [self._line("STATUTORY_BONUS", amount)]
 
     def _extraordinary_bonus(
         self, colaborador: Colaborador, lines: list[Line]

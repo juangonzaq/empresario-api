@@ -1,0 +1,6 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Recupera tu contraseña" subtitulo="Pediste restablecerla. Puedes hacerlo desde aquí." %}
+{% include "email/_boton.html" with url=url label="Crear una contraseña nueva" %}
+<p style="margin:0;font-size:13px;line-height:20px;color:#4f615c;">El enlace vence en {{ horas }} horas y solo se puede usar una vez. Si no fuiste tú, no hace falta que hagas nada: tu contraseña actual sigue siendo válida.</p>
+{% endblock %}

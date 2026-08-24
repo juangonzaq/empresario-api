@@ -340,6 +340,7 @@ def manual_entry_payload(entry: Any) -> dict[str, Any]:
         "currency": entry.currency or "PEN",
         "amount": money(entry.amount),
         "note": entry.note,
+        "category_code": getattr(entry, "category_code", ""),
         "origin": "manual",
     }
 

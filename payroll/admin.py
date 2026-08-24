@@ -4,7 +4,8 @@ deliverable that lets someone maintain rates without touching code)."""
 from django.contrib import admin
 
 from .models import (
-    EmployeeSalaryHistory, IncomeTaxBracket, IncomeTaxProjection,
+    EmployeeSalaryHistory, IncomeTaxBracket, IncomeTaxMonthlyInput,
+    IncomeTaxProjection,
     IncomeTaxSettings, MinimumWage, PayrollConcept, PayrollEntry,
     PayrollPeriod, PayrollSettings, PensionFundRate, SocialHealthRate,
     TaxUnitValue, WorkRiskInsuranceRate,
@@ -96,3 +97,9 @@ class EmployeeSalaryHistoryAdmin(admin.ModelAdmin):
 @admin.register(IncomeTaxProjection)
 class IncomeTaxProjectionAdmin(admin.ModelAdmin):
     list_display = ("colaborador", "year", "taxable_income", "annual_tax")
+
+
+@admin.register(IncomeTaxMonthlyInput)
+class IncomeTaxMonthlyInputAdmin(admin.ModelAdmin):
+    list_display = ("colaborador", "year", "month", "taxable_income", "withheld")
+    list_filter = ("year",)

@@ -61,9 +61,14 @@ class EntrySerializer(serializers.ModelSerializer):
 class EntryDetailSerializer(EntrySerializer):
     lines = EntryLineSerializer(many=True, read_only=True)
     rates_snapshot = serializers.JSONField(read_only=True)
+    period_year = serializers.IntegerField(source="period.year", read_only=True)
+    period_month = serializers.IntegerField(source="period.month", read_only=True)
 
     class Meta(EntrySerializer.Meta):
-        fields = (*EntrySerializer.Meta.fields, "lines", "rates_snapshot")
+        fields = (
+            *EntrySerializer.Meta.fields, "lines", "rates_snapshot",
+            "period_year", "period_month",
+        )
         read_only_fields = fields
 
 
@@ -106,21 +111,45 @@ class PeriodSerializer(serializers.ModelSerializer):
 
 class ProjectionSerializer(serializers.ModelSerializer):
     schedule = serializers.SerializerMethodField()
+    monthly_inputs = serializers.SerializerMethodField()
 
     class Meta:
         model = IncomeTaxProjection
         fields = (
             "year", "projected_annual_income", "previous_employer_income",
             "previous_employer_withheld", "profit_sharing", "taxable_income",
-            "annual_tax", "bracket_detail", "schedule", "recalculated_at",
+            "annual_tax", "bracket_detail", "computation_detail", "schedule",
+            "monthly_inputs", "recalculated_at",
         )
         read_only_fields = (
             "year", "projected_annual_income", "taxable_income", "annual_tax",
-            "bracket_detail", "schedule", "recalculated_at",
+            "bracket_detail", "computation_detail", "schedule",
+            "monthly_inputs", "recalculated_at",
         )
 
     def get_schedule(self, projection: IncomeTaxProjection) -> list[dict]:
         return [
-            {"month": row.month, "amount": row.amount, "is_settled": row.is_settled}
+            {
+                "month": row.month,
+                "amount": row.amount,
+                "is_settled": row.is_settled,
+                "override_amount": row.override_amount,
+                "override_reason": row.override_reason,
+                "effective_amount": row.effective_amount,
+            }
             for row in projection.schedule.all()
+        ]
+
+    def get_monthly_inputs(self, projection: IncomeTaxProjection) -> list[dict]:
+        rows = projection.colaborador.income_tax_monthly_inputs.filter(
+            year=projection.year
+        )
+        return [
+            {
+                "month": row.month,
+                "taxable_income": row.taxable_income,
+                "withheld": row.withheld,
+                "note": row.note,
+            }
+            for row in rows
         ]

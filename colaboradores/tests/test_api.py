@@ -239,6 +239,7 @@ class SincronizacionAfpnetTests(TenantAPITestCase):
         self.assertFalse(self.listar().data[0]["is_active"])
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="memorandums-test-"))
 class MemorandumTests(TenantAPITestCase):
     """El control de memorándums que antes vivía en Excel, por colaborador."""
 
@@ -261,6 +262,19 @@ class MemorandumTests(TenantAPITestCase):
             **datos,
         }
         return self.client.post(self.url, cuerpo, format="json")
+
+    def _subir(
+        self,
+        memorandum_id,
+        nombre="memorandum.pdf",
+        contenido=b"%PDF-1.4 firmado",
+    ):
+        url = reverse("colaboradores:memorandum-archivo", args=[memorandum_id])
+        return self.client.post(
+            url,
+            {"archivo": SimpleUploadedFile(nombre, contenido)},
+            format="multipart",
+        )
 
     def test_emite_con_numero_automatico_correlativo(self):
         primero = self.emitir()
@@ -322,6 +336,59 @@ class MemorandumTests(TenantAPITestCase):
         self.assertTrue(cambiado.data["entregado"])
         self.assertTrue(cambiado.data["firmado"])
 
+    def test_crea_con_archivo_en_el_mismo_envio(self):
+        respuesta = self.client.post(
+            self.url,
+            {
+                "colaborador": str(self.colaborador.id),
+                "fecha_emision": "2026-06-10",
+                "tipo": "llamada_atencion",
+                "asunto": "Tardanzas reiteradas",
+                "archivo": SimpleUploadedFile(
+                    "cargo-firmado.pdf", b"%PDF-1.4 cargo firmado"
+                ),
+            },
+            format="multipart",
+        )
+        self.assertEqual(respuesta.status_code, http.HTTP_201_CREATED)
+        self.assertTrue(respuesta.data["tiene_archivo"])
+        self.assertTrue(respuesta.data["archivo_nombre"].endswith(".pdf"))
+        self.assertNotIn("archivo", respuesta.data)
+
+    def test_sube_descarga_reemplaza_y_quita_el_archivo(self):
+        memorandum_id = self.emitir().data["id"]
+        subida = self._subir(memorandum_id)
+        self.assertEqual(subida.status_code, http.HTTP_200_OK)
+        self.assertTrue(subida.data["tiene_archivo"])
+
+        url = reverse("colaboradores:memorandum-archivo", args=[memorandum_id])
+        descarga = self.client.get(url)
+        self.assertEqual(descarga.status_code, http.HTTP_200_OK)
+        self.assertIn("memorandum", descarga["Content-Disposition"])
+        self.assertEqual(
+            b"".join(descarga.streaming_content), b"%PDF-1.4 firmado"
+        )
+
+        reemplazo = self._subir(
+            memorandum_id, nombre="cargo.png", contenido=b"imagen firmada"
+        )
+        self.assertEqual(reemplazo.status_code, http.HTTP_200_OK)
+        self.assertTrue(reemplazo.data["archivo_nombre"].endswith(".png"))
+
+        quitado = self.client.delete(url)
+        self.assertFalse(quitado.data["tiene_archivo"])
+        self.assertEqual(self.client.get(url).status_code, http.HTTP_404_NOT_FOUND)
+
+    def test_rechaza_archivos_no_admitidos_o_mayores_a_10_mb(self):
+        memorandum_id = self.emitir().data["id"]
+        ejecutable = self._subir(memorandum_id, nombre="memorandum.exe")
+        self.assertEqual(ejecutable.status_code, http.HTTP_400_BAD_REQUEST)
+        gigante = self._subir(
+            memorandum_id,
+            contenido=b"x" * (10 * 1024 * 1024 + 1),
+        )
+        self.assertEqual(gigante.status_code, http.HTTP_400_BAD_REQUEST)
+
     def test_no_acepta_colaborador_de_otra_empresa(self):
         ajeno = Colaborador.objects.create(
             taxpayer_id="20111111111", document_number="11223344",
@@ -331,11 +398,18 @@ class MemorandumTests(TenantAPITestCase):
         self.assertEqual(respuesta.status_code, http.HTTP_400_BAD_REQUEST)
 
     def test_no_ve_los_de_otra_empresa(self):
-        self.emitir()
+        memorandum_id = self.emitir().data["id"]
+        self._subir(memorandum_id)
         usuario, _ = self.make_tenant("20111111111", "otra@empresa.pe")
         self.client.force_authenticate(usuario)
         respuesta = self.client.get(self.url)
         self.assertEqual(respuesta.data, [])
+        archivo_url = reverse(
+            "colaboradores:memorandum-archivo", args=[memorandum_id]
+        )
+        self.assertEqual(
+            self.client.get(archivo_url).status_code, http.HTTP_404_NOT_FOUND
+        )
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="contratos-test-"))
@@ -374,6 +448,7 @@ class ContratoTests(TenantAPITestCase):
         self.assertEqual(respuesta.data["dias_para_vencer"], 90)
         self.assertEqual(respuesta.data["colaborador_cargo"], "Asistente Contable")
         self.assertFalse(respuesta.data["tiene_archivo"])
+        self.assertEqual(respuesta.data["archivo_versiones"], 0)
 
     def test_estados_vencido_y_por_vencer(self):
         hoy = date.today()
@@ -428,6 +503,28 @@ class ContratoTests(TenantAPITestCase):
             format="multipart",
         )
 
+    def test_registra_con_archivo_en_el_mismo_envio(self):
+        hoy = date.today()
+        respuesta = self.client.post(
+            self.url,
+            {
+                "colaborador": str(self.colaborador.id),
+                "tipo": "sujeto_a_modalidad",
+                "causa_objetiva": "Incremento de actividad",
+                "fecha_inicio": str(hoy - timedelta(days=30)),
+                "fecha_fin": str(hoy + timedelta(days=300)),
+                "archivo": SimpleUploadedFile(
+                    "contrato-firmado.pdf", b"%PDF-1.4 contrato firmado"
+                ),
+            },
+            format="multipart",
+        )
+        self.assertEqual(respuesta.status_code, http.HTTP_201_CREATED)
+        self.assertTrue(respuesta.data["tiene_archivo"])
+        self.assertEqual(respuesta.data["archivo_nombre"], "contrato-firmado.pdf")
+        self.assertEqual(respuesta.data["archivo_versiones"], 1)
+        self.assertNotIn("archivo", respuesta.data)
+
     def test_sube_descarga_y_quita_el_archivo(self):
         contrato_id = self.registrar().data["id"]
         subida = self._subir(contrato_id)
@@ -448,6 +545,50 @@ class ContratoTests(TenantAPITestCase):
         self.assertFalse(quitado.data["tiene_archivo"])
         self.assertEqual(self.client.get(url).status_code, http.HTTP_404_NOT_FOUND)
 
+    def test_conserva_y_descarga_el_historico_al_reemplazar(self):
+        contrato_id = self.registrar().data["id"]
+        self._subir(
+            contrato_id,
+            nombre="contrato-v1.pdf",
+            contenido=b"primera version",
+        )
+        reemplazo = self._subir(
+            contrato_id,
+            nombre="contrato-v2.pdf",
+            contenido=b"segunda version",
+        )
+        self.assertEqual(reemplazo.data["archivo_nombre"], "contrato-v2.pdf")
+        self.assertEqual(reemplazo.data["archivo_versiones"], 2)
+
+        historial_url = reverse(
+            "colaboradores:contrato-archivos", args=[contrato_id]
+        )
+        historial = self.client.get(historial_url)
+        self.assertEqual(historial.status_code, http.HTTP_200_OK)
+        self.assertEqual(len(historial.data), 2)
+        self.assertEqual(historial.data[0]["nombre"], "contrato-v2.pdf")
+        self.assertTrue(historial.data[0]["es_actual"])
+        anterior = next(v for v in historial.data if not v["es_actual"])
+        self.assertEqual(anterior["nombre"], "contrato-v1.pdf")
+
+        version_url = reverse(
+            "colaboradores:contrato-archivo-version",
+            args=[contrato_id, anterior["id"]],
+        )
+        descarga = self.client.get(version_url)
+        self.assertEqual(descarga.status_code, http.HTTP_200_OK)
+        self.assertEqual(b"".join(descarga.streaming_content), b"primera version")
+
+        archivo_actual_url = reverse(
+            "colaboradores:contrato-archivo", args=[contrato_id]
+        )
+        quitado = self.client.delete(archivo_actual_url)
+        self.assertFalse(quitado.data["tiene_archivo"])
+        self.assertEqual(quitado.data["archivo_versiones"], 2)
+        historial = self.client.get(historial_url)
+        self.assertEqual(len(historial.data), 2)
+        self.assertFalse(any(v["es_actual"] for v in historial.data))
+
     def test_rechaza_formatos_y_tamanos_fuera_de_lugar(self):
         contrato_id = self.registrar().data["id"]
         exe = self._subir(contrato_id, nombre="contrato.exe")
@@ -465,6 +606,12 @@ class ContratoTests(TenantAPITestCase):
         self.assertEqual(self.client.get(self.url).data, [])
         url = reverse("colaboradores:contrato-archivo", args=[contrato_id])
         self.assertEqual(self.client.get(url).status_code, http.HTTP_404_NOT_FOUND)
+        historial_url = reverse(
+            "colaboradores:contrato-archivos", args=[contrato_id]
+        )
+        self.assertEqual(
+            self.client.get(historial_url).status_code, http.HTTP_404_NOT_FOUND
+        )
 
 
 class CumpleanosTests(TenantAPITestCase):

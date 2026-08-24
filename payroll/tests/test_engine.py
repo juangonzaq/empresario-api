@@ -118,8 +118,8 @@ class MonthlyCalculationTests(TenantAPITestCase):
         self.assertEqual(entry.pension_contribution, Decimal("2000.00"))
 
     def test_income_tax_projection_and_schedule(self):
-        """January, 20 000 monthly: hand-computed annual tax 37 575, so
-        each of the 12 open months withholds 3 131.25."""
+        """January, 20 000 monthly: hand-computed annual tax 38 295, so
+        each of the 12 open months withholds 3 191.25."""
         person = employee(
             regimen="afp", afp="prima", pension_commission_type="flow",
             cuspp="123456ABCDE4", monthly_salary=Decimal("20000.00"),
@@ -127,14 +127,16 @@ class MonthlyCalculationTests(TenantAPITestCase):
         entry = self.entry_of(self.run_period(2026, 1), person)
 
         projection = person.income_tax_projections.get(year=2026)
-        # 20000 × 12 + two bonuses of 20000 = 280 000 − 7 UIT (38 500).
-        self.assertEqual(projection.projected_annual_income, Decimal("280000.00"))
-        self.assertEqual(projection.taxable_income, Decimal("241500.00"))
-        self.assertEqual(projection.annual_tax, Decimal("37575.00"))
+        # 20000 × 12 + two bonuses of 20000 × 1.09 (the extraordinary
+        # bonus is fifth-category income too, V3) = 283 600 − 7 UIT.
+        self.assertEqual(projection.projected_annual_income, Decimal("283600.00"))
+        self.assertEqual(projection.taxable_income, Decimal("245100.00"))
+        # 27500×8 % + 82500×14 % + 82500×17 % + 52600×20 % = 38 295.
+        self.assertEqual(projection.annual_tax, Decimal("38295.00"))
         # Bracket split must cover the taxable income exactly (V8).
         covered = sum(Decimal(d["amount"]) for d in projection.bracket_detail)
-        self.assertEqual(covered, Decimal("241500.00"))
-        self.assertEqual(entry.income_tax_withholding, Decimal("3131.25"))
+        self.assertEqual(covered, Decimal("245100.00"))
+        self.assertEqual(entry.income_tax_withholding, Decimal("3191.25"))
 
     def test_below_deduction_pays_no_income_tax(self):
         person = employee()  # 3000/month → below 7 UIT after projection
@@ -237,7 +239,7 @@ class SettledScheduleTests(TenantAPITestCase):
         projection = person.income_tax_projections.get(year=2026)
         january_amount = projection.schedule.get(month=1)
         self.assertTrue(january_amount.is_settled)
-        self.assertEqual(january_amount.amount, Decimal("3131.25"))
+        self.assertEqual(january_amount.amount, Decimal("3191.25"))
 
         # A raise in February recalculates the projection…
         person.monthly_salary = Decimal("25000.00")
@@ -248,10 +250,10 @@ class SettledScheduleTests(TenantAPITestCase):
         projection.refresh_from_db()
         # …but January never moves (the invariant of §5.4).
         self.assertEqual(
-            projection.schedule.get(month=1).amount, Decimal("3131.25")
+            projection.schedule.get(month=1).amount, Decimal("3191.25")
         )
         february_amount = projection.schedule.get(month=2).amount
-        self.assertGreater(february_amount, Decimal("3131.25"))
+        self.assertGreater(february_amount, Decimal("3191.25"))
         # Year-end conciliation (V9): schedule covers the annual tax.
         total = sum(row.amount for row in projection.schedule.all())
         self.assertEqual(total, projection.annual_tax)
@@ -302,3 +304,29 @@ class PayslipTests(TenantAPITestCase):
         second = render_payslip(entry, "EMPRESA DEMO S.A.C.")
         self.assertEqual(first, second)
         self.assertTrue(first.startswith(b"%PDF"))
+
+
+class FinancialsSyncTests(TenantAPITestCase):
+    """Closing a period pushes the labour cost into finanzas by itself:
+    the income statement must never depend on someone remembering to
+    press the sync button (financial spec §6.4)."""
+
+    def test_close_pushes_labour_cost_to_financials(self):
+        from financials.models import FinancialTransaction
+
+        employee()
+        period = runner.create_period(RUC, 2026, 8)
+        runner.calculate_period(period)
+        runner.approve_period(period)
+        with self.captureOnCommitCallbacks(execute=True):
+            runner.close_period(period, None, accept_warnings=True)
+
+        rows = FinancialTransaction.objects.filter(
+            taxpayer_id=RUC, source="payroll"
+        )
+        self.assertEqual(rows.count(), 1)
+        row = rows.first()
+        # ONP 3000: employer cost = 3000 + EsSalud 270.
+        self.assertEqual(row.net_amount_pen, Decimal("3270.00"))
+        self.assertEqual(row.category.code, "PAYROLL_ADMIN")
+        self.assertEqual(row.categorization_status, "confirmed")

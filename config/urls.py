@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/", include("compliance_profile.urls")),
     path("api/", include("sunat_itf.urls")),
     path("api/", include("sunat_cpe.urls")),
+    path("api/", include("sunat_rhe.urls")),
     path("api/", include("sensor_sunat.urls")),
     path("api/", include("sunat_intel.urls")),
     path("api/", include("finance_analytics.urls")),
@@ -22,5 +23,9 @@ urlpatterns = [
     path("api/", include("colaboradores.urls")),
     path("api/", include("payroll.urls")),
     path("api/", include("financials.urls")),
+    path("api/", include("leads.urls")),
+    path("api/", include("billing.urls")),
+    path("api/", include("reconciliation.urls")),
+    path("api/", include("obligations.urls")),
     path("api/auth/", include("rest_framework.urls")),  # login for the browsable API
 ]

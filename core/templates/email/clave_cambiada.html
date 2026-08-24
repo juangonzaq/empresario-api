@@ -1,0 +1,7 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Tu contraseña cambió" subtitulo="Aviso de seguridad." %}
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">La contraseña de tu cuenta acaba de cambiar.</p>
+<p style="margin:12px 0 0 0;font-size:15px;line-height:23px;color:#0b1d1a;">Si no fuiste tú, restablécela de inmediato y revisa quién tiene acceso a tu correo.</p>
+{% include "email/_boton.html" with url=url label="Restablecer mi contraseña" %}
+{% endblock %}

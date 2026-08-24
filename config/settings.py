@@ -114,12 +114,17 @@ INSTALLED_APPS = [
     'sensor_sunat',
     'sunat_itf',
     'sunat_cpe',
+    'sunat_rhe',
     'sunat_intel',
     'finance_analytics',
     'afpnet',
     'colaboradores',
     'payroll',
     'financials',
+    'leads',
+    'billing',
+    'reconciliation',
+    'obligations',
 ]
 
 MIDDLEWARE = [
@@ -184,6 +189,38 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "EMPRESARIO <no-reply@empresario.pe>")
+# A quién avisar cuando alguien deja sus datos en la landing. Vacío: no se avisa.
+LEADS_NOTIFY_EMAIL = os.getenv("LEADS_NOTIFY_EMAIL", "")
+
+# Suscripciones y pagos (ver billing/). La URL pública del API es la que
+# Mercado Pago usa para avisar del pago; en local, la del túnel.
+# Vacía: se deduce del origen desde el que se inició el pago (el túnel, el
+# dominio del front), que con el proxy de Next también sirve el API.
+API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "").rstrip("/")
+BILLING_TRIAL_DAYS = int(os.getenv("BILLING_TRIAL_DAYS", "7"))
+MERCADOPAGO_ACCESS_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN", "")
+# fake (aprueba al instante, solo DEBUG) · manual (pendiente + correo) · mercadopago.
+# Con token de Mercado Pago presente, es Mercado Pago salvo que se diga otra cosa.
+BILLING_GATEWAY = os.getenv(
+    "BILLING_GATEWAY",
+    "mercadopago" if MERCADOPAGO_ACCESS_TOKEN else ("fake" if DEBUG else "manual"),
+)
+BILLING_NOTIFY_EMAIL = os.getenv("BILLING_NOTIFY_EMAIL", "")
+MERCADOPAGO_WEBHOOK_SECRET = os.getenv("MERCADOPAGO_WEBHOOK_SECRET", "")
+REFERRAL_TARGET = int(os.getenv("REFERRAL_TARGET", "5"))
+REFERRAL_REWARD_DAYS = int(os.getenv("REFERRAL_REWARD_DAYS", "30"))
+
+# Empresas por cuenta. Cada plan incluye una base de asientos de empresa; el
+# titular puede tener asientos adicionales, que otorga el dueño del sistema
+# desde el admin. El precio por asiento extra es informativo para el front.
+BILLING_DEFAULT_COMPANY_SEATS = int(os.getenv("BILLING_DEFAULT_COMPANY_SEATS", "3"))
+BILLING_EXTRA_COMPANY_PRICE = os.getenv("BILLING_EXTRA_COMPANY_PRICE", "9")
+
+# Sincronización manual: cuántas «Traer comprobantes» a pedido puede hacer una
+# empresa por día sin costo, y el precio de cada una adicional. El límite se
+# puede subir por empresa desde el admin (Organization.manual_sync_daily_limit).
+SYNC_MANUAL_DAILY_LIMIT = int(os.getenv("SYNC_MANUAL_DAILY_LIMIT", "2"))
+SYNC_EXTRA_MANUAL_PRICE = os.getenv("SYNC_EXTRA_MANUAL_PRICE", "5")
 
 
 # Password validation
@@ -250,7 +287,10 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_THROTTLE_RATES': {
         'anon': os.getenv('THROTTLE_ANON', '60/hour'),
-        'user': os.getenv('THROTTLE_USER', '2000/hour'),
+        # En desarrollo se recarga y se prueba mucho; el techo normal (2000/h)
+        # se agota y el 429 en /api/me/ tumbaba la sesión. Mucho más alto en
+        # DEBUG; en producción se mantiene ajustado.
+        'user': os.getenv('THROTTLE_USER', '20000/hour' if DEBUG else '2000/hour'),
         # Contra una cuenta concreta, sin importar desde cuántas IP se
         # intente: es lo que frena un ataque distribuido a un solo correo.
         'login_por_cuenta': os.getenv('THROTTLE_LOGIN_ACCOUNT', '10/hour'),
@@ -260,6 +300,10 @@ REST_FRAMEWORK = {
         # reputación del dominio, no solo la cuenta.
         'correo': os.getenv('THROTTLE_EMAIL', '5/hour'),
         'sunat_conexion': os.getenv('THROTTLE_SUNAT', '10/hour'),
+        # Cada apertura del portal SOL con sesión entrega la clave al navegador.
+        'sunat_portal': os.getenv('THROTTLE_SUNAT_PORTAL', '30/hour'),
+        # Formulario público de la landing: por IP.
+        'leads': os.getenv('THROTTLE_LEADS', '10/hour'),
     },
     'DEFAULT_RENDERER_CLASSES': (
         ('rest_framework.renderers.JSONRenderer',
@@ -355,7 +399,7 @@ LOGGING = {
         }
         for app in (
             'sunat_mailbox', 'suppliers', 'remype', 'ruc_profile', 'sunafil',
-            'compliance_profile', 'sunat_itf', 'sunat_cpe',
+            'compliance_profile', 'sunat_itf', 'sunat_cpe', 'sunat_rhe',
         )
     },
 }

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Colaborador, Contrato, Memorandum
+from .models import Colaborador, Contrato, ContratoArchivo, Memorandum
 
 
 @admin.register(Colaborador)
@@ -48,4 +48,13 @@ class ContratoAdmin(admin.ModelAdmin):
     )
     list_filter = ("tipo", "renovar")
     search_fields = ("colaborador__full_name", "causa_objetiva", "taxpayer_id")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(ContratoArchivo)
+class ContratoArchivoAdmin(admin.ModelAdmin):
+    list_display = ("nombre_original", "contrato", "cargado_en", "taxpayer_id")
+    search_fields = (
+        "nombre_original", "contrato__colaborador__full_name", "taxpayer_id",
+    )
     readonly_fields = ("created_at", "updated_at")

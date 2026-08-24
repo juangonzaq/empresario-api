@@ -1,0 +1,15 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Pago recibido, ¡gracias!" subtitulo="Tu plan ya está activo." %}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #dde6e1;border-radius:16px;overflow:hidden;">
+  {% include "email/_dato.html" with k="Empresa" v=empresa %}
+  {% include "email/_dato.html" with k="Plan" v=plan %}
+  {% include "email/_dato.html" with k="Importe" v=importe %}
+  {% include "email/_dato.html" with k="Vigente hasta" v=hasta %}
+  {% if renovacion %}{% include "email/_dato.html" with k="Renovación" v=renovacion %}{% endif %}
+  {% include "email/_dato.html" with k="Referencia" v=referencia %}
+</table>
+{% include "email/_boton.html" with url=url label="Ver mi suscripción" %}
+<p style="margin:0;font-size:13px;line-height:20px;color:#4f615c;">Puedes cancelar la renovación automática cuando quieras desde tu suscripción; lo pagado sigue vigente hasta su fin.</p>
+{% endblock %}
+{% block footer %}Recibes este correo porque se registró un pago en tu cuenta de Empresario.{% endblock %}

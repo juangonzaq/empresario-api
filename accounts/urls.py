@@ -4,9 +4,11 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .search_views import GlobalSearchView
 from .status_views import CompanyStatusView
 from .views import (
-    LoginView, LogoutView, OrganizationListView, PasswordChangeView,
-    PasswordResetConfirmView, PasswordResetRequestView, ProfileView,
-    RegisterView, ResendVerificationView, SunatConnectionView, VerifyEmailView,
+    BusinessProfileView, LoginView, LogoutView, OrganizationListView,
+    PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView,
+    ProfileView, ConsentDocumentView, RegisterView, ResendVerificationView,
+    SunatAuthorizationView, SunatConnectionView, SunatPortalView,
+    TeamInvitationView, TeamMemberView, TeamView, VerifyEmailView,
 )
 
 app_name = "accounts"
@@ -27,7 +29,14 @@ urlpatterns = [
     path("auth/password/change/", PasswordChangeView.as_view(), name="password-change"),
     path("me/", ProfileView.as_view(), name="profile"),
     path("organizations/", OrganizationListView.as_view(), name="organizations"),
+    path("organizations/business-profile/", BusinessProfileView.as_view(), name="business-profile"),
+    path("organizations/members/", TeamView.as_view(), name="team"),
+    path("organizations/members/<uuid:member_id>/", TeamMemberView.as_view(), name="team-member"),
+    path("organizations/invitations/<uuid:invitation_id>/", TeamInvitationView.as_view(), name="team-invitation"),
     path("organizations/sunat/", SunatConnectionView.as_view(), name="sunat-connection"),
+    path("organizations/sunat/portal/", SunatPortalView.as_view(), name="sunat-portal"),
+    path("organizations/sunat/authorization/", SunatAuthorizationView.as_view(), name="sunat-authorization"),
+    path("legal/autorizacion-sunat/", ConsentDocumentView.as_view(), name="consent-document"),
     path("status/", CompanyStatusView.as_view(), name="company-status"),
     path("search/", GlobalSearchView.as_view(), name="global-search"),
 ]

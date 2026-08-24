@@ -105,8 +105,9 @@ class CalendarioPropioView(ManagedOrganizationAPIView):
             )
         organization = request.organization
         organization.tax_regime = regimen
-        organization.save(update_fields=["tax_regime", "updated_at"])
-        return Response({"regimen": regimen, "regimen_declarado": True})
+        organization.tax_regime_source = organization.RegimeSource.USUARIO
+        organization.save(update_fields=["tax_regime", "tax_regime_source", "updated_at"])
+        return Response({"regimen": regimen, "regimen_declarado": True, "regimen_fuente": "usuario"})
 
 
 class CalendarioResumenView(OrganizationAPIView):

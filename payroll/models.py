@@ -502,6 +502,9 @@ class IncomeTaxProjection(BaseModel):
     taxable_income = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     annual_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     bracket_detail = models.JSONField(default=list, blank=True)
+    # Every component of the projection that produced the withholding, so
+    # the accountant can audit the number without recalculating anything.
+    computation_detail = models.JSONField(default=dict, blank=True)
     recalculated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -531,6 +534,20 @@ class IncomeTaxWithholdingSchedule(BaseModel):
     is_settled = models.BooleanField(
         default=False, help_text="True cuando el periodo del mes está cerrado."
     )
+    # Audited override: the accountant may pin a month's withholding (an
+    # inspection adjustment, an agreed retention). The engine then treats
+    # the month as fixed and redistributes only the rest. The calculated
+    # value stays in ``amount`` so the UI can show both side by side.
+    override_amount = models.DecimalField(
+        "retención ajustada", max_digits=12, decimal_places=2,
+        null=True, blank=True,
+    )
+    override_reason = models.CharField("motivo del ajuste", max_length=200, blank=True)
+    overridden_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="income_tax_overrides",
+    )
+    overridden_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["month"]
@@ -542,5 +559,47 @@ class IncomeTaxWithholdingSchedule(BaseModel):
         verbose_name = "retención programada"
         verbose_name_plural = "cronograma de retenciones"
 
+    @property
+    def effective_amount(self):
+        """What the payslip actually reads: the override when present."""
+        return self.amount if self.override_amount is None else self.override_amount
+
     def __str__(self) -> str:
         return f"mes {self.month}: {self.amount}"
+
+
+class IncomeTaxMonthlyInput(BaseModel):
+    """Actual taxable income and withholding for months the engine did not
+    run: the initial load when the system starts mid-year. The projection
+    reads these for months without a CLOSED period; once a month has a
+    closed period, the engine's own record wins and the input is ignored.
+    Without this data a mid-year start projects roughly half the income
+    and withholds far too little — the exact bug this table closes."""
+
+    colaborador = models.ForeignKey(
+        Colaborador, related_name="income_tax_monthly_inputs",
+        on_delete=models.CASCADE,
+    )
+    year = models.PositiveSmallIntegerField("ejercicio")
+    month = models.PositiveSmallIntegerField("mes")
+    taxable_income = models.DecimalField(
+        "ingreso afecto real", max_digits=12, decimal_places=2, default=0
+    )
+    withheld = models.DecimalField(
+        "retención practicada", max_digits=12, decimal_places=2, default=0
+    )
+    note = models.CharField("nota", max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["year", "month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["colaborador", "year", "month"],
+                name="unique_monthly_input",
+            )
+        ]
+        verbose_name = "histórico mensual de renta"
+        verbose_name_plural = "históricos mensuales de renta"
+
+    def __str__(self) -> str:
+        return f"{self.year}-{self.month:02d}: {self.taxable_income}"

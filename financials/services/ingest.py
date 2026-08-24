@@ -171,37 +171,104 @@ def ingest_sunat(taxpayer_id: str) -> dict:
 
 
 # ---------------------------------------------------------------- manual
+def _manual_source_and_fields(entry: ManualEntry) -> tuple[str, dict]:
+    issued = entry.direction == Direction.ISSUED
+    rate = Decimal("1")
+    currency = entry.currency or "PEN"
+    if currency != "PEN":
+        rate = fx_rate_on(currency, entry.entry_date) or Decimal("1")
+    fields = {
+        "source_object_id": str(entry.pk),
+        "direction": (
+            TransactionDirection.INFLOW if issued
+            else TransactionDirection.OUTFLOW
+        ),
+        "document_kind": "manual",
+        "description": entry.description,
+        "issue_date": entry.entry_date,
+        "accounting_date": entry.entry_date,
+        "counterparty_tax_id": "",
+        "counterparty_name": entry.counterparty,
+        # Manual records carry no tax breakdown: net = total, tax = 0.
+        **_amounts(entry.amount, Decimal("0"), currency, rate),
+    }
+    source = (
+        TransactionSource.MANUAL_SALE if issued
+        else TransactionSource.MANUAL_PURCHASE
+    )
+    return source, fields
+
+
+def _apply_manual_category(entry: ManualEntry, *, force: bool) -> None:
+    """Carry the category coded on the manual record into its transaction.
+
+    ``force`` distinguishes the two callers: editing the record itself is
+    authoritative (the accountant just coded the voucher), while a bulk
+    re-sync must not clobber a decision taken later in Categorizar."""
+    from ..models import CategorizationStatus, TransactionCategory
+
+    source, _ = _manual_source_and_fields(entry)
+    transaction = FinancialTransaction.objects.filter(
+        taxpayer_id=entry.account_ruc, source=source, external_id=str(entry.pk)
+    ).first()
+    if transaction is None:
+        return
+    if not force and transaction.categorization_status == CategorizationStatus.CONFIRMED:
+        return
+
+    category = None
+    if entry.category_code:
+        # The company's own row overrides the global catalog on same code.
+        category = (
+            TransactionCategory.objects.filter(
+                taxpayer_id__in=["", entry.account_ruc],
+                code=entry.category_code, is_active=True,
+            ).order_by("-taxpayer_id").first()
+        )
+    if category is not None:
+        transaction.category = category
+        transaction.categorization_status = CategorizationStatus.CONFIRMED
+        transaction.categorized_at = timezone.now()
+    elif force and not entry.category_code:
+        # The accountant removed the code: back to the Categorizar queue.
+        transaction.category = None
+        transaction.categorization_status = CategorizationStatus.UNCATEGORIZED
+        transaction.categorized_at = None
+    transaction.save(update_fields=[
+        "category", "categorization_status", "categorized_at", "updated_at",
+    ])
+
+
+def sync_manual_entry(entry: ManualEntry) -> None:
+    """One record, right now: saving a manual income or expense must show
+    up in the income statement without waiting for the sync button."""
+    source, fields = _manual_source_and_fields(entry)
+    _upsert(entry.account_ruc, source, str(entry.pk), fields)
+    _apply_manual_category(entry, force=True)
+
+
+def remove_manual_entry(account_ruc: str, entry_pk: str) -> None:
+    """Deleting the record deletes its transaction: an orphan row would
+    keep feeding the income statement with a document that no longer
+    exists."""
+    FinancialTransaction.objects.filter(
+        taxpayer_id=account_ruc,
+        source__in=[
+            TransactionSource.MANUAL_SALE, TransactionSource.MANUAL_PURCHASE,
+        ],
+        external_id=entry_pk,
+    ).delete()
+
+
 def ingest_manual(taxpayer_id: str) -> dict:
     created = updated = 0
     for entry in ManualEntry.objects.filter(account_ruc=taxpayer_id):
-        issued = entry.direction == Direction.ISSUED
-        rate = Decimal("1")
-        currency = entry.currency or "PEN"
-        if currency != "PEN":
-            rate = fx_rate_on(currency, entry.entry_date) or Decimal("1")
-        fields = {
-            "source_object_id": str(entry.pk),
-            "direction": (
-                TransactionDirection.INFLOW if issued
-                else TransactionDirection.OUTFLOW
-            ),
-            "document_kind": "manual",
-            "description": entry.description,
-            "issue_date": entry.entry_date,
-            "accounting_date": entry.entry_date,
-            "counterparty_tax_id": "",
-            "counterparty_name": entry.counterparty,
-            # Manual records carry no tax breakdown: net = total, tax = 0.
-            **_amounts(entry.amount, Decimal("0"), currency, rate),
-        }
-        source = (
-            TransactionSource.MANUAL_SALE if issued
-            else TransactionSource.MANUAL_PURCHASE
-        )
+        source, fields = _manual_source_and_fields(entry)
         if _upsert(taxpayer_id, source, str(entry.pk), fields):
             created += 1
         else:
             updated += 1
+        _apply_manual_category(entry, force=False)
     return {"created": created, "updated": updated}
 
 
@@ -262,9 +329,62 @@ def ingest_payroll(taxpayer_id: str) -> dict:
     return {"created": created, "updated": updated}
 
 
+# ----------------------------------------------------------- fee receipts
+FEE_RECEIPT_CATEGORY = "PROFESSIONAL_FEES"
+
+
+def ingest_fee_receipts(taxpayer_id: str) -> dict:
+    """Fee receipts received (recibos por honorarios) become CONFIRMED
+    expense transactions under «Honorarios profesionales» — the accountant
+    can recategorize one in Categorizar and the re-sync respects it, same
+    contract as payroll."""
+    from sunat_rhe.models import FeeReceipt
+
+    from ..models import CategorizationStatus, TransactionCategory
+
+    category = TransactionCategory.objects.filter(
+        taxpayer_id__in=["", taxpayer_id],
+        code=FEE_RECEIPT_CATEGORY, is_active=True,
+    ).order_by("-taxpayer_id").first()
+
+    created = updated = 0
+    receipts = FeeReceipt.objects.for_account(taxpayer_id).valid()
+    for receipt in receipts:
+        if not receipt.gross_amount or receipt.gross_amount <= 0:
+            continue
+        rate = Decimal("1")
+        currency = receipt.currency or "PEN"
+        if currency != "PEN" and receipt.issue_date:
+            rate = fx_rate_on(currency, receipt.issue_date) or Decimal("1")
+        fields = {
+            "source_object_id": str(receipt.pk),
+            "direction": TransactionDirection.OUTFLOW,
+            "document_kind": "recibo_honorarios",
+            "description": f"RHE {receipt.full_number} · {receipt.issuer_name}",
+            "issue_date": receipt.issue_date,
+            "accounting_date": receipt.issue_date,
+            "counterparty_tax_id": receipt.issuer_doc,
+            "counterparty_name": receipt.issuer_name,
+            "category": category,
+            "categorization_status": CategorizationStatus.CONFIRMED,
+            "categorized_at": timezone.now(),
+            # The expense is the GROSS fee: the 8 % withheld is part of the
+            # cost — it goes to SUNAT instead of the professional.
+            **_amounts(receipt.gross_amount, Decimal("0"), currency, rate),
+        }
+        if _upsert(
+            taxpayer_id, TransactionSource.FEE_RECEIPT, str(receipt.pk), fields
+        ):
+            created += 1
+        else:
+            updated += 1
+    return {"created": created, "updated": updated}
+
+
 def ingest_all(taxpayer_id: str) -> dict:
     return {
         "sunat": ingest_sunat(taxpayer_id),
         "manual": ingest_manual(taxpayer_id),
         "payroll": ingest_payroll(taxpayer_id),
+        "fee_receipts": ingest_fee_receipts(taxpayer_id),
     }

@@ -49,20 +49,31 @@ def start_sync(
     organization: Organization,
     kind: str = JobKind.INITIAL,
     requested_by=None,
+    only: list[str] | None = None,
 ) -> SyncJob:
     """Encola una sincronización. Si ya hay una en marcha, la devuelve en lugar
     de encolar otra: dos scrapeos simultáneos con el mismo usuario SOL se
-    estorban entre sí, y SUNAT admite una sesión por usuario."""
+    estorban entre sí, y SUNAT admite una sesión por usuario.
+
+    ``only`` limita el trabajo a esas fuentes (el checklist del usuario). Si es
+    ``None`` corre todas las que toquen a la cadencia."""
     reclaim_stale(organization)
     running = SyncJob.objects.filter(organization=organization).active().first()
     if running is not None:
         return running
 
+    steps = initial_steps(kind)
+    if only:
+        chosen = set(only)
+        subset = [s for s in steps if s["key"] in chosen]
+        if subset:
+            steps = subset
+
     job = SyncJob.objects.create(
         organization=organization,
         kind=kind,
         requested_by=requested_by,
-        steps=initial_steps(kind),
+        steps=steps,
     )
     from .tasks import run_sync_job
 
@@ -78,6 +89,65 @@ def start_sync(
             organization.ruc,
         )
     return job
+
+
+class SyncLimitReached(Exception):
+    """Alcanzó el tope diario de sincronizaciones manuales gratis. Se puede
+    continuar autorizando el cargo (``accept_charge``); lleva la cuota para
+    que la interfaz explique cuánto cuesta."""
+
+    def __init__(self, quota: dict):
+        self.quota = quota
+        super().__init__("Alcanzaste el tope diario de sincronizaciones manuales.")
+
+
+def manual_quota(organization: Organization) -> dict:
+    """Cuántas sincronizaciones manuales gratis le quedan hoy a la empresa."""
+    from django.conf import settings
+
+    from billing.services import extra_manual_sync_price
+
+    limit = organization.manual_sync_daily_limit
+    if limit is None:
+        limit = int(getattr(settings, "SYNC_MANUAL_DAILY_LIMIT", 2))
+    used = SyncJob.objects.filter(
+        organization=organization, kind=JobKind.MANUAL,
+        created_at__date=timezone.localdate(),
+    ).count()
+    return {
+        "used": used,
+        "limit": limit,
+        "remaining": max(0, limit - used),
+        "price": str(extra_manual_sync_price()),
+        "currency": "PEN",
+    }
+
+
+def start_manual_sync(organization: Organization, requested_by=None, *,
+                      only: list[str] | None = None, accept_charge: bool = False):
+    """Lanza una sincronización manual respetando el tope diario. Devuelve
+    ``(job, charged, quota)``. Si ya hay una en marcha, la devuelve sin contar
+    ni cobrar. Pasado el tope y sin ``accept_charge``, lanza ``SyncLimitReached``."""
+    running = SyncJob.objects.filter(organization=organization).active().first()
+    if running is not None:
+        return running, False, manual_quota(organization)
+
+    quota = manual_quota(organization)
+    charged = False
+    if quota["remaining"] <= 0:
+        if not accept_charge:
+            raise SyncLimitReached(quota)
+        job = start_sync(organization, kind=JobKind.MANUAL, requested_by=requested_by, only=only)
+        # Solo se cobra si de verdad se creó un trabajo nuevo (no un dedupe).
+        if job.kind == JobKind.MANUAL:
+            from billing.services import charge_extra_manual_sync
+
+            charge_extra_manual_sync(organization, reference=str(job.id), user=requested_by)
+            charged = True
+        return job, charged, manual_quota(organization)
+
+    job = start_sync(organization, kind=JobKind.MANUAL, requested_by=requested_by, only=only)
+    return job, charged, manual_quota(organization)
 
 
 def _sol_ya_funciono(job: SyncJob) -> bool:
@@ -185,9 +255,14 @@ def _wrap_up(job: SyncJob, error: str) -> SyncJob:
 
 
 def execute(job: SyncJob) -> SyncJob:
-    """Corre los pasos en serie. Aislado de Celery para poder probarlo."""
+    """Corre los pasos en serie. Aislado de Celery para poder probarlo.
+
+    Corre las fuentes que el trabajo tiene en ``steps`` —que normalmente son las
+    de su cadencia, pero pueden ser un subconjunto elegido por el usuario—."""
     organization = job.organization
-    sources = sources_for(job.kind)
+    sources = [
+        SOURCES_BY_KEY[s["key"]] for s in job.steps if s["key"] in SOURCES_BY_KEY
+    ] or sources_for(job.kind)
     job.start()
 
     try:

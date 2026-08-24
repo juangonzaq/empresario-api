@@ -17,6 +17,7 @@ stay untouched for audit; this app stores only derived artifacts:
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 
 from core.models import BaseModel
@@ -116,6 +117,11 @@ class ManualEntry(BaseModel):
     currency = models.CharField(max_length=3, default="PEN")
     amount = models.DecimalField(max_digits=16, decimal_places=2)
     note = models.TextField(blank=True)
+    # Category of the income statement, decided at capture time like an
+    # accountant codes every voucher against the chart of accounts. By
+    # code and not FK: categories live in ``financials`` and may be the
+    # global row or the company's own override of the same code.
+    category_code = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         verbose_name_plural = "manual entries"
@@ -168,6 +174,8 @@ class AlertSeverity(models.TextChoices):
 class AlertStatus(models.TextChoices):
     NEW = "nueva", "Nueva"
     IN_REVIEW = "en_revision", "En revisión"
+    JUSTIFIED = "justificada", "Justificada"
+    CORRECTED = "corregida", "Corregida"
     RESOLVED = "resuelta", "Resuelta"
     DISMISSED = "descartada", "Descartada"
 
@@ -186,7 +194,7 @@ SEVERITY_RANK = {
 
 class FinanceAlertQuerySet(models.QuerySet):
     def open(self) -> "FinanceAlertQuerySet":
-        return self.exclude(status__in=[AlertStatus.RESOLVED, AlertStatus.DISMISSED])
+        return self.exclude(status__in=[AlertStatus.RESOLVED, AlertStatus.DISMISSED, AlertStatus.JUSTIFIED, AlertStatus.CORRECTED])
 
     def priority(self) -> "FinanceAlertQuerySet":
         return self.filter(severity__in=PRIORITY_SEVERITIES)
@@ -281,3 +289,44 @@ class FinanceAiSummary(BaseModel):
                 self.save(update_fields=["actions", "updated_at"])
                 return True
         return False
+
+
+class RentaProjection(BaseModel):
+    """User overrides for the income-tax projection, per company and year.
+
+    The estimate stays deterministic on the *actuals*; these only replace the
+    monthly **basis** used to project the remaining (open) months. Any field
+    left null falls back to the automatic average. Editing an assumption never
+    rewrites a computed actual — it is layered on top and can be reset."""
+
+    account_ruc = models.CharField(max_length=11, db_index=True)
+    year = models.PositiveSmallIntegerField()
+    monthly_sales = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    monthly_expenses = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    monthly_payroll = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    note = models.CharField(max_length=300, blank=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        unique_together = ("account_ruc", "year")
+
+    def __str__(self) -> str:
+        return f"{self.account_ruc} · proyección {self.year}"
+
+
+class FinancePeriodClose(BaseModel):
+    """A financial month marked reconciled and closed: an *actual*, frozen.
+
+    Closed months are not re-projected; the projection only fills the open
+    months ahead. Reopening deletes the row."""
+
+    account_ruc = models.CharField(max_length=11, db_index=True)
+    period = models.CharField(max_length=6, db_index=True)
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        unique_together = ("account_ruc", "period")
+        ordering = ["-period"]
+
+    def __str__(self) -> str:
+        return f"{self.account_ruc} {self.period} cerrado"

@@ -201,3 +201,100 @@ class EmployeePayslipsTests(TenantAPITestCase):
         user, _ = self.make_tenant("20111111111", "otra@empresa.pe")
         self.client.force_authenticate(user)
         self.assertEqual(self.client.get(self.url).status_code, http.HTTP_404_NOT_FOUND)
+
+
+class IncomeTaxApiTests(TenantAPITestCase):
+    """The accountant's editing surface: yearly inputs, the monthly
+    history for mid-year starts, and the audited override."""
+
+    def setUp(self):
+        self.person = Colaborador.objects.create(
+            taxpayer_id=RUC, document_number="70030212",
+            full_name="GONZALES QUISPE JUAN CARLOS", regimen="afp",
+            afp="prima", pension_commission_type="flow",
+            cuspp="123456APIT01",
+            monthly_salary=Decimal("10700.00"),
+            hired_on=datetime.date(2024, 1, 1),
+        )
+
+    def projection_url(self):
+        return reverse(
+            "payroll:employee-tax-projection", args=[self.person.pk, 2026]
+        )
+
+    def test_projection_get_creates_on_demand(self):
+        """The accountant loads history BEFORE the first run, so the
+        record must exist before the engine computed anything."""
+        response = self.client.get(self.projection_url())
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertEqual(response.data["year"], 2026)
+        self.assertEqual(response.data["monthly_inputs"], [])
+
+    def test_monthly_inputs_feed_the_projection(self):
+        response = self.client.put(
+            reverse(
+                "payroll:employee-tax-monthly-inputs",
+                args=[self.person.pk, 2026],
+            ),
+            {"months": [
+                {"month": 1, "taxable_income": "6000.00", "withheld": "0"},
+                {"month": 3, "taxable_income": "6000.00",
+                 "withheld": "2031.49"},
+            ]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertEqual(len(response.data["monthly_inputs"]), 2)
+
+        # Once July runs, the loaded months enter the projection base.
+        self.client.post(
+            reverse("payroll:periods"), {"year": 2026, "month": 7},
+            format="json",
+        )
+        response = self.client.get(self.projection_url())
+        detail = response.data["computation_detail"]
+        self.assertEqual(detail["actual_income"], "12000.00")
+        self.assertEqual(detail["already_withheld"], "2031.49")
+
+    def test_monthly_inputs_reject_invalid_months(self):
+        response = self.client.put(
+            reverse(
+                "payroll:employee-tax-monthly-inputs",
+                args=[self.person.pk, 2026],
+            ),
+            {"months": [{"month": 13, "taxable_income": "1"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
+
+    def test_override_demands_a_reason_and_pins_the_month(self):
+        period = self.client.post(
+            reverse("payroll:periods"), {"year": 2026, "month": 7},
+            format="json",
+        ).data
+        entry_id = period["entries"][0]["id"]
+        url = reverse("payroll:entry-tax-override", args=[entry_id])
+
+        # No reason, no override: the audit trail is the whole point.
+        response = self.client.post(
+            url, {"amount": "1976.12"}, format="json"
+        )
+        self.assertEqual(response.status_code, http.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(
+            url, {"amount": "1976.12", "reason": "Reparto pactado"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertEqual(
+            Decimal(response.data["income_tax_withholding"]),
+            Decimal("1976.12"),
+        )
+
+        # Clearing goes back to the engine's figure.
+        response = self.client.post(url, {"amount": None}, format="json")
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertNotEqual(
+            Decimal(response.data["income_tax_withholding"]),
+            Decimal("1976.12"),
+        )

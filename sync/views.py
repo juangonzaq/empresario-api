@@ -9,10 +9,12 @@ from rest_framework.response import Response
 from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
 
 from .models import JobKind, SyncJob
-from .serializers import SyncJobSerializer
+from .serializers import SyncJobHistorySerializer, SyncJobSerializer
 from .services import (
-    CannotRetry, NotConnected, retry_step, run_source, start_sync,
+    CannotRetry, NotConnected, SyncLimitReached, manual_quota, retry_step,
+    run_source, start_manual_sync,
 )
+from .sources import SOURCES
 
 
 class SyncStatusView(OrganizationAPIView):
@@ -27,23 +29,55 @@ class SyncStatusView(OrganizationAPIView):
 
 
 class SyncStartView(ManagedOrganizationAPIView):
-    """Relanza la sincronización a pedido."""
+    """Relanza la sincronización a pedido, respetando el tope diario.
+
+    ``only`` (lista de claves de fuente) limita qué se trae; vacío = todo.
+    Pasado el tope diario responde 402 con la cuota; con ``accept_charge`` se
+    continúa y se registra el cargo. La respuesta lleva ``charged`` y ``quota``."""
 
     def post(self, request: Request) -> Response:
+        only = request.data.get("only") or None
+        if only is not None and not isinstance(only, list):
+            only = None
+        accept_charge = bool(request.data.get("accept_charge"))
         try:
-            # Pulsar «sincronizar ahora» pide el cuadro completo.
-            job = start_sync(
-                request.organization,
-                kind=JobKind.MANUAL,
-                requested_by=request.user,
+            job, charged, quota = start_manual_sync(
+                request.organization, requested_by=request.user,
+                only=only, accept_charge=accept_charge,
+            )
+        except SyncLimitReached as exc:
+            # 409, no 402: el 402 lo intercepta el front como «suscripción
+            # vencida». El front distingue este caso por ``code``.
+            return Response(
+                {"code": "sync_charge_required",
+                 "detail": (f"Ya usaste tus {exc.quota['limit']} sincronizaciones manuales de hoy. "
+                            f"Una más cuesta S/ {exc.quota['price']}."),
+                 "quota": exc.quota},
+                status=status.HTTP_409_CONFLICT,
             )
         except NotConnected as exc:
-            return Response(
-                {"detail": str(exc)}, status=status.HTTP_409_CONFLICT
-            )
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(
-            SyncJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
+            {**SyncJobSerializer(job).data, "charged": charged, "quota": quota},
+            status=status.HTTP_202_ACCEPTED,
         )
+
+
+class SyncHistoryView(OrganizationAPIView):
+    """Lo que alimenta el panel de «Traer comprobantes»: la cuota manual de hoy,
+    el catálogo de fuentes (checklist) y las últimas sincronizaciones —manuales
+    y automáticas— con sus fallas."""
+
+    def get(self, request: Request) -> Response:
+        jobs = list(SyncJob.objects.filter(organization=request.organization)[:15])
+        return Response({
+            "quota": manual_quota(request.organization),
+            "sources": [
+                {"key": s.key, "label": s.label, "needs_sol": s.needs_sol}
+                for s in SOURCES
+            ],
+            "jobs": SyncJobHistorySerializer(jobs, many=True).data,
+        })
 
 
 class SyncStepRetryView(ManagedOrganizationAPIView):

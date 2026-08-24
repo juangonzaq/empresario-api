@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
+
+from core.emails import send_email
 
 from ..models import OneTimeToken, TokenPurpose, User
 
@@ -29,49 +30,47 @@ def _link(path: str, token: str) -> str:
     return f"{settings.FRONTEND_URL}{path}?token={token}"
 
 
-def _send(subject: str, body: str, to: str) -> None:
-    try:
-        send_mail(
-            subject=subject,
-            message=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[to],
-            fail_silently=False,
-        )
-    except Exception:  # noqa: BLE001 — el envío no debe tumbar la operación
-        logger.exception("No se pudo enviar el correo «%s» a %s", subject, to)
+def _send(subject: str, body: str, to: str, template: str, context: dict) -> None:
+    """HTML con texto plano de respaldo; el enlace va visible en los dos."""
+    send_email(subject, to, template, context, text=body)
 
 
 def send_verification(user: User) -> OneTimeToken:
     token = OneTimeToken.issue(
         user, TokenPurpose.EMAIL_VERIFICATION, hours=VERIFICATION_HOURS
     )
+    url = _link('/verificar-correo', token.token)
     _send(
-        "Confirma tu correo · EMPRESARIO",
+        "Confirma tu correo",
         (
             f"Hola{' ' + user.first_name if user.first_name else ''}:\n\n"
             "Confirma tu correo para terminar de crear tu cuenta:\n\n"
-            f"{_link('/verificar-correo', token.token)}\n\n"
+            f"{url}\n\n"
             f"El enlace vence en {VERIFICATION_HOURS} horas.\n"
             "Si no creaste esta cuenta, ignora este mensaje.\n"
         ),
         user.email,
+        "verificacion",
+        {"url": url, "nombre": user.first_name, "horas": VERIFICATION_HOURS},
     )
     return token
 
 
 def send_password_reset(user: User) -> OneTimeToken:
     token = OneTimeToken.issue(user, TokenPurpose.PASSWORD_RESET, hours=RESET_HOURS)
+    url = _link('/nueva-contrasena', token.token)
     _send(
-        "Recupera tu contraseña · EMPRESARIO",
+        "Recupera tu contraseña",
         (
             "Pediste restablecer tu contraseña. Puedes hacerlo aquí:\n\n"
-            f"{_link('/nueva-contrasena', token.token)}\n\n"
+            f"{url}\n\n"
             f"El enlace vence en {RESET_HOURS} horas y solo se puede usar una vez.\n"
             "Si no fuiste tú, no hace falta que hagas nada: tu contraseña "
             "actual sigue siendo válida.\n"
         ),
         user.email,
+        "recuperar",
+        {"url": url, "horas": RESET_HOURS},
     )
     return token
 
@@ -79,7 +78,7 @@ def send_password_reset(user: User) -> OneTimeToken:
 def send_password_changed(user: User) -> None:
     """Aviso de seguridad: si el cambio no fue suyo, quiere enterarse hoy."""
     _send(
-        "Tu contraseña cambió · EMPRESARIO",
+        "Tu contraseña cambió",
         (
             "La contraseña de tu cuenta acaba de cambiar.\n\n"
             "Si no fuiste tú, restablécela de inmediato desde "
@@ -87,4 +86,6 @@ def send_password_changed(user: User) -> None:
             "tu correo.\n"
         ),
         user.email,
+        "clave_cambiada",
+        {"url": f"{settings.FRONTEND_URL}/recuperar"},
     )

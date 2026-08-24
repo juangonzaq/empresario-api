@@ -1,0 +1,14 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Nuevo interesado desde la landing" subtitulo=origen %}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #dde6e1;border-radius:16px;overflow:hidden;">
+  {% include "email/_dato.html" with k="Nombre" v=lead.name %}
+  {% include "email/_dato.html" with k="Correo" v=lead.email %}
+  {% include "email/_dato.html" with k="Teléfono" v=lead.phone|default:"—" %}
+  {% include "email/_dato.html" with k="RUC" v=lead.ruc|default:"—" %}
+  {% include "email/_dato.html" with k="Empresa" v=lead.company|default:"—" %}
+</table>
+{% if lead.message %}<p style="margin:16px 0 0 0;padding:14px;background:#f6f8f7;border-radius:12px;font-size:14px;line-height:21px;color:#0b1d1a;">{{ lead.message }}</p>{% endif %}
+{% include "email/_boton.html" with url=url label="Abrir en el admin" %}
+{% endblock %}
+{% block footer %}Aviso interno de Empresario.{% endblock %}

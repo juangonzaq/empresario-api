@@ -1,0 +1,13 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Solicitud de pago" subtitulo="Pasarela manual: apruébalo en el admin cuando se confirme el abono." %}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #dde6e1;border-radius:16px;overflow:hidden;">
+  {% include "email/_dato.html" with k="Empresa" v=empresa %}
+  {% include "email/_dato.html" with k="Plan" v=plan %}
+  {% include "email/_dato.html" with k="Importe" v=importe %}
+  {% include "email/_dato.html" with k="Solicitado por" v=solicitante %}
+  {% include "email/_dato.html" with k="Pago" v=referencia %}
+</table>
+{% include "email/_boton.html" with url=url label="Abrir en el admin" %}
+{% endblock %}
+{% block footer %}Aviso interno de Empresario.{% endblock %}

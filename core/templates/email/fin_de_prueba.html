@@ -1,0 +1,7 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo=titulo subtitulo="Para que nada te tome por sorpresa." %}
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">La prueba gratuita de <strong>{{ empresa }}</strong> termina el <strong>{{ hasta }}</strong>. Si quieres seguir viendo tu cumplimiento, buzón, finanzas y planilla sin cortes, elige un plan antes de esa fecha: si lo contratas ahora, empieza cuando acabe la prueba.</p>
+{% include "email/_boton.html" with url=url label="Elegir mi plan" %}
+<p style="margin:0;font-size:13px;line-height:20px;color:#4f615c;">¿Invitaste a alguien? Por cada 5 referidos que paguen, un mes gratis.</p>
+{% endblock %}

@@ -68,6 +68,20 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     # pide confirmar el correo antes de entregarnos credenciales.
     email_verified_at = models.DateTimeField(null=True, blank=True)
 
+    # Programa de referidos: el código que esta persona comparte y quién la
+    # trajo. El código se genera al crear la cuenta (ver billing.services).
+    referral_code = models.CharField("código de referido", max_length=12, unique=True, blank=True)
+    referred_by = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="referred_users",
+    )
+
+    # Asientos de empresa adicionales que este titular tiene por encima de los
+    # que incluye su plan. Los otorga el dueño del sistema desde el admin
+    # (cada empresa extra cuesta lo que fije ``BILLING_EXTRA_COMPANY_PRICE``).
+    extra_company_seats = models.PositiveSmallIntegerField(
+        "asientos de empresa extra", default=0,
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = "email"
@@ -79,6 +93,13 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     def __str__(self) -> str:
         return self.email
 
+    def save(self, *args, **kwargs):
+        if not self.referral_code:
+            from billing.services import new_referral_code
+
+            self.referral_code = new_referral_code()
+        super().save(*args, **kwargs)
+
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
@@ -86,6 +107,17 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     @property
     def email_verified(self) -> bool:
         return self.email_verified_at is not None
+
+    @property
+    def owned_organizations_count(self) -> int:
+        """Empresas de las que es titular; es lo que consume asientos."""
+        return self.memberships.filter(is_active=True, role=Role.OWNER).count()
+
+    @property
+    def company_seat_limit(self) -> int:
+        from billing.services import company_seat_limit
+
+        return company_seat_limit(self)
 
 
 class OrganizationQuerySet(models.QuerySet):
@@ -136,13 +168,28 @@ class Organization(BaseModel):
         max_length=3,
         choices=TaxRegime,
         blank=True,
-        help_text="Vacío mientras la empresa no lo haya declarado.",
+        help_text="Vacío mientras no se haya leído de SUNAT ni declarado.",
     )
+
+    class RegimeSource(models.TextChoices):
+        SUNAT = "sunat", "Leído de la Ficha RUC (SOL)"
+        USUARIO = "usuario", "Declarado por el usuario"
+
+    # De dónde salió el régimen: leído de la Ficha RUC en SOL (manda) o
+    # declarado a mano. Y cuándo se comprobó por última vez con SUNAT.
+    tax_regime_source = models.CharField(max_length=10, choices=RegimeSource, blank=True)
+    tax_regime_checked_at = models.DateTimeField(null=True, blank=True)
     calendar_token = models.CharField(
         max_length=64,
         unique=True,
         default=_nuevo_token_calendario,
         help_text="Credencial de la URL de suscripción al calendario.",
+    )
+    # Cuántas sincronizaciones manuales gratis al día. Vacío = el default del
+    # sistema (``SYNC_MANUAL_DAILY_LIMIT``). Se sube por empresa desde el admin;
+    # pasado el tope, cada sincronización manual adicional genera un cargo.
+    manual_sync_daily_limit = models.PositiveSmallIntegerField(
+        "límite de sincronizaciones manuales al día", null=True, blank=True,
     )
 
     objects = OrganizationQuerySet.as_manager()
@@ -183,6 +230,12 @@ class Membership(BaseModel):
     )
     role = models.CharField(max_length=15, choices=Role, default=Role.OWNER)
     is_active = models.BooleanField(default=True)
+    # Quién sumó a esta persona a la empresa (el titular que la invitó), para
+    # dejar rastro de cómo llegó cada acceso.
+    invited_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="memberships_granted",
+    )
 
     class Meta:
         ordering = ["organization__name"]
@@ -199,6 +252,61 @@ class Membership(BaseModel):
     def can_manage(self) -> bool:
         """Conectar SUNAT, invitar gente y disparar sincronizaciones."""
         return self.role in (Role.OWNER, Role.ACCOUNTANT)
+
+
+def _nuevo_token_invitacion() -> str:
+    return secrets.token_urlsafe(24)
+
+
+class InvitationStatus(models.TextChoices):
+    PENDING = "pending", "Pendiente"
+    ACCEPTED = "accepted", "Aceptada"
+    REVOKED = "revoked", "Revocada"
+
+
+class Invitation(BaseModel):
+    """Invitación a una persona para acceder a **una** empresa.
+
+    Si el correo ya tiene cuenta, la invitación se convierte en ``Membership``
+    de inmediato. Si no, queda pendiente y se convierte cuando esa persona se
+    registra o inicia sesión con ese correo. El invitado solo verá esa empresa;
+    su acceso se resuelve siempre desde sus memberships (ver ``accounts.tenancy``).
+    """
+
+    organization = models.ForeignKey(
+        Organization, related_name="invitations", on_delete=models.CASCADE
+    )
+    email = models.EmailField("correo")
+    role = models.CharField(max_length=15, choices=Role, default=Role.VIEWER)
+    invited_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="sent_invitations",
+    )
+    token = models.CharField(max_length=64, unique=True, default=_nuevo_token_invitacion)
+    status = models.CharField(
+        max_length=10, choices=InvitationStatus, default=InvitationStatus.PENDING
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    accepted_user = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "invitación"
+        verbose_name_plural = "invitaciones"
+        constraints = [
+            # Una sola invitación viva por correo y empresa; reinvitar reusa la
+            # misma fila. Las aceptadas/revocadas no estorban.
+            models.UniqueConstraint(
+                fields=["organization", "email"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_invitation",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.email} → {self.organization.ruc} ({self.role})"
 
 
 def _expiry(hours: int) -> datetime.datetime:
@@ -328,3 +436,88 @@ class SunatCredential(BaseModel):
             self.status == SunatConnectionStatus.CONNECTED
             and bool(self.encrypted_password)
         )
+
+
+class SunatAuthorization(BaseModel):
+    """Constancia de que la empresa autorizó el acceso a SUNAT (y demás
+    portales) con sus credenciales. Ver ``accounts.services.consent``.
+
+    Inmutable: se crea una por cada aceptación y nunca se edita; desconectar
+    SUNAT la deja anotada como revocada, no la borra."""
+
+    organization = models.ForeignKey(Organization, related_name="sunat_authorizations", on_delete=models.CASCADE)
+    user = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="sunat_authorizations")
+    sol_username = models.CharField(max_length=60, blank=True)
+    version = models.CharField(max_length=10)
+    text_sha256 = models.CharField(max_length=64)
+    scopes = models.JSONField(default=list, blank=True)
+    accepted_at = models.DateTimeField(default=timezone.now)
+    ip_address = models.CharField(max_length=45, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["-accepted_at"]
+        verbose_name = "autorización SUNAT"
+        verbose_name_plural = "autorizaciones SUNAT"
+
+    def __str__(self) -> str:
+        return f"{self.organization.ruc} · v{self.version} · {self.accepted_at:%Y-%m-%d}"
+
+
+class BusinessProfile(BaseModel):
+    """Un perfil breve del negocio, respondido al crear la empresa.
+
+    No sale de SUNAT: lo declara la persona para que el producto sepa qué guías
+    y obligaciones tienen sentido activar (no toda empresa necesita lo mismo).
+    Es opcional y editable; el módulo de cumplimiento lo lee como una señal más,
+    nunca como fuente de verdad tributaria."""
+
+    class Offering(models.TextChoices):
+        PRODUCTS = "products", "Productos"
+        SERVICES = "services", "Servicios"
+        FOOD = "food", "Comida o bebidas"
+        MIXED = "mixed", "Un poco de todo"
+        UNSURE = "unsure", "No estoy seguro"
+
+    class Sector(models.TextChoices):
+        COMMERCE = "commerce", "Comercio"
+        SERVICES = "services", "Servicios"
+        MANUFACTURING = "manufacturing", "Manufactura"
+        FOOD = "food", "Alimentos"
+        CONSTRUCTION = "construction", "Construcción"
+        OTHER = "other", "Otro"
+
+    class Goal(models.TextChoices):
+        ORDER_NUMBERS = "order_numbers", "Ordenar mis números"
+        TAX_READY = "tax_ready", "Prepararme para impuestos"
+        CASHFLOW = "cashflow", "No quedarme sin caja"
+        GROWTH = "growth", "Crecer con más claridad"
+        PROFITABILITY = "profitability", "Saber si vendo con ganancia"
+
+    class Age(models.TextChoices):
+        STARTING = "starting", "Estoy empezando"
+        SELLING = "selling", "Ya estoy vendiendo"
+        ESTABLISHED = "established", "Empresa establecida"
+
+    organization = models.OneToOneField(
+        Organization, related_name="business_profile", on_delete=models.CASCADE
+    )
+    offering = models.CharField(max_length=15, choices=Offering, blank=True)
+    sector = models.CharField(max_length=15, choices=Sector, blank=True)
+    primary_goal = models.CharField(max_length=15, choices=Goal, blank=True)
+    business_age = models.CharField(max_length=15, choices=Age, blank=True)
+    people_count = models.PositiveSmallIntegerField(default=1)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "perfil del negocio"
+        verbose_name_plural = "perfiles del negocio"
+
+    def __str__(self) -> str:
+        return f"{self.organization.ruc} · {self.sector or 'sin rubro'}"
+
+    @property
+    def is_complete(self) -> bool:
+        return self.completed_at is not None

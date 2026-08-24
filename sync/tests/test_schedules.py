@@ -56,8 +56,10 @@ class CadenceTests(TestCase):
             keys,
             # AFPnet entra aquí y no en la diaria por dos motivos: los aportes
             # se declaran una vez al mes, y cada sesión cuesta que una persona
-            # resuelva un CAPTCHA.
-            {"itf", "compliance", "ruc_profile", "remype", "analytics", "afpnet"},
+            # resuelva un CAPTCHA. RHE además re-barre el ejercicio en curso:
+            # la lista de pagos y las reversiones cambian tras la emisión.
+            {"itf", "compliance", "ruc_profile", "remype", "tributos", "analytics",
+             "afpnet", "rhe"},
         )
 
     def test_afpnet_no_se_pide_a_diario(self):

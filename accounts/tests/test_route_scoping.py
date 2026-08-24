@@ -32,6 +32,11 @@ RUTAS_PERMITIDAS = {
     "api/me/",             # el perfil de la persona, no de la empresa
     "api/organizations/",  # justamente, la lista de sus empresas
     "api/calendario/",     # vencimientos calculados del dígito del RUC; no lee la base
+    "api/leads/",          # interesados de la landing: aún no tienen empresa ni usuario
+    "api/legal/autorizacion-sunat/",  # texto legal público, no lee datos de nadie
+    "api/billing/plans/",  # precios públicos
+    "api/billing/referrals/",  # el código de referido es de la persona, no de la empresa
+    "api/billing/webhook/mercadopago/",  # lo llama Mercado Pago; identifica el pago por referencia
     # Suscripción de calendario por token. Es la excepción deliberada: Google
     # Calendar y Apple Calendar no mandan cabeceras de autenticación, así que
     # la empresa se identifica por un token secreto en la URL en lugar de por

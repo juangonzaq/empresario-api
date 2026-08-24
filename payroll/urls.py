@@ -2,8 +2,9 @@ from django.urls import path
 
 from .views import (
     ApproveView, CalculateView, CloseView, EmployeePayslipsView,
-    EmployeeProjectionView, EntryManualLinesView, EntryPayslipView, EntryView,
-    PeriodPayslipsView, PeriodView, PeriodsView, ReopenView,
+    EmployeeProjectionView, EmployeeTaxMonthlyInputsView,
+    EntryManualLinesView, EntryPayslipView, EntryTaxOverrideView, EntryView,
+    PeriodPayslipsView, PeriodView, PeriodsView, ReopenView, TaxAnnualView,
 )
 
 app_name = "payroll"
@@ -28,5 +29,20 @@ urlpatterns = [
         "payroll/employees/<uuid:pk>/tax-projection/<int:year>/",
         EmployeeProjectionView.as_view(),
         name="employee-tax-projection",
+    ),
+    path(
+        "payroll/employees/<uuid:pk>/tax-monthly-inputs/<int:year>/",
+        EmployeeTaxMonthlyInputsView.as_view(),
+        name="employee-tax-monthly-inputs",
+    ),
+    path(
+        "payroll/entries/<uuid:pk>/tax-override/",
+        EntryTaxOverrideView.as_view(),
+        name="entry-tax-override",
+    ),
+    path(
+        "payroll/tax-annual/<int:year>/",
+        TaxAnnualView.as_view(),
+        name="tax-annual",
     ),
 ]

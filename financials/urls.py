@@ -4,8 +4,8 @@ from .masters import MasterDetailView, MasterListView, MastersIndexView
 from .views import (
     BalanceSheetView, BulkCategorizeView, CategoriesView, DrilldownView,
     ExcludeTransactionView, IncomeStatementView, KpisView, MonthlyRatiosView,
-    PendingTransactionsView, RatiosView, SettleTransactionView, SyncView,
-    TransactionsView,
+    PendingTransactionsView, RatiosView, SettleTransactionView,
+    StatementLinesView, SyncView, TransactionsView,
 )
 
 app_name = "financials"
@@ -19,6 +19,11 @@ urlpatterns = [
     path("financials/kpis/", KpisView.as_view(), name="kpis"),
     path("financials/drilldown/", DrilldownView.as_view(), name="drilldown"),
     path("financials/categories/", CategoriesView.as_view(), name="categories"),
+    path(
+        "financials/statement-lines/",
+        StatementLinesView.as_view(),
+        name="statement-lines",
+    ),
     path("transactions/", TransactionsView.as_view(), name="transactions"),
     path("transactions/pending/", PendingTransactionsView.as_view(), name="transactions-pending"),
     path("transactions/bulk-categorize/", BulkCategorizeView.as_view(), name="bulk-categorize"),

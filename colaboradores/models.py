@@ -225,6 +225,8 @@ class Contrato(BaseModel):
     )
 
     archivo = models.FileField(upload_to="contratos/%Y/%m/", blank=True)
+    archivo_nombre_original = models.CharField(max_length=255, blank=True)
+    archivo_cargado_en = models.DateTimeField(null=True, blank=True)
     notas = models.TextField(blank=True)
 
     class Meta:
@@ -275,6 +277,31 @@ class Contrato(BaseModel):
         return EstadoContrato.VIGENTE
 
 
+class ContratoArchivo(BaseModel):
+    """Una versión anterior del documento de un contrato.
+
+    El archivo vigente permanece en ``Contrato.archivo`` para que la descarga
+    habitual siga siendo directa. Cada reemplazo mueve la referencia anterior
+    aquí sin duplicar el archivo físico ni perder su fecha de carga.
+    """
+
+    taxpayer_id = models.CharField("RUC", max_length=11, db_index=True)
+    contrato = models.ForeignKey(
+        Contrato, related_name="versiones_archivo", on_delete=models.CASCADE
+    )
+    archivo = models.FileField(upload_to="contratos/%Y/%m/")
+    nombre_original = models.CharField(max_length=255)
+    cargado_en = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-cargado_en", "-created_at"]
+        verbose_name = "versión de archivo de contrato"
+        verbose_name_plural = "versiones de archivos de contratos"
+
+    def __str__(self) -> str:
+        return f"{self.nombre_original} · {self.contrato_id}"
+
+
 class TipoMemorandum(models.TextChoices):
     """Qué clase de comunicación es. Decide el tono del listado, no el flujo."""
 
@@ -291,8 +318,8 @@ class Memorandum(BaseModel):
 
     Es el control que la empresa llevaba en Excel: número correlativo, fecha,
     tipo, motivo y el rastro de la entrega (si se entregó, cuándo y si firmó
-    la recepción). El documento en sí no se sube aquí: ``archivo`` guarda la
-    ruta o el enlace donde vive.
+    la recepción). El documento queda almacenado como archivo privado y se
+    descarga únicamente por el endpoint autenticado de la empresa.
     """
 
     taxpayer_id = models.CharField("RUC", max_length=11, db_index=True)
@@ -318,9 +345,9 @@ class Memorandum(BaseModel):
         help_text="El colaborador firmó el cargo de recepción.",
     )
 
-    archivo = models.CharField(
-        "archivo / ruta", max_length=255, blank=True,
-        help_text="Ruta o enlace al documento firmado.",
+    archivo = models.FileField(
+        upload_to="memorandums/%Y/%m/", blank=True,
+        help_text="Documento firmado o sustento del memorándum.",
     )
 
     class Meta:

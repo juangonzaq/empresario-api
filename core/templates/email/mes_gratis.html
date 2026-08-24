@@ -1,0 +1,7 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="¡Ganaste un mes gratis!" subtitulo="Tus referidos ya suman." %}
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">{{ meta }} personas que invitaste con tu código <strong>{{ codigo }}</strong> ya pagan Empresario. Por eso te regalamos <strong>{{ dias }} días</strong>{% if empresa %}, ya aplicados a <strong>{{ empresa }}</strong>{% else %}; se aplicarán en cuanto registres tu empresa{% endif %}.</p>
+<p style="margin:12px 0 0 0;font-size:15px;line-height:23px;color:#0b1d1a;">Sigue compartiendo tu enlace: cada {{ meta }} más, otro mes.</p>
+{% include "email/_boton.html" with url=url label="Ver mis referidos" %}
+{% endblock %}

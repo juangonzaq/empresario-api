@@ -100,3 +100,20 @@ class SunatConexionThrottle(SimpleRateThrottle):
         if user is None or not user.is_authenticated:
             return f"throttle_sunat_ip_{self.get_ident(request)}"
         return f"throttle_sunat_user_{user.pk}"
+
+
+class SunatPortalThrottle(SimpleRateThrottle):
+    """Abrir el portal SOL con la sesión iniciada entrega la clave al navegador.
+
+    Es un uso legítimo y frecuente —un contador entra a SUNAT varias veces al
+    día—, pero no hay razón para que una sola cuenta la pida decenas de veces
+    por hora: un token robado la vaciaría de otro modo sin tocar la base.
+    """
+
+    scope = "sunat_portal"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return f"throttle_sunat_portal_ip_{self.get_ident(request)}"
+        return f"throttle_sunat_portal_user_{user.pk}"

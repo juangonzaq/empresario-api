@@ -127,7 +127,7 @@ class SunatCredentialTests(APITestCase):
     def test_password_is_stored_encrypted_and_never_returned(self):
         response = self.client.post(
             reverse("accounts:sunat-connection"),
-            {"sol_username": "CONSULTA1", "sol_password": "mi-clave-sol"},
+            {"sol_username": "CONSULTA1", "sol_password": "mi-clave-sol", "authorization_accepted": True},
             format="json",
         )
         self.assertEqual(response.status_code, 202)
@@ -145,7 +145,7 @@ class SunatCredentialTests(APITestCase):
     def test_get_never_exposes_the_password(self):
         self.client.post(
             reverse("accounts:sunat-connection"),
-            {"sol_username": "CONSULTA1", "sol_password": "mi-clave-sol"},
+            {"sol_username": "CONSULTA1", "sol_password": "mi-clave-sol", "authorization_accepted": True},
             format="json",
         )
         response = self.client.get(reverse("accounts:sunat-connection"))
@@ -156,7 +156,7 @@ class SunatCredentialTests(APITestCase):
     def test_primary_user_is_recorded_and_warned_about(self):
         response = self.client.post(
             reverse("accounts:sunat-connection"),
-            {"sol_username": "PRINCIPAL", "sol_password": "x-clave",
+            {"sol_username": "PRINCIPAL", "sol_password": "x-clave", "authorization_accepted": True,
              "is_primary_user": True},
             format="json",
         )
@@ -166,7 +166,7 @@ class SunatCredentialTests(APITestCase):
     def test_connecting_enqueues_a_sync_job(self):
         response = self.client.post(
             reverse("accounts:sunat-connection"),
-            {"sol_username": "CONSULTA1", "sol_password": "x-clave"},
+            {"sol_username": "CONSULTA1", "sol_password": "x-clave", "authorization_accepted": True},
             format="json",
         )
         self.assertIn("sync_job", response.data)
@@ -179,7 +179,7 @@ class SunatCredentialTests(APITestCase):
     def test_another_company_cannot_read_the_connection(self):
         self.client.post(
             reverse("accounts:sunat-connection"),
-            {"sol_username": "CONSULTA1", "sol_password": "x-clave"}, format="json",
+            {"sol_username": "CONSULTA1", "sol_password": "x-clave", "authorization_accepted": True}, format="json",
         )
         beto = make_user("beto@dos.pe")
         make_org("20200000002", beto)
@@ -190,7 +190,7 @@ class SunatCredentialTests(APITestCase):
     def test_disconnect_removes_the_credential(self):
         self.client.post(
             reverse("accounts:sunat-connection"),
-            {"sol_username": "CONSULTA1", "sol_password": "x-clave"}, format="json",
+            {"sol_username": "CONSULTA1", "sol_password": "x-clave", "authorization_accepted": True}, format="json",
         )
         self.assertEqual(
             self.client.delete(reverse("accounts:sunat-connection")).status_code, 204

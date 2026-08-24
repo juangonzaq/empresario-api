@@ -162,3 +162,22 @@ class WorkerHeadcount(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.period}: {self.workers} workers"
+
+
+class RucTaxAffectation(BaseModel):
+    """Una fila de «Registro de Tributos Afectos» de la Ficha RUC en SOL.
+    De aquí sale el régimen de renta de la empresa."""
+
+    ruc = models.CharField("RUC", max_length=11, db_index=True)
+    tributo = models.CharField(max_length=120)
+    fecha_alta = models.DateField(null=True, blank=True)
+    afecto_desde = models.DateField(null=True, blank=True)
+    captured_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["ruc", "tributo"]
+        verbose_name = "tributo afecto"
+        verbose_name_plural = "tributos afectos"
+
+    def __str__(self) -> str:
+        return f"{self.ruc} · {self.tributo}"

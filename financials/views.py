@@ -306,7 +306,22 @@ class DrilldownView(OrganizationAPIView):
 
 
 class CategoriesView(OrganizationAPIView):
-    """The category catalog the categorization screen offers."""
+    """``GET`` the category catalog; ``POST`` adds a company category.
+
+    Creating one is the accountant extending her chart of accounts: she
+    names it and says which income-statement line it feeds — the code is
+    derived, the plumbing (sign, statement) is ours to fill.
+    """
+
+    def get_permissions(self):
+        # Reading the catalog is for anyone in the company; extending the
+        # chart of accounts demands management, like the masters screens.
+        if self.request.method == "POST":
+            return [
+                permission() for permission in
+                ManagedOrganizationAPIView.permission_classes
+            ]
+        return super().get_permissions()
 
     def get(self, request: Request) -> Response:
         rows = TransactionCategory.objects.filter(
@@ -325,4 +340,102 @@ class CategoriesView(OrganizationAPIView):
                 "applies_to": c.applies_to,
             }
             for c in seen.values()
+        ])
+
+    def post(self, request: Request) -> Response:
+        from .models import StatementKind, StatementLine
+
+        name = str(request.data.get("name") or "").strip()
+        if not name:
+            return Response(
+                {"detail": "Ponle nombre a la categoría."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        applies_to = request.data.get("applies_to")
+        if applies_to not in ("sales", "purchases", "both"):
+            return Response(
+                {"detail": "Indica si aplica a ventas, compras o ambos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        line_code = str(request.data.get("statement_line") or "").strip()
+        line = (
+            StatementLine.objects.filter(
+                taxpayer_id__in=["", request.ruc],
+                code=line_code,
+                statement=StatementKind.INCOME_STATEMENT,
+                line_type="detail",
+            ).order_by("-taxpayer_id").first()
+        )
+        if line is None:
+            return Response(
+                {"detail": "Elige en qué renglón del Estado de Resultados "
+                           "entra la categoría."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Derived code: readable, unique per company, stable once created.
+        base = "".join(
+            ch if ch.isalnum() else "_" for ch in name.upper()
+        ).strip("_")[:40] or "CATEGORIA"
+        code, n = base, 2
+        while TransactionCategory.objects.filter(
+            taxpayer_id__in=["", request.ruc], code=code
+        ).exists():
+            code = f"{base}_{n}"
+            n += 1
+
+        # The sign is a property of the LINE's nature (income +1, expense
+        # −1), so the safest source is what the seed already decided for
+        # that line: copy it from any sibling category.
+        sibling = TransactionCategory.objects.filter(
+            statement_line=line
+        ).order_by("taxpayer_id").first()
+        income_lines = {
+            "GROSS_SALES", "OTHER_INCOME_LINE", "FINANCIAL_INCOME_LINE",
+            "FX_LINE",
+        }
+        if sibling is not None:
+            sign = sibling.sign
+        else:
+            sign = 1 if line.code in income_lines else -1
+
+        category = TransactionCategory.objects.create(
+            taxpayer_id=request.ruc,
+            code=code,
+            name=name[:120],
+            statement=StatementKind.INCOME_STATEMENT,
+            statement_line=line,
+            sign=sign,
+            applies_to=applies_to,
+            display_order=500,
+        )
+        return Response(
+            {
+                "code": category.code,
+                "name": category.name,
+                "statement": category.statement,
+                "sign": category.sign,
+                "applies_to": category.applies_to,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class StatementLinesView(OrganizationAPIView):
+    """The income-statement detail lines a new category can feed."""
+
+    def get(self, request: Request) -> Response:
+        from .models import StatementKind, StatementLine
+
+        rows = StatementLine.objects.filter(
+            taxpayer_id__in=["", request.ruc],
+            statement=StatementKind.INCOME_STATEMENT,
+            line_type="detail",
+        ).order_by("display_order")
+        seen: dict[str, str] = {}
+        for line in rows:
+            if line.code not in seen or line.taxpayer_id:
+                seen[line.code] = line.name
+        return Response([
+            {"code": code, "name": name} for code, name in seen.items()
         ])

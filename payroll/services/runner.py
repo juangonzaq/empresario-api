@@ -9,6 +9,7 @@ pass per employee is enough.
 from __future__ import annotations
 
 import datetime
+import logging
 from decimal import Decimal
 
 from django.db import transaction
@@ -250,7 +251,12 @@ def close_period(
         )
 
     for entry in period.entries.all():
-        income_tax.settle_month(entry.colaborador, period.year, period.month)
+        # Settle with what the payslip ACTUALLY withheld: the schedule is
+        # a plan until the close, then it becomes the record (V9).
+        income_tax.settle_month(
+            entry.colaborador, period.year, period.month,
+            D(entry.income_tax_withholding),
+        )
 
     period.status = PayrollStatus.CLOSED
     period.closed_at = timezone.now()
@@ -258,4 +264,22 @@ def close_period(
     if warnings:
         period.warnings_accepted_by = getattr(user, "email", "") or str(user)
     period.save()
+
+    # The labour cost flows into the income statement on close, without
+    # waiting for anyone to press "Traer y categorizar" (financial spec
+    # §6.4). After commit and fail-safe: a finanzas hiccup must never
+    # roll back or block a payroll close — the manual sync still exists.
+    transaction.on_commit(lambda: _sync_financials(period.taxpayer_id))
     return period
+
+
+def _sync_financials(taxpayer_id: str) -> None:
+    try:
+        # Imported lazily so payroll keeps no hard dependency on finanzas.
+        from financials.services import ingest
+
+        ingest.ingest_payroll(taxpayer_id)
+    except Exception:  # pragma: no cover — defensive, see comment above
+        logging.getLogger(__name__).exception(
+            "payroll→financials sync failed for %s", taxpayer_id
+        )

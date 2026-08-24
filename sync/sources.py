@@ -106,6 +106,22 @@ def _ruc_profile(creds, cadence: str) -> dict[str, Any]:
     return {"capturados": getattr(result, "captured", 0)}
 
 
+def _tributos(creds, cadence: str) -> dict[str, Any]:
+    """Régimen de renta desde la Ficha RUC de SOL (tributos afectos)."""
+    from accounts.models import Organization, SunatCredential
+    from ruc_profile.services.sol_ficha import sync_regime
+
+    organization = Organization.objects.get(ruc=creds.ruc)
+    credential = SunatCredential.objects.get(organization=organization)
+    try:
+        result = sync_regime(organization, credential)
+    except Exception as exc:  # noqa: BLE001
+        raise SourceFailed(f"No se pudo leer la Ficha RUC en SOL: {exc}") from exc
+    if not result["regimen"]:
+        raise SourceFailed("La ficha no muestra un tributo de renta empresarial; el régimen queda sin detectar.")
+    return result
+
+
 def _remype(creds, cadence: str) -> dict[str, Any]:
     from remype.models import RemypeCheck
     from remype.services import RemypeSynchronizer
@@ -235,8 +251,51 @@ def _cpe(creds, cadence: str) -> dict[str, Any]:
         # recontrastar los meses recientes. Recorrer el histórico entero cada
         # vez costaría minutos y no traería nada que no estuviera ya.
         result = synchronizer.sync_periods(recent_periods(CPE_DAILY_MONTHS))
+
+    # Directo al tablero: los comprobantes traídos se contabilizan y pasan
+    # por la cascada de categorización sin esperar otro botón — el mismo
+    # contrato que planilla, registros manuales y honorarios.
+    from financials.services import categorization as fin_categorization
+    from financials.services import ingest as fin_ingest
+
+    fin_ingest.ingest_sunat(creds.ruc)
+    fin_categorization.categorize_pending(creds.ruc)
     return {"comprobantes": getattr(result, "created", 0),
             "xml": getattr(result, "xml_downloaded", 0)}
+
+
+def _rhe(creds, cadence: str) -> dict[str, Any]:
+    """Recibos por honorarios recibidos: opción 11.5.1.1.14 del menú SOL
+    («Consulta de recibos» del sistema RHE, con la empresa como usuaria),
+    capturada de una sesión real.
+
+    Ventanas por cadencia: la inicial camina hacia atrás hasta agotar el
+    historial (3 meses vacíos, piso 2017 = RHE obligatorio); la diaria
+    recontrasta 2 meses como CPE; la mensual re-barre el ejercicio en
+    curso porque la LISTA DE PAGOS del recibo y las reversiones cambian
+    después de emitido — un gasto puede dejar de serlo."""
+    from sunat_cpe.services.parsing import current_period, recent_periods
+    from sunat_rhe.services import RhePortalClient, RheSynchronizer
+
+    client = RhePortalClient(
+        taxpayer_id=creds.ruc, username=creds.username, password=creds.password
+    )
+    synchronizer = RheSynchronizer(client)
+    if cadence in (Cadence.INITIAL, Cadence.MANUAL):
+        result = synchronizer.backfill(current_period(), stop_after_empty=3)
+    elif cadence == Cadence.MONTHLY:
+        period = current_period()
+        year_to_date = [
+            f"{period[:4]}{m:02d}" for m in range(1, int(period[4:]) + 1)
+        ]
+        result = synchronizer.sync_periods(year_to_date)
+    else:
+        result = synchronizer.sync_periods(recent_periods(CPE_DAILY_MONTHS))
+    # Directo al Estado de Resultados, sin botones intermedios.
+    from financials.services import ingest as financials_ingest
+
+    financials_ingest.ingest_fee_receipts(creds.ruc)
+    return {"recibos": getattr(result, "created", 0)}
 
 
 def _itf(creds, cadence: str) -> dict[str, Any]:
@@ -338,6 +397,10 @@ SOURCES: list[Source] = [
            frozenset({INITIAL, MONTHLY})),
     Source("remype", "Acreditación REMYPE", False, _remype,
            frozenset({INITIAL, MONTHLY})),
+    # El régimen de renta sale de la Ficha RUC *dentro* de SOL (tributos
+    # afectos); cambia muy de tanto en tanto.
+    Source("tributos", "Régimen tributario (Ficha RUC)", True, _tributos,
+           frozenset({INITIAL, MONTHLY})),
     # Perfil de cumplimiento: SUNAT lo recalcula por trimestre.
     Source("compliance", "Perfil de cumplimiento", True, _compliance,
            frozenset({INITIAL, MONTHLY})),
@@ -346,6 +409,8 @@ SOURCES: list[Source] = [
            frozenset({INITIAL, DAILY})),
     Source("cpe", "Comprobantes electrónicos", True, _cpe,
            frozenset({INITIAL, DAILY})),
+    Source("rhe", "Recibos por honorarios", True, _rhe,
+           frozenset({INITIAL, DAILY, MONTHLY})),
     Source("sunafil", "Casilla SUNAFIL", True, _sunafil,
            frozenset({INITIAL, DAILY})),
     # AFPnet no usa la clave SOL —de ahí el False— y su sesión la abre una

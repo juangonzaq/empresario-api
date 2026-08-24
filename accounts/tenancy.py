@@ -22,6 +22,8 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from billing.permissions import SubscriptionActive
+
 from .models import Membership, Organization
 
 ORG_HEADER = "HTTP_X_ORGANIZATION"
@@ -126,13 +128,17 @@ class OrganizationAPIView(APIView):
     Hereda de aquí y `request.ruc` ya viene acotado a quien llama. Si una
     vista de datos no hereda de esta clase, está sirviendo datos sin dueño:
     hay un test que recorre las rutas y lo detecta.
+
+    También exige suscripción vigente (prueba o pagada): terminada la prueba,
+    los datos responden 402 hasta que la empresa elija un plan. Lo que hace
+    falta para pagar vive en ``billing`` y no pasa por aquí.
     """
 
-    permission_classes = [IsAuthenticated, HasOrganization]
+    permission_classes = [IsAuthenticated, HasOrganization, SubscriptionActive]
 
 
 class ManagedOrganizationAPIView(OrganizationAPIView):
-    permission_classes = [IsAuthenticated, CanManageOrganization]
+    permission_classes = [IsAuthenticated, CanManageOrganization, SubscriptionActive]
 
 
 class TenantScopedViewSetMixin:
@@ -149,7 +155,7 @@ class TenantScopedViewSetMixin:
     """
 
     tenant_field = "taxpayer_id"
-    permission_classes = [IsAuthenticated, HasOrganization]
+    permission_classes = [IsAuthenticated, HasOrganization, SubscriptionActive]
 
     def get_queryset(self):
         queryset = super().get_queryset()

@@ -1,0 +1,1559 @@
+<html><head>
+
+<link rel="stylesheet" href="https://jslibs1.sunat.gob.pe/jAlert/4.9.1/jAlert.css">
+<script src="https://ww1.sunat.gob.pe/a/js/libs/jquery/1.11.2/jquery.min.js"></script>
+<script src="https://jslibs1.sunat.gob.pe/jAlert/4.9.1/jAlert.min.js"></script>
+
+<meta http-equiv="expires" content="0">
+<!-- Para el caso de Internet explorer -->
+<meta http-equiv="Cache-Control" content="no-cache">
+<!-- Para el caso de Netscape -->
+<meta http-equiv="Pragma" content="no-cache/cache">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Datos de Ficha RUC- Modificación de Datos</title>
+<script language="JavaScript1.2">
+function nd2() {
+	return;
+}
+
+function dts2(text) {
+	return;
+}
+
+function doMouseOver2(t, ms, plb1, plb2, plb3, plb4) {
+	return;
+}
+
+function doMouseOut2() {
+	return;
+}
+/*
+function esnumero2(numero) {
+    if (esnumero(numero)) {
+        //var rg = new RegExp(/^\d+\.\d\d$/).test(numero);
+        if (esdecimal(numero)) {
+          if (validaDecimal(numero, 1) || validaDecimal(numero, 2) ||
+              validaDecimal(numero, 3) || validaDecimal(numero, 4) || 
+              validaDecimal(numero, 5) || validaDecimal(numero, 6) ||
+              validaDecimal(numero, 7) || validaDecimal(numero, 8) || 
+              validaDecimal(numero, 9)) {
+              return true;
+          }
+          else {
+              return false;
+          }
+        }
+        else {
+            return true;
+        }
+    }
+    else {
+        return false;
+    }
+}*/
+
+function convierteFecha(input,nacimiento){ 
+	
+	sFecha=input.value
+
+	if (sFecha.length==8 && sFecha.substring(2,3) == "/" && sFecha.substring(5,6) == "/") 
+		sFecha = sFecha.substring(0,2) + sFecha.substring(3,5) + sFecha.substring(6,8);	
+	
+	if (isNaN(sFecha)) 
+		return sFecha;
+	
+	if (sFecha.length!=6) 
+		return sFecha; 
+	
+	dia=sFecha.substring(0,2); 
+	mes=sFecha.substring(2,4); 
+	anho=sFecha.substring(4); 
+	prefAnho=nacimiento?"19":"20";
+	
+	anho=""+prefAnho+anho; 
+	fecha=dia+"/"+mes+"/"+anho; 
+	
+	if (checkdate(fecha)) 
+		input.value=fecha; 
+}
+
+function validaCiiu(ciiu1, ciiu2, ciiu3) {
+
+	/***************** INICIO  IVALVERDE-[MigraValid]-F2[160320] - OK**************/
+	 
+	    if (ciiu1 == "6110" ||ciiu1 == "6190" || ciiu2 == "6110" || ciiu2 == "6190" || ciiu3 == "6110" || ciiu3 == "6190") {
+	        var popupcabinas = document.getElementById("popupcabinas");
+	        if (popupcabinas.value == "0") {
+	            w = window.open("/ol-ti-itmoddatruc/mensajedirectoriocabinas.html" 
+,"q","menubar=no,scrollbars=yes,width=400,height=200");
+	            popupcabinas.value = "1";
+	        }
+	 }
+	 
+	/***************** FIN    IVALVERDE-[MigraValid]-F2[160320] ***************/
+}
+
+function esnulooguionovacio (val) {
+   return (esnulooguion(val) || trim(val) == "");
+}
+</script></head>
+<!-- /***************** INICIO JSEGOVIA-[MigraValid]-F2[160312] ***************/ -->
+
+<!-- /***************** FIN    JSEGOVIA-[MigraValid]-F2[160312] ***************/ -->
+
+<body onload="self.location.href=&quot;#Tribut&quot;;"><input name="popupcabinas" id="popupcabinas" type="hidden" value="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- BCD - Exportador de servicios - Inicio -->
+
+<!-- BCD - Exportador de servicios - Fin -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- juazor - INICIO -->
+
+<!-- juazor - FIN -->
+
+
+ <!-- PAS20171U210100050 Restriccion Tramite  Mbolanos -->
+ 
+
+
+
+
+<link href="/a/css/estilos2_0.css" rel="stylesheet">
+<wl:cache>
+<script language="JavaScript1.2" src="/a/js/js.js"></script>
+<script language="JavaScript1.2" src="/a/js/menucookie.js"></script>
+<script language="JavaScript1.2" src="/a/js/menu.js"></script>
+<script language="JavaScript1.2" src="/a/js/dragdrop.js"></script>
+</wl:cache>
+<script language="JavaScript1.2">
+function BajaSpr() {
+  if (checkBajaSpr())
+  {
+    document.EstAnexo.accion.value="LlamaBajaEstAnx";
+    document.EstAnexo.submit();
+  }
+}
+
+function checkBajaSpr()
+{
+  var  conta2=0;
+  for (var x=0; x <document.EstAnexo.elements.length;x++) {
+     var e=document.EstAnexo.elements[x];
+     if (e.name=="delspr")
+     {
+          if (e.checked)
+           conta2++;
+     }
+  }
+ 
+   if (conta2==0)
+   { alert("Debe seleccionar por lo menos 1 establecimiento anexo para dar de baja");
+     return false;
+   }
+   return true;
+}
+
+function UndelSpr(orden){
+  document.EstAnexo.ordendel.value=orden;
+  document.EstAnexo.accion.value="UndelExtAnex";
+  document.EstAnexo.submit();
+}
+
+  function AbreOpcion(valor)
+  {
+     document.f3127.proceso.value=valor;
+     document.f3127.submit();
+  }
+function abreRuc()
+  {
+     document.formRuc.submit();
+  }
+function Cancelar(){
+  if (!document.cancelar.B2.disabled && !document.cancelar2.B5.disabled)
+  {
+  
+  //if (confirm("Desea cancelar la transacción?"))
+    //document.cancelar.submit();
+    
+  $.jAlert({'title': 'SUNAT','theme':'dark_red',
+							'confirmQuestion':'Desea cancelar la transacción?',
+							'type': 'confirm', //Indica que es de tipo Confirmación
+							'closeBtn' : false, //Ocultar el boton x de la esquina
+							'confirmBtnText':'Aceptar',
+							'denyBtnText':'Cancelar',
+							 onConfirm : function(e, btn) {	
+									document.cancelar.submit();
+
+							},
+							onDeny: function(alert) {
+								 
+								}
+						});
+  
+    
+    
+    
+  }
+}
+function Retornar(){
+ onClick=history.back();
+   return false;
+}
+
+  //funcion de bloqueo F5
+  
+  var asciiF5 = 116;
+  var bRet = true; 
+  
+  if(document.all){ 
+    document.onkeydown = onKeyPress;
+  }
+  else { 
+    if (document.layers || document.getElementById){ 
+      document.onkeypress = onKeyPress;
+    }
+  }
+
+  function onKeyPress(evt) {
+    window.status = '';
+    var oEvent = (window.event) ? window.event : evt;
+
+    var nKeyCode = oEvent.keyCode ? oEvent.keyCode :
+    oEvent.which ? oEvent.which : void 0;
+    var bIsFunctionKey = false;
+    
+    if(oEvent.charCode == null || oEvent.charCode == 0) { 
+      //alert(oEvent.keyCode);
+      bIsFunctionKey = (nKeyCode == asciiF5)
+    }
+    
+    if(bIsFunctionKey) {
+      bRet = false;
+      try{
+        oEvent.returnValue = false;
+        oEvent.cancelBubble = true;
+
+        if(document.all) { //IE
+          oEvent.keyCode = 0;
+        }
+        else { //NS
+          oEvent.preventDefault();
+          oEvent.stopPropagation();
+        }
+        window.status = msg; 
+      }
+      catch(ex) {
+        alert("No se permite refrescar la pagina mediante F5");
+      }
+    }
+    return bRet;
+  }
+
+</script>
+<script language="JavaScript1.2">
+
+function UndoAltaSpr(j){
+  document.EstAnexo.ordendel.value=j;
+  document.EstAnexo.accion.value="UA";
+  document.EstAnexo.submit();
+}
+
+function tieneTributoAlta(trib)
+ {
+   tiene="0";
+   
+    if (tiene=="0")
+    return false;
+    else return true;
+ }
+ function BajaVfp() {
+
+  if (checkBajaVfp())
+  {
+   document.vfp.accion.value="B";
+   document.vfp.submit();
+  }
+}
+
+function validaSumaPorcentajes()
+{
+  var por=0;
+  suma=0;
+
+
+       por=vinporcentajeModificado("1",
+        "70030212",
+        "06");
+
+        if (por==0)
+       {
+         suma+=50.000000000;
+       }
+        else {
+           if (por!=-1)
+           suma+=por;
+        }
+  
+
+       por=vinporcentajeModificado("1",
+        "46887218",
+        "06");
+
+        if (por==0)
+       {
+         suma+=50.000000000;
+       }
+        else {
+           if (por!=-1)
+           suma+=por;
+        }
+  
+
+  if (suma>100.01) {return false;}
+  else {return true;}
+}
+function vinporcentajeModificado(docide,nrodoc,tipvin)
+{
+   
+   return 0;
+}
+
+ function tieneTributo(trib)
+ {
+   tiene="0"
+   
+          if ("010101"==trib)
+             {
+              tiene="1";
+             }
+   
+          if ("030402"==trib)
+             {
+              tiene="1";
+             }
+   
+          if ("030502"==trib)
+             {
+              tiene="1";
+             }
+   
+          if ("031201"==trib)
+             {
+              tiene="1";
+             }
+   
+          if ("052100"==trib)
+             {
+              tiene="1";
+             }
+   
+          if ("053100"==trib)
+             {
+              tiene="1";
+             }
+   
+
+    if (tiene=="0")
+    { return false; }
+    else {return true;}    
+ }
+ function UndoAltaVfp(j){
+  document.vfp.ordendel.value=j;
+  document.vfp.accion.value="UA";
+  document.vfp.submit();
+}
+function UndelVfp(orden){
+  document.vfp.ordendel.value=orden;
+  document.vfp.accion.value="U";
+  document.vfp.submit();
+}
+
+function checkBajaVfp()
+{
+ conta=0;
+     for (var i=0;i<document.vfp.elements.length;i++)
+     {
+        var e=document.vfp.elements[i];
+         if (e.name=="delvfp")
+        {
+          if (e.checked)
+           conta++;
+        }
+       }
+   if (conta==0)
+   { $.jAlert({'title' : 'SUNAT', 'content' : "Debe seleccionar por lo menos 1 tributo para dar de baja" , theme:'dark_red'});
+     return false;
+   }
+   return true;
+}
+
+function callAnexo(idx,opcion){
+
+  if ( idx.length == 0 ){
+    $.jAlert({'title' : 'SUNAT', 'content' : "La pagina no puede ser mostrado para este Representante..." , theme:'dark_red'});
+  } else {
+
+ 	w = window.open("/ol-ti-itmoddatruc"+"/RepreDatSec.jsp?idx="+idx+"&opcion="+opcion,"w","menubar=no,scrollbars=yes,width=520,height=350");
+  }
+}
+function opcboton(a, b) {
+  document.listas.accion.value = a;
+  document.listas.proceso.value = b;
+  document.listas.pag.value = 'D';
+  document.listas.submit();
+ }
+function BajaInscripcion(lc_restricc) {
+	
+  document.formbaja.submit();
+}
+function valida(){
+  
+	<!--	/***************** INICIO FLEVANO-[MigraValid]-F2[160312] ***************/-->
+	
+	  <!--	/***************** FIN FLEVANO-[MigraValid]-F2[160312] ***************/-->
+	  
+    
+      if ("39"!="-")
+      {
+        
+         tipo= 39;
+       
+      }
+     else tipo=0;
+
+ if (tieneTributo("031101"))
+ {
+   if (tipo==19){
+        $.jAlert({'title' : 'SUNAT', 'content' : "Tipo de contribuyente 19 no puede afectarse a 3111 (RTAESP)" , theme:'dark_red'});
+        return;
+   }
+ }
+ 
+
+//FIN
+ 
+ if (tieneTributo("034101"))
+ {
+	 <!--	/*****************INICIO JSEGOVIA-[MigraValid]-F2[160312] ***************/-->
+
+				$.jAlert({'title' : 'SUNAT', 'content' : "Sólo contribuyentes con actividades de cultivo y/o crianza pueden afectarse al tributo 3411 (AGRGRA)" , theme:'dark_red'});
+		        return;
+		
+	<!--	/*****************FIN JSEGOVIA-[MigraValid]-F2[160312] ***************/-->
+ }
+
+
+  // verifica que para ciertos tributos se tenga registrada la información contable
+ if (tieneTributo("030401") || tieneTributo("010101") || tieneTributo("033101") ||
+    tieneTributo("034101") || tieneTributo("035101") || tieneTributo("036101") ||
+   tieneTributo("030301") || tieneTributo("031101")|| tieneTributo("031201"))
+ {
+    if (("02"=="-") && ('22' != '00'))
+   {
+       $.jAlert({'title' : 'SUNAT', 'content' : "Los contribuyentes afectos al tributo 3041(RTA4TA) ó 1011(IGV) ó 3311(AMAZON) \n ó 3411(AGRGRA) ó 3511(AGRPEQ) ó 3611(RTAFRO) ó 3031(RTA3RA) ó 3111(ESPECIAL)  ó 3121(RMTMYP)  deben registrar \n una marca en las casillas referentes a sistema de contabilidad" , theme:'dark_red'});
+       return false;
+   }
+ }
+
+     
+ if (tieneTributo("030401") || tieneTributo("041000"))
+   {
+    prof="-";
+
+      if ((tipo==1 || tipo==3) && (prof=="*" || prof=="-"))
+      {
+        $.jAlert({'title' : 'SUNAT', 'content' : "El contribuyente afecto a 4100(NUEVORUS) o 3041(RTA4TA) debe consignar obligatoriamente el código de profesión u oficio" , theme:'dark_red'});
+        return false;
+      }
+      if ((tipo==2 || tipo==4) && (prof=="*" || prof=="-") && tieneTributo("030401") )
+      {
+        $.jAlert({'title' : 'SUNAT', 'content' : "El contribuyente afecto a 3041(RTA4TA) debe consignar obligatoriamente el código de profesión u oficio" , theme:'dark_red'});
+        return false;
+      }
+
+   }
+if ((tieneTributoAlta("010102") || tieneTributoAlta("030309")) && !(tieneTributoAlta("010102") && tieneTributoAlta("030309"))){
+      $.jAlert({'title' : 'SUNAT', 'content' : "Contribuyente debe solicitar la afectación conjunta de los tributos 010102 y 030309" , theme:'dark_red'});
+      return false;
+}
+
+ 
+  
+  if ( tieneTributo("041000")){
+ 	  <!--	/*****************INICIO FLEVANO-[MigraValid]-F2[160312] ***************/-->
+	  
+	  
+	<!--	/*****************FIN FLEVANO-[MigraValid]-F2[160312] ***************/-->
+}
+//7 a 51
+    if (tipo==7 || tipo==8 || (tipo>=11 && tipo<=14) ||
+       tipo==18 || (tipo>=23 && tipo<=29) || (tipo>=31 && tipo<=33) || tipo==35 ||
+      (tipo>37 && tipo<=39) || tipo==43 || tipo==47 || tipo==50
+     || tipo==51) {
+
+
+       if ("22/03/2019"=="-"
+        || "22/03/2019"=="01/01/0001"
+      || "22/03/2019"=="*")
+       {
+          alert ("Contribuyente debe ingresar los datos de Registros públicos");
+          return false;
+       }
+
+          partidanulo=0;
+
+
+          if ("14263749"=="-"
+        || "14263749"=="*")
+           { partidanulo++;
+           }
+
+
+          if ("-"=="-"
+        || "-"=="*")
+           {
+             partidanulo++;
+           }
+
+          if (partidanulo==2)
+           {
+          alert ("Contribuyente debe ingresar los datos de Registros públicos");
+          return false;
+           }
+     }
+      /*if (!isRepLeg("026","LIQUIDADOR"))
+      {
+      if (tipo==7 || tipo==43){
+        if (!isRepLeg("019","GERENTE") &&         !isRepLeg("020","GERENTE EJECUTIVO") && !isRepLeg("021","GERENTE GENERAL"))
+        {
+           alerta("Tipo de contribuyente debe comunicar obligatoriamente un representante legal con el cargo 'Gerente'");
+           return false;
+        }
+      }*/
+	
+      /*if (tipo==26 || tipo==38 || tipo==39){
+        if (!isRepLeg("021","GERENTE GENERAL") && !isRepLeg("019","GERENTE") &&         !isRepLeg("020","GERENTE EJECUTIVO"))
+        {
+           alerta("Tipo de contribuyente debe comunicar obligatoriamente un representante legal con el cargo 'Gerente General'");
+           return false;
+        }
+      }*/
+      /*if (tipo==12){
+        if (!isRepLeg("001","ADMINISTRADOR"))
+        {
+           alerta("Tipo de contribuyente debe comunicar obligatoriamente un representante legal con el cargo 'Administrador'");
+           return false;
+        }
+      }
+      if (tipo==8 || tipo==13 || tipo==14 || tipo==27 || tipo==28 || tipo==31 || tipo==32){
+        if (!isRepLeg("001","ADMINISTRADOR") && !isRepLeg("019","GERENTE")
+        &&        !isRepLeg("020","GERENTE EJECUTIVO") && !isRepLeg("021","GERENTE GENERAL"))
+        {
+           alerta("Los tipos de contribuyente 08, 13, 14, 27, 28, 31 y 32 deben comunicar obligatoriamente un representante legal con el cargo de 'Administrador' y/o 'Gerente' según corresponda");
+           return false;
+        }
+      }
+      if (tipo==11){
+        if (!isRepLeg("001","ADMINISTRADOR") && !isRepLeg("019","GERENTE") && !isRepLeg("029","PRESIDENTE")
+        &&        !isRepLeg("020","GERENTE EJECUTIVO") && !isRepLeg("021","GERENTE GENERAL"))
+        {
+           alerta("Tipo de contribuyente debe comunicar obligatoriamente un representante legal con el cargo de 'Administrador', 'Gerente' y/o 'Presidente' según corresponda");
+           return false;
+        }
+      }
+      if (tipo==10){
+         z=0;
+         if(isRepLeg("001","ADMINISTRADOR"))
+          z++;
+         if(isRepLeg("019","GERENTE"))
+          z++;
+         if(isRepLeg("021","GERENTE GENERAL"))
+          z++;
+
+        if (z==0 || z>1)
+        {
+           alerta("Debe comunicar sólo uno de los siguientes cargos 'Administrador', 'Gerente' o 'Gerente General'");
+           return false;
+        }
+      }
+     }*/
+
+   /*if (countVin("06")>=1 && !validaSumaPorcentajes())
+   {
+       alerta("La suma de los porcentajes debe ser menor o igual a 100.00");
+       return false;
+   }*/
+
+   // para personas vinculadas
+     return true;
+}
+
+function countVin(vin)
+{ cont=0;
+
+       if (vin=="" || vin=="06" ){
+         cont++;
+       }
+
+       if (vin=="" || vin=="06" ){
+         cont++;
+       }
+
+
+   return cont;
+}
+
+function isRepLeg(cargo,desc)
+{   
+   cont=0;
+ 
+       d="-";
+        if (1>0)
+       {
+            
+       if (cargo=="021" ||
+         desc==d.substring(0,desc.length))
+          {       
+         cont++;
+       }
+       }
+
+
+   if (cont>=1)
+    {
+    return true;
+    }
+   else return false;
+}
+
+function Aceptar(){
+
+ var validaCIIUvsCamRegRTAESP = document.getElementById("validaCIIUvsCamRegRTAESP");
+ if (validaCIIUvsCamRegRTAESP != null && validaCIIUvsCamRegRTAESP.value == "true") {
+	$.jAlert({'title' : 'SUNAT', 'content' : "CONTRIBUYENTES AFECTOS A RÉGIMEN TRIBUTARIO ESPECIAL NO PUEDEN REALIZAR ACTIVIDAD ECONÓMICA DE LOS SIGUIENTES CIIU: 85124, 85200, 74117, 74120, 74218, 72101, 72202, 72303, 72404, 72505, 72909, 74145, 92209, 74996, 32200, 52600, 45207, 67206" , theme:'dark_red'});
+   return false;
+ }
+
+  estado="00";
+  if (estado!='03' && estado!='10') {
+    if (document.aceptar.B1.disabled==false && document.aceptar2.B4.disabled==false && valida()) {
+      if (document.all.links != null) {
+        for (var i=0;i<document.all.links.length;i++) {
+          document.all.links[i].href="#";
+        }
+      }
+      document.aceptar.B1.disabled=true;
+      document.aceptar2.B4.disabled=true;
+      document.cancelar.disabled=true;
+      document.cancelar.B2.disabled=true;
+      document.cancelar2.B5.disabled=true;
+      if (document.retornar!=null)
+        document.retornar.disabled=true;
+      document.aceptar.submit();
+    }
+  }
+  else {
+    if (document.aceptar.B1.disabled==false) {
+      document.aceptar.B1.disabled=true;
+      document.aceptar2.B4.disabled=true;
+      document.aceptar.submit();
+    }
+  }
+}
+
+function openRepLeg(){
+
+  w = window.open("/ol-ti-itmoddatruc"+"/ListaRepLeg.jsp?xx=082829370223082026","w","menubar=no,scrollbars=yes,width=650,height=400");
+}
+function Inconsistencias()
+{
+  //w = window.open("/ol-ti-itmoddatruc/mruc001Alias?accion=I","q","menubar=no,scrollbars=yes,width=650,height=400");
+  //w = window.showModalDialog("/ol-ti-itmoddatruc/mruc001Alias?accion=I","q","menubar=no,scrollbars=yes,width=650,height=400");
+  //showModalDialog("/ol-ti-itmoddatruc/mruc001Alias?accion=I","q","menubar=no,scrollbar=yes,width=650,height=400");
+  document.inconsistencias.submit();
+}
+</script>
+
+
+
+
+  
+
+
+
+
+
+<p>
+</p><center>
+<div align="center">
+
+ <a name="Todo"></a>
+ <table width="100%" cellspacing="2" cellpadding="3" class="form-table">
+<tbody><tr>
+      <td width="100%" valign="top" align="center" class="T1"><strong>
+          FICHA RUC: 20604442533<br>
+               PATTERN GROUP S.A.C.
+		  </strong></td>
+		  <td valign="top" class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Todo' )"></td>
+	<td valign="top" class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Todo')">	</td>
+   </tr>
+</tbody></table>
+
+   
+</div>
+
+
+
+
+
+
+<table cellspacing="2" cellpadding="2" border="0" align="right" width="100%">
+<tbody><tr>
+
+	<td width="80%">
+	   <form method="post" name="descargar" action="/ol-ti-itmoddatruc/mruc021Alias" accept-charset="UTF-8">
+		     <input type="submit" value="Descargar Ficha RUC" name="B6" class="form-button">
+		     <input type="Hidden" value="REPORTEEC" name="accion">
+	   </form> 
+ 	  </td>
+ 	  
+    <td width="5%" align="left"><form method="post" name="imprimir2" action="/ol-ti-itmoddatruc/mruc007Alias">
+        <input type="hidden" name="imprimir" value="1">
+        <input type="submit" value="Ficha RUC" name="B3" class="form-button">
+        </form> </td>
+    <td width="2%">&nbsp;</td>
+
+
+    <td width="5%" align="left"><form method="post" name="aceptar2" action="/ol-ti-itmoddatruc/mruc007Alias">
+        <input type="button" value="Aceptar" name="B4" class="form-button" onclick="Aceptar()">
+        </form> </td>
+	<td width="0%">&nbsp;</td>
+    <td width="5%" align="left"><form name="cancelar2" method="post" action="/ol-ti-itmoddatruc/mruc002Alias">
+	<input type="button" value="Cancelar" name="B5" class="form-button" onclick="Cancelar()">
+	<input type="Hidden" value="L" name="accion">
+	<input type="Hidden" value="CANCELAR" name="proceso">
+	</form>	</td>
+	<td width="3%">&nbsp;</td>
+
+</tr>
+</tbody></table><br><br>
+<form name="listas" method="post" action="/ol-ti-itmoddatruc/mruc007Alias">
+ <input type="hidden" name="accion" value="">
+ <input type="hidden" name="proceso" value="">
+ <input type="hidden" name="pag" value="">
+</form>
+<a name="Infgen"></a>
+<table width="100%" cellspacing="2" cellpadding="3" class="form-table">
+<tbody><tr>
+<td><table width="100%" cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+	<strong><font class="bgn">Información General del Contribuyente</font></strong>	</td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Infgen' )"></td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Infgen')">	</td>
+</tr>
+</tbody></table>
+
+
+<table border="0" cellpadding="0" cellspacing="4" width="100%">
+  <tbody><tr>
+    <td width="25%" class="bgn">Apellidos y Nombres o Razón Social</td>
+    <td width="1%" class="bgn"> :</td>
+    <td width="30%" class="bg">
+PATTERN GROUP S.A.C.</td>
+ </tr>
+   <tr>
+    <td class="bgn">Tipo de Contribuyente</td>
+    <td class="bgn"> :</td>
+    <td colspan="4" class="bg"> 
+39 - SOCIEDAD ANONIMA CERRADA           </td>
+  </tr>
+  <tr>
+    <td class="bgn">Fecha de Inscripción</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+           25/03/2019	    </td>
+  </tr>
+  <tr>
+    <td class="bgn">Fecha de Inicio de Actividades</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+   
+15/04/2019    </td>
+  </tr>
+  <tr>
+    <td class="bgn">Estado del Contribuyente</td>
+    <td class="bgn"> :   </td>
+    <td class="bg">
+ACTIVO                    
+
+ </td>
+  </tr>
+  <tr>
+    <td class="bgn">Dependencia SUNAT</td>
+    <td class="bgn"> :</td>
+    <td class="bg">0023 - INTENDENCIA LIMA            </td>
+  </tr>
+  <tr>
+    <td class="bgn">Condición de Domicilio Fiscal</td>
+    <td class="bgn"> :  </td>
+    <td class="bg">
+HABIDO                   </td>
+  </tr>
+  <!-- //MLR Inicio cambio P_DSNT_CPLE_0009_5_FE-MASIFICACION -->
+  <tr>
+    <td class="bgn">Emisor electrónico desde</td>
+    <td class="bgn"> :  </td>
+    <td class="bg">07/08/2019</td>
+  </tr>
+  <tr>
+    <td class="bgn">Comprobantes electrónicos</td>
+    <td class="bgn"> :  </td>
+    <td class="bg">FACTURA (desde 07/08/2019),BOLETA (desde 19/08/2019)</td>
+  </tr>
+  <!-- //MLR Fin cambio P_DSNT_CPLE_0009_5_FE-MASIFICACION -->
+
+
+
+
+<!-- PAS20251U210400037 - MACO inicio - SSCO - 01: SCCO TITULAR, 02: SSCO CONTAGIADO/VINCULADO -->
+		
+			
+	<!-- PAS20251U210400037 - MACO - fin -->
+</tbody></table>
+ 
+</td>
+</tr>
+</tbody></table>
+<br>
+<a name="datcontri"></a>
+<table width="100%" cellspacing="2" cellpadding="3" border="0" class="form-table">
+<tbody><tr>
+<td> <table cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+
+
+<strong><font class="bgn">Para modificar los datos del Contribuyente</font></strong>
+
+<font class="beta"><strong><u>
+<a href="/ol-ti-itmoddatruc/form3127datgen.jsp?xx=082829370223082026" id="links">Ingrese Aquí
+</a></u></strong></font>	</td>
+<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Datcontri' )">	</td>
+<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Datcontri')">	</td>
+</tr>
+</tbody></table>
+
+<table border="0" cellpadding="0" cellspacing="4" width="100%">
+  <tbody><tr>
+    <td width="25%" class="bgn">Nombre Comercial</td>
+    <td width="1%" class="bgn"> :</td>
+    <td width="30%" class="bg">
+         -</td>
+  </tr>
+  <tr>
+    <td class="bgn">Tipo de Representación</td>
+    <td class="bgn"> :	</td>
+    <td class="bg">-    
+    </td>
+  </tr>
+  
+  <!-- I-160317 -->
+  
+<!--   <tr> -->
+<!--     <td class="bgn">Actividad Econ&oacute;mica Principal</td> -->
+<!--     <td class="bgn"> :</td> -->
+
+
+<!-- 	<tr> -->
+<!--     <td class="bgn">Actividad Econ&oacute;mica Secundaria 1</td> -->
+<!--     <td class="bgn"> :	</td> -->
+
+<!--                            if((mynegt1144Bean!= null) && (mynegt1144Bean.getCod_ciiu2()!= null ) && mynegt1144Bean.getCod_ciiu2().equals("N")){ neg=true;}  -->
+
+
+
+
+<!--   </tr> -->
+<!--   <tr> -->
+<!--     <td class="bgn">Actividad Econ&oacute;mica Secundaria 2</td> -->
+<!--     <td class="bgn"> :</td> -->
+
+
+
+
+<!-- 	</tr> -->
+	
+	
+	<tr>
+    <td class="bgn">Actividad Económica Principal </td>
+    <td class="bgn"> :</td>
+    <td class="bg">  
+      
+     
+		<!-- SC003-2015 Inicio -->
+    	
+    		7020 - ACTIVIDADES DE CONSULTORÍA DE GESTIÓN                                                                                             
+    	<!-- /* Inicio PAS20145E210000530 160312 JCCATAMAYO */ -->
+		 
+    	 <!-- SC003-2015 Fin -->
+    
+    </td>
+    </tr><tr>
+    <td class="bgn">Actividad Económica Secundaria 1 </td>
+    <td class="bgn"> :	</td>
+    <td class="bg">
+       
+     
+    	<!-- SC003-2015 Inicio -->
+    	
+    	 	 	-
+    	 	 
+    	 <!-- SC003-2015 Fin -->
+        
+    
+  </td></tr>
+  <tr>
+    <td class="bgn">Actividad Económica Secundaria 2 </td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+      
+     
+    	<!-- SC003-2015 Inicio -->
+    	
+    	 	 	-
+    	 	 
+    	 <!-- SC003-2015 Fin -->
+    	
+	</td></tr>
+  
+  <!-- F-160317 -->
+	
+	
+  <tr>
+    <td class="bgn">Sistema Emisión Comprobantes de Pago</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+          COMPUTARIZADO                                                                                                                       </td>
+	 </tr>
+	 <tr>
+    <td class="bgn">Sistema de Contabilidad</td>
+    <td class="bgn"> :</td>
+    <td class="bg"> 
+        COMPUTARIZADO                                                                                                                      </td>
+  </tr>
+  <tr>
+    <td class="bgn">Código de Profesión / Oficio</td>
+    <td class="bgn"> :</td>
+    <td class="bg">-</td>
+  </tr>
+  <tr>
+    <td class="bgn">Actividad de Comercio Exterior</td>
+    <td class="bgn"> :</td>
+    <td class="bg"> 
+          SIN ACTIVIDAD                                                                                                                          </td>
+	 </tr>
+<!-- PAS20171U210100026 -->
+  
+<!-- Fin PAS20171U210100026 -->
+	 <tr>
+    <td class="bgn">Número Fax</td>
+    <td class="bgn"> :</td>
+    <td class="bg">   
+          -   </td>
+  </tr>
+  <tr>
+    <td class="bgn">Teléfono Fijo 1</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+	    
+         1 
+		
+         3540376 
+	    </td>
+  </tr>
+  <tr>
+    <td class="bgn">Teléfono Fijo 2</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+	    
+         1 
+			
+         5071672  
+	</td>
+	</tr>
+	<tr>
+    <td class="bgn">Teléfono Móvil 1</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+	    
+          1        
+       
+          981919485        
+	</td>
+    </tr>
+	
+    <tr>
+    <td class="bgn">Teléfono  Móvil 2</td>
+    <td class="bgn"> :</td>
+    <td class="bg">
+	  
+	    
+         1        
+		
+         982729118   
+  </td>
+  </tr>
+  <tr>
+    <td class="bgn">Correo Electrónico 1</td>
+    <td class="bgn"> :</td>
+    <td class="bg"> 
+	    
+        correo@ejemplo.pe    </td>
+  </tr>
+  <tr>
+    <td class="bgn">Correo Electrónico 2</td>
+    <td class="bgn"> :</td>
+    <td class="bg"> 
+	   
+        correo@ejemplo.pe	    </td>
+  </tr>
+</tbody></table>
+
+</td>
+</tr>
+</tbody></table>
+<br>
+<a name="Domfis"></a>
+<table cellspacing="2" cellpadding="3" width="100%" class="form-table">
+<tbody><tr>
+<td>
+<table cellspacing="1" cellpadding="2">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+
+
+    
+	<font class="bgn"><strong>Para modificar los datos de Domicilio Fiscal</strong></font>
+	
+	<font class="beta"><u><strong><a href="javascript:AbreOpcion('3127DOMFIS')">Ingrese Aquí</a></strong></u></font>
+   
+		</td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Domfis' )">	</td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Domfis')">	</td>
+</tr>
+</tbody></table>
+
+</td></tr>
+
+</tbody></table>
+<br>
+<table cellspacing="2" cellpadding="3" class="form-table" width="100%">
+<tbody><tr>
+<td>
+<a name="Pernat"></a>
+
+<a name="Datemp"></a>
+<table cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+
+
+	<strong><font class="bgn">Para modificar los datos de la Empresa</font></strong>
+<font class="beta"><strong><u><a href="/ol-ti-itmoddatruc/form3127datemp.jsp?xx=082829370223082026" id="links">Ingrese Aquí
+</a></u></strong></font></td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Datemp' )">	</td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Datemp')">	</td>
+</tr>
+</tbody></table>
+
+
+</td>
+</tr>
+</tbody></table>
+
+<br>
+
+<table cellspacing="2" cellpadding="3" border="0" width="100%" class="form-table">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+<strong><font class="bgn">	Suspensión / Reinicio de Actividades  <a href="javascript:AbreOpcion('3127SUSREIN')">
+Ingrese Aquí</a></font></strong>	</td>
+</tr>
+</tbody></table>
+
+<br>
+<!--
+ 
+<table cellspacing=2 cellpadding=3 border=0 width="100%" class="form-table">
+<tr>
+<td width="100%"  valign="top" align="center"     class="beta">
+<strong><font class="bgn">	Acuse de Recibo<a href="javascript:AbreOpcion('ACUSE')">
+Ingrese Aqu&iacute;</a></font></strong>	</td>
+</tr>
+</table>
+
+-->
+<!-- PAS20165E210100122- AJUSTES SOL - FORM 31282 - María Bolaños -->
+  
+<!--  <input type="hidden" id="resultadoCambiaRegimen"
+	value="< %=resultadoCambiaRegimen%>" /> <input type="hidden"
+	id="usadoCambioRegimen" value="< %=myF3127Bean.getUsadocr()%>" /> <input
+	type="hidden" id="validaCIIUvsCamRegRTAESP"
+	value="< %=(validaCIIUvsRTAESP || wvalida_CIIURTAES)%>" /> -->
+	 <!--<br>
+	<table cellspacing=2 cellpadding=3 border=0 width="100%"
+	class="form-table">
+	<tr>
+		<td width="100%" valign="top" align="center" class="beta"><strong><font
+			class="bgn"> Cambio de R&eacute;gimen<a
+			href="< %= request.getContextPath().trim() %>/form31282cambioregimen.jsp?xx=< %= fh.getFormatDate("SSSSssmmhhddMMyyyy")%>"
+			id="links">Ingrese Aqu&iacute;</a></font></strong></td>
+	</tr>
+	</table>
+<br>-->
+<!-- <br>
+<table cellspacing=2 cellpadding=3 border=0 width="100%"
+	class="form-table">
+	<tr>
+		<td width="100%" valign="top" align="center" class="beta"><strong><font
+			class="bgn"> Cambio de R&eacute;gimen </font><font class="bgn"></font></strong>
+		</td>
+	</tr>
+</table>-->
+
+<!-- Fin PAS20165E210100122 -->
+
+<br>
+<a name="Tribut"></a>
+<table cellpadding="3" cellspacing="2" width="100%" class="form-table">
+<tbody><tr>
+<td>
+<input type="hidden" id="validaCIIUvsCamRegRTAESP" value="false">
+<table cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+	<strong><font class="bgn">Registro de Tributos Afectos</font></strong></td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Tribut' )"></td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Tribut')"></td>
+</tr>
+</tbody></table>
+</td>
+</tr>
+<tr>
+<td>
+
+<form name="vfp" method="post" action="/ol-ti-itmoddatruc/mruc008Alias">
+<input type="hidden" name="accion">
+<input type="hidden" name="proceso" value="VFP">
+
+
+<p><font class="warn"><em>Ingrese a la opción de "Alta" o "Dar de Baja" para actualizar sus tributos. </em></font></p>
+
+
+<b><a href="/ol-ti-itmoddatruc/form3119AltaTributos.jsp?xx=082829370223082026" id="links">Alta</a></b>
+
+
+<table cellpadding="0" cellspacing="0" border="0" width="100%">
+<tbody><tr>
+<td class="beta">
+
+
+<table cellpadding="2" cellspacing="1" width="100%" height="1">
+  <tbody><tr>
+    <th width="21%" rowspan="2" class="beta">Tributo</th>
+    <th width="10%" rowspan="2" class="beta">Fecha de alta</th>
+    <th width="14%" rowspan="2" class="beta">Afecto desde</th>
+    <th width="65%" colspan="3" class="beta">Exoneración</th>
+  </tr>
+  <tr>
+    <th width="13%" class="beta">Marca de Exoneración</th>
+    <th width="10%" class="beta">Desde</th>
+    <th width="12%" class="beta">Hasta</th>
+
+   <th width="8%" valign="middle" class="beta"><p align="center">Modificación</p></th>
+  
+  
+    <th width="12%" valign="middle" height="1" class="beta"><p align="center"><a href="javascript:BajaVfp()" id="links">Dar de Baja</a></p></th>
+    
+
+
+<input type="hidden" name="ordendel">
+	
+  </tr>
+  
+  
+
+  
+    <tr>
+    <td width="21%" class="bg" nowrap=""><p align="center">IGV - OPER. INT. - CTA. PROPIA     </p></td>
+    <td width="10%" class="bg" nowrap=""><p align="center">15/04/2019
+			        </p></td>
+    <td width="14%" class="bg" nowrap=""><p align="center">15/04/2019
+			    </p></td>
+    <td width="13%" class="bg" nowrap=""><p align="center">-    </p></td>
+    
+    
+    
+    <td width="10%" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+    <td width="12%" valign="middle" height="14" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+			
+
+    <td width="8%" class="bg"><p align="center">
+       </p></td>
+    <td width="12%" class="bg"><p align="center">
+     	   
+    <input type="checkbox" name="delvfp" value="0">
+    </p></td>
+
+				
+    </tr>
+  
+  
+
+  
+    <tr>
+    <td width="21%" class="bg" nowrap=""><p align="center">RENTA 4TA. CATEG. RETENCIONES      </p></td>
+    <td width="10%" class="bg" nowrap=""><p align="center">05/05/2022
+			        </p></td>
+    <td width="14%" class="bg" nowrap=""><p align="center">01/01/2022
+			    </p></td>
+    <td width="13%" class="bg" nowrap=""><p align="center">-    </p></td>
+    
+    
+    
+    <td width="10%" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+    <td width="12%" valign="middle" height="14" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+			
+
+    <td width="8%" class="bg"><p align="center">
+       </p></td>
+    <td width="12%" class="bg"><p align="center">
+     	   
+    <input type="checkbox" name="delvfp" value="1">
+    </p></td>
+
+				
+    </tr>
+  
+  
+
+  
+    <tr>
+    <td width="21%" class="bg" nowrap=""><p align="center">RENTA 5TA. CATEG. RETENCIONES      </p></td>
+    <td width="10%" class="bg" nowrap=""><p align="center">05/05/2023
+			        </p></td>
+    <td width="14%" class="bg" nowrap=""><p align="center">01/04/2023
+			    </p></td>
+    <td width="13%" class="bg" nowrap=""><p align="center">-    </p></td>
+    
+    
+    
+    <td width="10%" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+    <td width="12%" valign="middle" height="14" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+			
+
+    <td width="8%" class="bg"><p align="center">
+       </p></td>
+    <td width="12%" class="bg"><p align="center">
+     	   
+    <input type="checkbox" name="delvfp" value="2">
+    </p></td>
+
+				
+    </tr>
+  
+  
+
+  
+    <tr>
+    <td width="21%" class="bg" nowrap=""><p align="center">RENTA - REGIMEN MYPE TRIBUTARIO    </p></td>
+    <td width="10%" class="bg" nowrap=""><p align="center">15/04/2019
+			        </p></td>
+    <td width="14%" class="bg" nowrap=""><p align="center">15/04/2019
+			    </p></td>
+    <td width="13%" class="bg" nowrap=""><p align="center">-    </p></td>
+    
+    
+    
+    <td width="10%" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+    <td width="12%" valign="middle" height="14" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+			
+
+    <td width="8%" class="bg"><p align="center">
+       </p></td>
+    <td width="12%" class="bg"><p align="center">
+     	   
+    <input type="checkbox" name="delvfp" value="3">
+    </p></td>
+
+				
+    </tr>
+  
+  
+
+  
+    <tr>
+    <td width="21%" class="bg" nowrap=""><p align="center">ESSALUD SEG REGULAR TRABAJADOR     </p></td>
+    <td width="10%" class="bg" nowrap=""><p align="center">05/05/2023
+			        </p></td>
+    <td width="14%" class="bg" nowrap=""><p align="center">01/04/2023
+			    </p></td>
+    <td width="13%" class="bg" nowrap=""><p align="center">-    </p></td>
+    
+    
+    
+    <td width="10%" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+    <td width="12%" valign="middle" height="14" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+			
+
+    <td width="8%" class="bg"><p align="center">
+       </p></td>
+    <td width="12%" class="bg"><p align="center">
+     	   
+    <input type="checkbox" name="delvfp" value="4">
+    </p></td>
+
+				
+    </tr>
+  
+  
+
+  
+    <tr>
+    <td width="21%" class="bg" nowrap=""><p align="center">SNP - LEY 19990                    </p></td>
+    <td width="10%" class="bg" nowrap=""><p align="center">23/11/2023
+			        </p></td>
+    <td width="14%" class="bg" nowrap=""><p align="center">01/10/2023
+			    </p></td>
+    <td width="13%" class="bg" nowrap=""><p align="center">-    </p></td>
+    
+    
+    
+    <td width="10%" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+    <td width="12%" valign="middle" height="14" class="bg" nowrap=""><p align="center">
+    -    
+	</p></td>
+			
+
+    <td width="8%" class="bg"><p align="center">
+       </p></td>
+    <td width="12%" class="bg"><p align="center">
+     	   
+    <input type="checkbox" name="delvfp" value="5">
+    </p></td>
+
+				
+    </tr>
+  
+   
+</tbody></table>
+</td>
+</tr>
+</tbody></table>
+</form>
+
+
+   
+
+</td>
+</tr>
+</tbody></table>
+<br>
+
+
+
+<a name="Repleg"></a>
+<table cellpadding="3" cellspacing="2" width="100%" class="form-table">
+  <tbody><tr>
+  <td>
+<table cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+	<strong><font class="bgn">Representantes Legales</font></strong></td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Repleg' )"></td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Repleg')"></td>
+</tr>
+</tbody></table>
+</td>
+</tr>
+<tr>
+<td>
+
+
+
+</td>
+</tr>
+</tbody></table>
+<br>
+<a name="Pervin"></a>
+<table cellpadding="3" cellspacing="2" width="100%" class="form-table">
+  <tbody><tr>
+  <td>
+<table cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+	<strong><font class="bgn">Otras Personas Vinculadas</font></strong>	</td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Pervin' )">	</td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Pervin')">	</td>
+</tr>
+</tbody></table>
+</td>
+</tr>
+<tr>
+<td>
+
+</td>
+</tr>
+</tbody></table>
+
+<form name="EstAnexo" method="post" action="/ol-ti-itmoddatruc/mruc008Alias">
+<input type="hidden" name="accion">
+<input type="hidden" name="proceso" value="SPR">
+<br>
+<a name="Estanex"></a>
+<table cellpadding="3" cellspacing="2" width="100%" class="form-table">
+  <tbody><tr>
+  <td>
+<table cellspacing="1" cellpadding="2" border="0">
+<tbody><tr>
+<td width="100%" valign="top" align="center" class="beta">
+	<font class="bgn"><strong>Establecimientos Anexos</strong></font>	</td>
+	<td class="minmax"><img src="/a/imagenes/i-down.gif" width="9" height="9" border="0" onclick="opcboton('1','Estanex' )"></td>
+	<td class="minmax"><img id="MaxIMG&quot;" +="" i="" "="" src="/a/imagenes/i-up.gif" width="9" height="9" border="0" onclick="opcboton( '2','Estanex')"></td>
+</tr>
+</tbody></table>
+</td>
+</tr>
+<tr>
+<td>
+
+
+
+
+	<p align="center"><font class="warn"><em>No existe información para mostrar</em></font></p>
+
+</td>
+</tr>
+</tbody></table>
+<br>
+
+<!--/form-->
+
+
+
+
+<br>
+<!-- Inicio PAS20155E210100028-F2-160317-gpaima -->
+
+<!-- Fin PAS20155E210100028-F2-160317-gpaima -->
+  <br>
+<table cellspacing="2" cellpadding="2" border="0" align="center">
+<tbody><tr>
+
+    <td><form method="post" name="imprimir2" action="/ol-ti-itmoddatruc/mruc007Alias">
+        <input type="hidden" name="imprimir" value="1">
+        <input type="submit" value="Ficha RUC" name="B3" class="form-button">
+        </form> </td>
+<td>&nbsp;&nbsp;&nbsp;</td>
+
+
+    <td><form method="post" name="aceptar" action="/ol-ti-itmoddatruc/mruc007Alias">
+        <input type="button" value="Aceptar" name="B1" class="form-button" onclick="Aceptar()">
+        </form> </td>
+<td>&nbsp;&nbsp;&nbsp;</td>
+    <td><form method="post" name="cancelar" action="/ol-ti-itmoddatruc/mruc002Alias">
+	<input type="button" value="Cancelar" name="B2" class="form-button" onclick="Cancelar()">
+	<input type="Hidden" value="L" name="accion">
+	<input type="Hidden" value="CANCELAR" name="proceso">
+	</form>	</td>
+
+</tr>
+</tbody></table>
+</form></center>
+
+
+<form name="f3127" method="post" action="/ol-ti-itmoddatruc/mruc002Alias">
+<input type="hidden" name="proceso">
+<input type="hidden" name="accion" value="A">
+</form>
+<table width="80%" cellpadding="0" cellspacing="0" border="0">
+<tbody><tr>
+
+<td class="hd">Ayuda: Para ver una demostración de la Modificación de Datos dar click <b> <a href="https://www.sunat.gob.pe/tutores/demos/orientacion/tramitesRUC/modiDatosGrales.swf" target="_blank">aquí</a></b>.
+
+</td>
+</tr>
+</tbody></table>
+
+
+<br>
+<table align="right">
+<tbody><tr align="right">
+<td align="right">
+<b><font face="arial" size="1" color="white">Version del pase 000249</font></b>
+</td>
+</tr>
+</tbody></table>
+<table>
+
+
+<script id="f5_cspm">(function(){var f5_cspm={f5_p:'IPLACIEFCIAEMINCOFJCGKOJGANLFJJALGHDCJAGMBJKPHFHMMDGHPIMLGIBKOMJCAIBINOPBOMKKFMOGGFAAKEHAJJHHFHEDBDNHHFFANAPEFICGOKFNBPKKHLEGHDP',setCharAt:function(str,index,chr){if(index>str.length-1)return str;return str.substr(0,index)+chr+str.substr(index+1);},get_byte:function(str,i){var s=(i/16)|0;i=(i&15);s=s*32;return((str.charCodeAt(i+16+s)-65)<<4)|(str.charCodeAt(i+s)-65);},set_byte:function(str,i,b){var s=(i/16)|0;i=(i&15);s=s*32;str=f5_cspm.setCharAt(str,(i+16+s),String.fromCharCode((b>>4)+65));str=f5_cspm.setCharAt(str,(i+s),String.fromCharCode((b&15)+65));return str;},set_latency:function(str,latency){latency=latency&0xffff;str=f5_cspm.set_byte(str,40,(latency>>8));str=f5_cspm.set_byte(str,41,(latency&0xff));str=f5_cspm.set_byte(str,35,2);return str;},wait_perf_data:function(){try{var wp=window.performance.timing;if(wp.loadEventEnd>0){var res=wp.loadEventEnd-wp.navigationStart;if(res<60001){var cookie_val=f5_cspm.set_latency(f5_cspm.f5_p,res);window.document.cookie='f5avr0508421157aaaaaaaaaaaaaaaa_cspm_='+encodeURIComponent(cookie_val)+';path=/;'+'';}
+return;}}
+catch(err){return;}
+setTimeout(f5_cspm.wait_perf_data,100);return;},go:function(){var chunk=window.document.cookie.split(/\s*;\s*/);for(var i=0;i<chunk.length;++i){var pair=chunk[i].split(/\s*=\s*/);if(pair[0]=='f5_cspm'&&pair[1]=='1234')
+{var d=new Date();d.setTime(d.getTime()-1000);window.document.cookie='f5_cspm=;expires='+d.toUTCString()+';path=/;'+';';setTimeout(f5_cspm.wait_perf_data,100);}}}}
+f5_cspm.go();}());</script></table></body></html>
