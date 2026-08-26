@@ -69,7 +69,132 @@ def companies_in_use(user: User) -> int:
 
 
 def company_seat_limit(user: User) -> int:
-    return company_seat_base(user) + int(user.extra_company_seats or 0)
+    """Base del plan + cortesías del admin + asientos comprados en la
+    suscripción de la empresa principal."""
+    sub = _primary_subscription(user)
+    comprados = int(sub.extra_company_seats) if sub else 0
+    return company_seat_base(user) + int(user.extra_company_seats or 0) + comprados
+
+
+# ------------------------------------------------------ asientos: personas
+
+def default_member_seats() -> int:
+    return int(getattr(settings, "BILLING_DEFAULT_MEMBER_SEATS", 3))
+
+
+def member_seat_limit(organization: Organization) -> int:
+    """Personas que caben en una empresa: las del plan más las compradas."""
+    sub = ensure_subscription(organization)
+    plan = plan_vigente(sub)
+    base = plan.included_member_seats if plan else default_member_seats()
+    return base + int(sub.extra_member_seats)
+
+
+def members_in_use(organization: Organization) -> int:
+    """Accesos activos más invitaciones pendientes: una invitación ya ocupa
+    el asiento, si no se podría invitar sin tope y pagar nunca."""
+    from accounts.models import Invitation, InvitationStatus
+
+    return (
+        Membership.objects.filter(organization=organization, is_active=True).count()
+        + Invitation.objects.filter(organization=organization, status=InvitationStatus.PENDING).count()
+    )
+
+
+def can_add_member(organization: Organization) -> bool:
+    return members_in_use(organization) < member_seat_limit(organization)
+
+
+def member_seat_summary(organization: Organization) -> dict:
+    sub = ensure_subscription(organization)
+    plan = plan_vigente(sub)
+    included = plan.included_member_seats if plan else default_member_seats()
+    extra = int(sub.extra_member_seats)
+    used = members_in_use(organization)
+    limit = included + extra
+    return {
+        "included": included, "extra": extra, "limit": limit, "used": used,
+        "available": max(0, limit - used),
+        "extra_price": str(plan.extra_member_seat_price if plan else extra_company_price()),
+        "currency": plan.currency if plan else "PEN",
+    }
+
+
+# ------------------------------------------------------ add-ons contratados
+
+class AddonsUnavailable(Exception):
+    """No hay una suscripción con renovación sobre la que cargar asientos."""
+
+
+def subscription_amount(sub: Subscription) -> Decimal:
+    """Lo que cobra cada ciclo la pasarela: plan + asientos × meses del plan."""
+    plan = plan_vigente(sub)
+    if plan is None:
+        return Decimal("0")
+    extras = (
+        Decimal(sub.extra_member_seats) * plan.extra_member_seat_price
+        + Decimal(sub.extra_company_seats) * plan.extra_company_seat_price
+    )
+    return plan.price + extras * plan.months
+
+
+def addons_summary(sub: Subscription) -> dict:
+    plan = plan_vigente(sub)
+    return {
+        "available": bool(plan) and sub.auto_renew,
+        "member_seats": int(sub.extra_member_seats),
+        "company_seats": int(sub.extra_company_seats),
+        "member_price": str(plan.extra_member_seat_price) if plan else None,
+        "company_price": str(plan.extra_company_seat_price) if plan else None,
+        "included_member_seats": plan.included_member_seats if plan else default_member_seats(),
+        "included_company_seats": plan.included_company_seats if plan else default_company_seats(),
+        "monthly_extra": str(
+            Decimal(sub.extra_member_seats) * plan.extra_member_seat_price
+            + Decimal(sub.extra_company_seats) * plan.extra_company_seat_price
+        ) if plan else "0",
+        "cycle_amount": str(subscription_amount(sub)) if plan else None,
+        "currency": plan.currency if plan else "PEN",
+    }
+
+
+def set_addons(organization: Organization, *, member_seats: int, company_seats: int, user: User) -> dict:
+    """Fija cuántos asientos adicionales tiene la suscripción de la empresa.
+
+    Se activan al instante y se cobran desde el próximo ciclo: la pasarela
+    pasa a cobrar `subscription_amount`. Bajar solo se permite si lo que queda
+    alcanza para lo que ya está en uso."""
+    from .gateways import get_gateway
+
+    sub = ensure_subscription(organization)
+    plan = plan_vigente(sub)
+    if plan is None or not sub.auto_renew:
+        raise AddonsUnavailable(
+            "Para añadir asientos necesitas un plan con renovación automática activa."
+        )
+    if member_seats < 0 or company_seats < 0:
+        raise ValueError("La cantidad no puede ser negativa.")
+    if members_in_use(organization) > plan.included_member_seats + member_seats:
+        raise ValueError(
+            f"Esta empresa usa {members_in_use(organization)} accesos; quita personas "
+            f"antes de reducir asientos."
+        )
+    principal = _primary_subscription(user)
+    if principal and principal.pk == sub.pk:
+        base = company_seat_base(user) + int(user.extra_company_seats or 0)
+        if companies_in_use(user) > base + company_seats:
+            raise ValueError(
+                f"Administras {companies_in_use(user)} empresas; no puedes bajar de ahí."
+            )
+    sub.extra_member_seats = member_seats
+    sub.extra_company_seats = company_seats
+    if sub.gateway_subscription_id:
+        get_gateway().update_amount(sub, subscription_amount(sub))
+    sub.save(update_fields=["extra_member_seats", "extra_company_seats", "updated_at"])
+    logger.info(
+        "Asientos de %s: %s personas, %s empresas · ciclo %s",
+        organization.ruc, member_seats, company_seats, subscription_amount(sub),
+    )
+    return addons_summary(sub)
 
 
 def can_add_company(user: User) -> bool:
@@ -111,7 +236,8 @@ def usage_charges(organization, limit: int = 50):
 def seat_summary(user: User) -> dict:
     """Cuántas empresas puede tener el titular y cuántas usa; para el front."""
     base = company_seat_base(user)
-    extra = int(user.extra_company_seats or 0)
+    sub = _primary_subscription(user)
+    extra = int(user.extra_company_seats or 0) + (int(sub.extra_company_seats) if sub else 0)
     used = companies_in_use(user)
     limit = base + extra
     return {
@@ -120,9 +246,15 @@ def seat_summary(user: User) -> dict:
         "limit": limit,
         "used": used,
         "available": max(0, limit - used),
-        "extra_price": str(extra_company_price()),
+        "extra_price": str(_extra_company_price_for(user)),
         "currency": "PEN",
     }
+
+
+def _extra_company_price_for(user: User) -> Decimal:
+    sub = _primary_subscription(user)
+    plan = plan_vigente(sub) if sub else None
+    return plan.extra_company_seat_price if plan else extra_company_price()
 
 
 # ------------------------------------------------------------- suscripción
@@ -139,11 +271,31 @@ def ensure_subscription(organization: Organization) -> Subscription:
     return sub
 
 
+def plan_vigente(sub: Subscription) -> Plan | None:
+    """El plan al que la empresa está suscrita.
+
+    `sub.plan` se fija con el primer pago aprobado; pero con la renovación ya
+    autorizada en la pasarela (durante la prueba, antes del primer cobro) la
+    persona YA está suscrita al plan del alta. Sin esto, la pantalla le
+    volvía a ofrecer el mismo plan y el API le dejaba contratarlo dos veces."""
+    if sub.plan_id:
+        return sub.plan
+    if not sub.auto_renew:
+        return None
+    setup = (
+        Payment.objects.filter(subscription=sub, kind=PaymentKind.RECURRING_SETUP)
+        .exclude(status=PaymentStatus.CANCELED).select_related("plan")
+        .order_by("-created_at").first()
+    )
+    return setup.plan if setup else None
+
+
 def summary(organization: Organization) -> dict:
     sub = ensure_subscription(organization)
+    plan = plan_vigente(sub)
     return {
         "status": sub.status,
-        "plan": sub.plan.code if sub.plan else None,
+        "plan": plan.code if plan else None,
         "trial_end": sub.trial_end,
         "current_period_end": sub.current_period_end,
         "access_until": sub.access_until,
@@ -151,10 +303,16 @@ def summary(organization: Organization) -> dict:
         "is_active": sub.is_active,
         "auto_renew": sub.auto_renew,
         "next_charge_at": sub.next_charge_at,
+        "paused_until": sub.paused_until,
+        "addons": addons_summary(sub),
     }
 
 
 # ------------------------------------------------------------------ pagos
+
+class AlreadySubscribed(Exception):
+    """Ya hay una suscripción vigente con ese mismo plan: no hay nada que pagar."""
+
 
 def start_checkout(organization: Organization, plan: Plan, user: User, request=None) -> Payment:
     """Inicia el pago del plan. Si el plan es recurrente y la pasarela sabe
@@ -166,7 +324,22 @@ def start_checkout(organization: Organization, plan: Plan, user: User, request=N
     # Antes de dejar rastro: sin pasarela no hay pago pendiente ni correo.
     gateway.ensure_available()
     sub = ensure_subscription(organization)
+    # Una suscripción es una sola. Con renovación automática y el mismo plan
+    # no hay nada que contratar: sería cobrar dos veces lo mismo. Cambiar al
+    # otro plan sí se permite (la pasarela cancela la anterior al autorizarse).
+    vigente = plan_vigente(sub)
+    if sub.auto_renew and vigente is not None and vigente.id == plan.id:
+        raise AlreadySubscribed(
+            f"Ya tienes el plan {plan.name} con renovación automática. "
+            "Si quieres otro plan, elige el otro; si quieres dejar de pagar, cancela la suscripción."
+        )
     recurring = plan.recurring and gateway.supports_recurring
+    # Un checkout nuevo reemplaza a los intentos anteriores que nunca se
+    # completaron (la persona cerró la pestaña, la pasarela rechazó…). Si no,
+    # cada clic en «Continuar» deja un «pendiente» eterno en el historial.
+    Payment.objects.filter(
+        subscription=sub, status=PaymentStatus.PENDING, paid_at__isnull=True,
+    ).update(status=PaymentStatus.CANCELED, updated_at=timezone.now())
     payment = Payment.objects.create(
         subscription=sub, plan=plan, amount=plan.price, currency=plan.currency,
         gateway=gateway.name, created_by=user,
@@ -190,8 +363,9 @@ def cancel_auto_renew(organization: Organization, user: User | None = None) -> S
     sub.auto_renew = False
     sub.gateway_status = "cancelled" if sub.gateway_subscription_id else sub.gateway_status
     sub.next_charge_at = None
+    sub.paused_until = None
     sub.canceled_at = timezone.now()
-    sub.save(update_fields=["auto_renew", "gateway_status", "next_charge_at", "canceled_at", "updated_at"])
+    sub.save(update_fields=["auto_renew", "gateway_status", "next_charge_at", "paused_until", "canceled_at", "updated_at"])
     if user is not None:
         emails.renovacion_cancelada(sub, user)
     return sub
@@ -330,6 +504,7 @@ def apply_reward(reward: ReferralReward) -> bool:
         return False
     sub.extend(reward.days)
     sub.save(update_fields=["trial_end", "current_period_end", "bonus_days", "updated_at"])
+    _posponer_cobro(sub, reward.days)
     reward.applied_to = sub
     reward.applied_at = timezone.now()
     reward.save(update_fields=["applied_to", "applied_at", "updated_at"])
@@ -338,6 +513,52 @@ def apply_reward(reward: ReferralReward) -> bool:
 
     emails.mes_gratis(reward)
     return True
+
+
+def _posponer_cobro(sub: Subscription, days: int) -> None:
+    """Con renovación automática, el mes gratis tiene que ser un mes SIN cobro.
+
+    Alargar el acceso local no basta: la pasarela cobra en su fecha igual. Se
+    pausa la suscripción en la pasarela y se reanuda (`paused_until`, tarea
+    `billing.reanudar_suscripciones_pausadas`) `days` después de la fecha en
+    que tocaba cobrar. Si la pasarela falla, el acceso local ya quedó
+    alargado y se deja constancia en el log."""
+    if not (sub.auto_renew and sub.gateway_subscription_id):
+        return
+    from .gateways import get_gateway
+
+    base = sub.paused_until or sub.next_charge_at or timezone.now()
+    hasta = base + datetime.timedelta(days=days)
+    try:
+        if not sub.paused_until:
+            get_gateway().pause_subscription(sub)
+    except Exception:  # noqa: BLE001 — se alarga el acceso igual; el cobro no se pospone
+        logger.exception("No se pudo pausar en la pasarela la suscripción de %s", sub.organization.ruc)
+        return
+    sub.paused_until = hasta
+    sub.next_charge_at = hasta
+    sub.gateway_status = "paused"
+    sub.save(update_fields=["paused_until", "next_charge_at", "gateway_status", "updated_at"])
+    logger.info("Cobro de %s pospuesto hasta %s por referidos", sub.organization.ruc, hasta.date())
+
+
+def reanudar_suscripciones_pausadas(now=None) -> int:
+    """Reanuda en la pasarela las suscripciones cuyo mes gratis ya pasó."""
+    from .gateways import get_gateway
+
+    now = now or timezone.now()
+    reanudadas = 0
+    for sub in Subscription.objects.filter(paused_until__lte=now, auto_renew=True).select_related("organization"):
+        try:
+            get_gateway().resume_subscription(sub)
+        except Exception:  # noqa: BLE001 — se reintenta en la próxima pasada
+            logger.exception("No se pudo reanudar la suscripción de %s", sub.organization.ruc)
+            continue
+        sub.paused_until = None
+        sub.gateway_status = "authorized"
+        sub.save(update_fields=["paused_until", "gateway_status", "updated_at"])
+        reanudadas += 1
+    return reanudadas
 
 
 def apply_pending_rewards(user: User) -> None:

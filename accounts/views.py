@@ -343,6 +343,24 @@ class TeamView(ManagedOrganizationAPIView):
                 {"detail": "Solo un titular puede sumar a otro titular."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        # Tope de personas por empresa: el plan incluye una base y la
+        # suscripción puede tener asientos adicionales comprados.
+        from billing.services import can_add_member, member_seat_summary
+
+        if not can_add_member(request.organization):
+            s = member_seat_summary(request.organization)
+            return Response(
+                {
+                    "code": "limite_miembros",
+                    "detail": (
+                        f"Tu plan incluye {s['limit']} persona(s) en esta empresa y ya hay "
+                        f"{s['used']} (accesos e invitaciones pendientes). Añade un asiento "
+                        f"adicional (S/ {s['extra_price']} al mes) para invitar a más."
+                    ),
+                    "seats": s,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         try:
             result = team.invite_member(
                 request.organization, serializer.validated_data["email"], role,

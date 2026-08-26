@@ -18,6 +18,18 @@ logger = logging.getLogger(__name__)
 AVISO_DIAS = 2
 
 
+@shared_task(name="billing.reanudar_suscripciones_pausadas")
+def reanudar_suscripciones_pausadas() -> int:
+    """Cada hora: las suscripciones pausadas por un mes gratis cuyo plazo ya
+    pasó se reanudan en la pasarela (que cobra al reanudar)."""
+    from .services import reanudar_suscripciones_pausadas as reanudar
+
+    n = reanudar()
+    if n:
+        logger.info("Suscripciones reanudadas tras su mes gratis: %d", n)
+    return n
+
+
 @shared_task(name="billing.avisar_fin_de_prueba")
 def avisar_fin_de_prueba() -> int:
     """Una vez al día: a las empresas en prueba que terminan en ≤ 2 días, sin

@@ -223,6 +223,7 @@ REFERRAL_REWARD_DAYS = int(os.getenv("REFERRAL_REWARD_DAYS", "30"))
 # titular puede tener asientos adicionales, que otorga el dueño del sistema
 # desde el admin. El precio por asiento extra es informativo para el front.
 BILLING_DEFAULT_COMPANY_SEATS = int(os.getenv("BILLING_DEFAULT_COMPANY_SEATS", "3"))
+BILLING_DEFAULT_MEMBER_SEATS = int(os.getenv("BILLING_DEFAULT_MEMBER_SEATS", "3"))
 BILLING_EXTRA_COMPANY_PRICE = os.getenv("BILLING_EXTRA_COMPANY_PRICE", "9")
 
 # Sincronización manual: cuántas «Traer comprobantes» a pedido puede hacer una

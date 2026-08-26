@@ -9,13 +9,17 @@ from .models import (
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
     list_display = ("code", "name", "price", "currency", "interval",
-                    "included_company_seats", "recurring", "is_active", "sort_order")
-    list_editable = ("price", "included_company_seats", "recurring", "is_active", "sort_order")
+                    "included_company_seats", "included_member_seats",
+                    "extra_company_seat_price", "extra_member_seat_price",
+                    "recurring", "is_active", "sort_order")
+    list_editable = ("price", "included_company_seats", "included_member_seats",
+                     "extra_company_seat_price", "extra_member_seat_price",
+                     "recurring", "is_active", "sort_order")
 
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("organization", "status", "plan", "auto_renew", "next_charge_at", "trial_end", "current_period_end", "access_until", "bonus_days")
+    list_display = ("organization", "status", "plan", "auto_renew", "next_charge_at", "trial_end", "current_period_end", "access_until", "bonus_days", "extra_member_seats", "extra_company_seats")
     list_filter = ("auto_renew", "gateway", "gateway_status", "plan")
     search_fields = ("organization__ruc", "organization__name")
     list_select_related = ("organization", "plan")

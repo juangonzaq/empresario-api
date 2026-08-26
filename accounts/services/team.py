@@ -155,7 +155,10 @@ def team_payload(organization: Organization, *, you: User | None = None) -> dict
             organization=organization, status=InvitationStatus.PENDING
         ).select_related("invited_by")
     )
+    from billing.services import member_seat_summary
+
     return {
         "members": [member_payload(m, you=you) for m in members],
         "invitations": [invitation_payload(i) for i in invitations],
+        "seats": member_seat_summary(organization),
     }

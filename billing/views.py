@@ -44,7 +44,8 @@ class SubscriptionView(APIView):
     def get(self, request: Request) -> Response:
         data = services.summary(request.organization)
         sub = request.organization.subscription
-        plan = PlanSerializer(sub.plan).data if sub.plan else None
+        vigente = services.plan_vigente(sub)
+        plan = PlanSerializer(vigente).data if vigente else None
         return Response({
             **data,
             "plan_detail": plan,
@@ -67,6 +68,8 @@ class CheckoutView(APIView):
         plan = serializer.validated_data["plan"]
         try:
             payment = services.start_checkout(request.organization, plan, request.user, request)
+        except services.AlreadySubscribed as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except GatewayUnavailable as exc:
             # No es un fallo de un tercero: es que no hay con qué cobrar.
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -82,6 +85,33 @@ class CheckoutView(APIView):
             "checkout_url": payment.checkout_url or None,
             "subscription": services.summary(request.organization),
         }, status=status.HTTP_201_CREATED)
+
+
+class AddonsView(APIView):
+    """Asientos adicionales de la suscripción de la empresa activa: personas
+    (por empresa) y empresas (sobre la principal del titular). Se activan al
+    instante y se cobran desde el próximo ciclo."""
+
+    permission_classes = [IsAuthenticated, CanManageOrganization]
+
+    def post(self, request: Request) -> Response:
+        try:
+            member_seats = int(request.data.get("member_seats", 0))
+            company_seats = int(request.data.get("company_seats", 0))
+        except (TypeError, ValueError):
+            return Response({"detail": "Cantidades inválidas."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            addons = services.set_addons(
+                request.organization, member_seats=member_seats, company_seats=company_seats, user=request.user,
+            )
+        except services.AddonsUnavailable as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:  # noqa: BLE001 — la pasarela es un tercero
+            logger.exception("No se pudieron actualizar los asientos de %s", request.ruc)
+            return Response({"detail": f"No pudimos actualizar tus asientos: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({"addons": addons, "subscription": services.summary(request.organization)})
 
 
 class CancelAutoRenewView(APIView):
@@ -103,7 +133,13 @@ class PaymentsView(APIView):
 
     def get(self, request: Request) -> Response:
         sub = services.ensure_subscription(request.organization)
-        payments = Payment.objects.filter(subscription=sub).select_related("plan")[:50]
+        # Los intentos abandonados (checkout cerrado, tarjeta rechazada) no
+        # son pagos: se guardan por trazabilidad, no se enseñan.
+        payments = (
+            Payment.objects.filter(subscription=sub)
+            .exclude(status=PaymentStatus.CANCELED, paid_at__isnull=True)
+            .select_related("plan")[:50]
+        )
         return Response(PaymentSerializer(payments, many=True).data)
 
 

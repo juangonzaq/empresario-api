@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
 import logging
@@ -21,8 +22,9 @@ import re
 
 import requests
 from django.conf import settings
+from django.utils import timezone
 
-from .models import Payment, PaymentStatus, Subscription
+from .models import PaymentKind, Payment, PaymentStatus, Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,17 @@ class Gateway:
 
     def cancel_subscription(self, sub: Subscription) -> None:  # pragma: no cover
         raise NotImplementedError
+
+    def pause_subscription(self, sub: Subscription) -> None:
+        """Deja de cobrar hasta `resume_subscription`. Sin pasarela recurrente, nada."""
+        return None
+
+    def update_amount(self, sub: Subscription, amount) -> None:
+        """Cambia lo que se cobra en cada ciclo (plan + asientos adicionales)."""
+        return None
+
+    def resume_subscription(self, sub: Subscription) -> None:
+        return None
 
 
 class FakeGateway(Gateway):
@@ -302,30 +315,72 @@ class MercadoPagoGateway(Gateway):
         sub = payment.subscription
         org = sub.organization
         plan = payment.plan
+        auto_recurring = {
+            "frequency": plan.months,
+            "frequency_type": "months",
+            "transaction_amount": float(plan.price),
+            "currency_id": plan.currency,
+        }
+        # Lo ya vigente (prueba o periodo pagado) no se cobra dos veces: el
+        # primer cobro del plan nuevo se programa para cuando termine. Sin
+        # esto, MP cobraba la primera cuota al autorizar, y cambiar de anual a
+        # mensual con un año pagado volvía a cobrar hoy.
+        vigente_hasta = sub.access_until
+        if vigente_hasta > timezone.now() + datetime.timedelta(minutes=5):
+            auto_recurring["start_date"] = vigente_hasta.isoformat(timespec="milliseconds")
         body = {
             "reason": f"Empresario · {plan.name} · {org.ruc}",
             # La referencia es la suscripción local: todos los cobros que
             # genere esta autorización vuelven con ella.
             "external_reference": str(sub.pk),
             "payer_email": _payer_email(payment),
-            "auto_recurring": {
-                "frequency": plan.months,
-                "frequency_type": "months",
-                "transaction_amount": float(plan.price),
-                "currency_id": plan.currency,
-            },
-            "back_url": frontend("/suscripcion?estado=ok", request),
+            "auto_recurring": auto_recurring,
+            # Sin query string: Mercado Pago le añade «?preapproval_id=…» tal
+            # cual, y con «?estado=ok» delante quedaba «?estado=ok?preapproval_id».
+            # El front entiende `preapproval_id` como vuelta correcta.
+            "back_url": frontend("/suscripcion", request),
             "status": "pending",
         }
         response = requests.post(f"{MP_API}/preapproval", json=body, headers=self._headers(), timeout=15)
         data = _mp_ok(response)
+        # Cambio de plan: la suscripción anterior en MP sigue viva y cobraría
+        # en paralelo. Se apunta aquí y se cancela cuando la nueva quede
+        # autorizada (no antes: si la persona abandona el checkout, conserva
+        # la que tenía).
+        anterior = sub.gateway_subscription_id
+        if anterior and anterior != str(data.get("id", "")):
+            payment.raw = {**(payment.raw or {}), "replaces_preapproval": anterior}
         sub.gateway = self.name
         sub.gateway_subscription_id = str(data.get("id", ""))
         sub.gateway_status = data.get("status", "pending")
         sub.save(update_fields=["gateway", "gateway_subscription_id", "gateway_status", "updated_at"])
         payment.gateway_reference = sub.gateway_subscription_id
         payment.checkout_url = data.get("init_point") or data.get("sandbox_init_point") or ""
-        payment.save(update_fields=["gateway_reference", "checkout_url", "updated_at"])
+        payment.save(update_fields=["gateway_reference", "checkout_url", "raw", "updated_at"])
+
+    def _cancelar_preapproval_reemplazada(self, sub: Subscription, actual: str) -> None:
+        """Al autorizarse una suscripción nueva, cancela en MP la que reemplaza."""
+        setup = (
+            Payment.objects.filter(subscription=sub, kind=PaymentKind.RECURRING_SETUP)
+            .exclude(raw__replaces_preapproval__isnull=True)
+            .order_by("-created_at").first()
+        )
+        if setup is None:
+            return
+        vieja = str((setup.raw or {}).get("replaces_preapproval") or "")
+        if not vieja or vieja == actual:
+            return
+        try:
+            _mp_ok(requests.put(
+                f"{MP_API}/preapproval/{vieja}", json={"status": "cancelled"},
+                headers=self._headers(), timeout=15,
+            ))
+            logger.info("Suscripción MP %s cancelada: la reemplaza %s", vieja, actual)
+        except Exception:  # noqa: BLE001 — ya cancelada o MP caído: se reintenta en el próximo aviso
+            logger.exception("No se pudo cancelar la suscripción MP reemplazada %s", vieja)
+            return
+        setup.raw = {k: v for k, v in setup.raw.items() if k != "replaces_preapproval"}
+        setup.save(update_fields=["raw", "updated_at"])
 
     def cancel_subscription(self, sub: Subscription) -> None:
         response = requests.put(
@@ -333,6 +388,30 @@ class MercadoPagoGateway(Gateway):
             json={"status": "cancelled"}, headers=self._headers(), timeout=15,
         )
         _mp_ok(response)
+
+    def update_amount(self, sub: Subscription, amount) -> None:
+        _mp_ok(requests.put(
+            f"{MP_API}/preapproval/{sub.gateway_subscription_id}",
+            json={"auto_recurring": {
+                "transaction_amount": float(amount),
+                "currency_id": (sub.plan.currency if sub.plan else "PEN"),
+            }},
+            headers=self._headers(), timeout=15,
+        ))
+
+    # Mercado Pago no deja mover la fecha del próximo cobro; sí pausar y
+    # reanudar. Un mes gratis = pausada un mes y reanudada (cobra al reanudar).
+    def pause_subscription(self, sub: Subscription) -> None:
+        _mp_ok(requests.put(
+            f"{MP_API}/preapproval/{sub.gateway_subscription_id}",
+            json={"status": "paused"}, headers=self._headers(), timeout=15,
+        ))
+
+    def resume_subscription(self, sub: Subscription) -> None:
+        _mp_ok(requests.put(
+            f"{MP_API}/preapproval/{sub.gateway_subscription_id}",
+            json={"status": "authorized"}, headers=self._headers(), timeout=15,
+        ))
 
     def fetch_preapproval(self, preapproval_id: str) -> dict:
         response = requests.get(f"{MP_API}/preapproval/{preapproval_id}", headers=self._headers(), timeout=15)
@@ -355,12 +434,16 @@ class MercadoPagoGateway(Gateway):
         sub.gateway = self.name
         sub.gateway_subscription_id = str(info.get("id", sub.gateway_subscription_id))
         sub.gateway_status = status
-        sub.auto_renew = status == "authorized"
+        # Pausada por un mes gratis sigue siendo una renovación viva: se
+        # reanuda sola en `paused_until`. Pausada por otra vía, no.
+        sub.auto_renew = status == "authorized" or (status == "paused" and sub.paused_until is not None)
         from django.utils.dateparse import parse_datetime
 
         nxt = info.get("next_payment_date")
         sub.next_charge_at = parse_datetime(nxt) if nxt else None
         sub.save(update_fields=["gateway", "gateway_subscription_id", "gateway_status", "auto_renew", "next_charge_at", "updated_at"])
+        if status == "authorized":
+            self._cancelar_preapproval_reemplazada(sub, sub.gateway_subscription_id)
         return sub
 
     def fetch_payment(self, mp_payment_id: str) -> dict:

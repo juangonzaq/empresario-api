@@ -49,6 +49,17 @@ class Plan(BaseModel):
     included_company_seats = models.PositiveSmallIntegerField(
         "empresas incluidas", default=3,
     )
+    # Asientos: lo que incluye el plan y lo que cuesta cada uno de más, al
+    # mes. Los precios se editan en el admin; el fixture trae la base.
+    included_member_seats = models.PositiveSmallIntegerField(
+        "personas incluidas por empresa", default=3,
+    )
+    extra_member_seat_price = models.DecimalField(
+        "precio por persona adicional (mes)", max_digits=10, decimal_places=2, default=Decimal("9.00"),
+    )
+    extra_company_seat_price = models.DecimalField(
+        "precio por empresa adicional (mes)", max_digits=10, decimal_places=2, default=Decimal("9.00"),
+    )
 
     class Meta:
         ordering = ["sort_order", "price"]
@@ -82,6 +93,12 @@ class Subscription(BaseModel):
     gateway_status = models.CharField("estado en la pasarela", max_length=20, blank=True)
     auto_renew = models.BooleanField("renovación automática", default=False)
     next_charge_at = models.DateTimeField("próximo cobro", null=True, blank=True)
+    # Mes gratis por referidos con renovación automática: la suscripción queda
+    # pausada en la pasarela hasta esta fecha, en que se reanuda (y cobra).
+    paused_until = models.DateTimeField("pausada en la pasarela hasta", null=True, blank=True)
+    # Asientos adicionales contratados (add-ons recurrentes de esta suscripción).
+    extra_member_seats = models.PositiveSmallIntegerField("personas adicionales", default=0)
+    extra_company_seats = models.PositiveSmallIntegerField("empresas adicionales", default=0)
     trial_reminder_sent_at = models.DateTimeField("aviso de fin de prueba enviado", null=True, blank=True)
 
     class Meta:

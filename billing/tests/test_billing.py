@@ -165,7 +165,7 @@ class ReferidosTests(APITestCase):
         self.assertEqual(Subscription.objects.get(organization__ruc="20604442533").bonus_days, 30)
 
 
-@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="")
+@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="")
 class MercadoPagoTests(APITestCase):
     def setUp(self):
         self.ana = make_user("ana@uno.pe")
@@ -257,7 +257,7 @@ class RecurrenteFakeTests(APITestCase):
         self.assertEqual(self.client.get(reverse("sync:status")).status_code, 200)
 
 
-@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="")
+@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="")
 class MercadoPagoRecurrenteTests(APITestCase):
     def setUp(self):
         self.ana = make_user("ana@uno.pe")
@@ -443,13 +443,13 @@ class SinPasarelaTests(APITestCase):
         r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
         self.assertEqual(r.status_code, 503)
 
-    @override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="", MERCADOPAGO_TEST_PAYER_EMAIL="")
+    @override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="", MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="")
     def test_mercadopago_sin_token_no_procede(self):
         r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
         self.assertEqual(r.status_code, 503)
 
 
-@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", FRONTEND_URL="http://localhost:3000", MERCADOPAGO_TEST_PAYER_EMAIL="")
+@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", FRONTEND_URL="http://localhost:3000", MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="")
 class MercadoPagoDesdeLocalhostTests(APITestCase):
     """Mercado Pago rechaza URLs de retorno que no sean públicas. Se explica
     antes de llamar, en vez de devolver un 502 con «400 Bad Request»."""
@@ -471,8 +471,7 @@ class MercadoPagoDesdeLocalhostTests(APITestCase):
 
 @override_settings(
     BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="APP_USR-vendedor-de-prueba",
-    FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="",
-)
+    FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="")
 class VendedorDePruebaTests(APITestCase):
     """Con un vendedor de prueba, el pagador debe ser un comprador de prueba.
 
@@ -517,3 +516,282 @@ class NormalizarCorreoDePruebaTests(APITestCase):
         self.assertEqual(n("testuser12"), "test_user_12@testuser.com")
         self.assertEqual(n(" test_user_1@testuser.com "), "test_user_1@testuser.com")
         self.assertEqual(n(""), "")
+
+
+@override_settings(BILLING_GATEWAY="manual", DEBUG=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class IntentosAbandonadosTests(APITestCase):
+    """Cada «Continuar» nuevo cancela los intentos pendientes anteriores: el
+    historial no se llena de pagos «pendientes» que nunca van a resolverse."""
+
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+
+    def test_un_checkout_nuevo_cancela_los_pendientes_previos(self):
+        from billing.models import Payment
+
+        for _ in range(3):
+            r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+            self.assertEqual(r.status_code, 201, r.data)
+        estados = sorted(Payment.objects.values_list("status", flat=True))
+        self.assertEqual(estados, ["canceled", "canceled", "pending"])
+
+
+@override_settings(
+    BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token",
+    API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe",
+    MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="")
+class CambioDePlanTests(APITestCase):
+    """Cambiar de plan no puede dejar dos suscripciones cobrando en Mercado Pago.
+
+    Caso real: mensual autorizada y luego anual autorizada; MP tenía las dos
+    vivas (S/ 49.90 el 25 sep y S/ 499.90 el año siguiente)."""
+
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+
+    def _checkout(self, plan, pre_id):
+        class Resp:
+            status_code = 200
+            def json(self): return {"id": pre_id, "status": "pending", "init_point": "https://mp/x"}
+        with patch("billing.gateways.requests.post", return_value=Resp()) as post:
+            r = self.client.post(reverse("billing:checkout"), {"plan": plan}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertNotIn("?", post.call_args.kwargs["json"]["back_url"])
+        return r
+
+    def _autorizar(self, pre_id):
+        sub = Subscription.objects.get(organization=self.org)
+        class Pre:
+            status_code = 200
+            def json(self): return {"id": pre_id, "status": "authorized", "external_reference": str(sub.pk), "next_payment_date": "2026-09-25T12:00:00.000-04:00"}
+        class Ok:
+            status_code = 200
+            def json(self): return {"status": "cancelled"}
+        self.client.force_authenticate(None)
+        with patch("billing.gateways.requests.get", return_value=Pre()), \
+                patch("billing.gateways.requests.put", return_value=Ok()) as put:
+            self.client.post(reverse("billing:mp-webhook") + f"?type=subscription_preapproval&data.id={pre_id}", {}, format="json")
+        self.client.force_authenticate(self.ana)
+        return put
+
+    def test_al_autorizarse_la_nueva_se_cancela_la_anterior_en_mp(self):
+        self._checkout("mensual", "pre-mensual")
+        put = self._autorizar("pre-mensual")
+        put.assert_not_called()  # la primera no reemplaza a nadie
+
+        self._checkout("anual", "pre-anual")
+        put = self._autorizar("pre-anual")
+        put.assert_called_once()
+        self.assertIn("/preapproval/pre-mensual", put.call_args.args[0])
+        self.assertEqual(put.call_args.kwargs["json"], {"status": "cancelled"})
+        sub = Subscription.objects.get(organization=self.org)
+        self.assertEqual(sub.gateway_subscription_id, "pre-anual")
+
+    def test_no_se_puede_contratar_dos_veces_el_mismo_plan(self):
+        """Una suscripción es una sola: con la mensual autorizada, «mensual»
+        otra vez es 409; «anual» (cambio de plan) sí se permite."""
+        self._checkout("mensual", "pre-mensual")
+        self._autorizar("pre-mensual")
+        r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 409, r.data)
+        self.assertIn("Ya tienes el plan", r.data["detail"])
+        self._checkout("anual", "pre-anual")
+
+    def test_el_primer_cobro_del_plan_nuevo_espera_a_lo_ya_vigente(self):
+        """Con un año pagado, pasar a mensual no cobra hoy: MP recibe
+        `start_date` = fin de lo vigente. En prueba, igual: cobra al terminarla."""
+        sub = Subscription.objects.get(organization=self.org)
+        sub.current_period_end = timezone.now() + datetime.timedelta(days=300)
+        sub.save()
+        class Resp:
+            status_code = 200
+            def json(self): return {"id": "pre-m", "status": "pending", "init_point": "https://mp/x"}
+        with patch("billing.gateways.requests.post", return_value=Resp()) as post:
+            r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        start = post.call_args.kwargs["json"]["auto_recurring"]["start_date"]
+        self.assertEqual(start, sub.current_period_end.isoformat(timespec="milliseconds"))
+
+    def test_abandonar_el_checkout_no_toca_la_anterior(self):
+        self._checkout("mensual", "pre-mensual")
+        self._autorizar("pre-mensual")
+        self._checkout("anual", "pre-anual")  # nunca se autoriza
+        from billing.models import Payment
+        self.assertEqual(Payment.objects.filter(raw__replaces_preapproval="pre-mensual").count(), 1)
+
+
+@override_settings(BILLING_GATEWAY="manual", DEBUG=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class HistorialDePagosTests(APITestCase):
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+
+    def test_los_intentos_abandonados_no_se_listan(self):
+        for _ in range(3):
+            self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        r = self.client.get(reverse("billing:payments"))
+        self.assertEqual([p["status"] for p in r.data], ["pending"])
+
+
+@override_settings(
+    BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", FRONTEND_URL="https://app.empresario.pe",
+    MERCADOPAGO_TEST_PAYER_EMAIL="", MERCADOPAGO_WEBHOOK_SECRET="", REFERRAL_TARGET=1, REFERRAL_REWARD_DAYS=30,
+)
+class MesGratisConRenovacionTests(APITestCase):
+    """Con renovación automática, el mes gratis por referidos pausa el cobro en
+    la pasarela y lo reanuda un mes después; no es solo un número local."""
+
+    class Ok:
+        status_code = 200
+        def json(self): return {"status": "ok"}
+
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.sub = services.ensure_subscription(self.org)
+        self.sub.gateway = "mercadopago"; self.sub.gateway_subscription_id = "pre-ana"
+        self.sub.gateway_status = "authorized"; self.sub.auto_renew = True
+        self.sub.next_charge_at = timezone.now() + datetime.timedelta(days=10)
+        self.sub.save()
+
+    def _referido_paga(self):
+        from billing.models import Referral
+        bruno = make_user("bruno@dos.pe")
+        Referral.objects.create(referrer=self.ana, referred=bruno)
+        org_b = make_org("20100000002", bruno)
+        pago = services.ensure_subscription(org_b)
+        from billing.models import Payment, PaymentKind, Plan
+        p = Payment.objects.create(subscription=pago, plan=Plan.objects.get(code="mensual"), amount=1, currency="PEN", gateway="manual", kind=PaymentKind.ONE_OFF, created_by=bruno)
+        services.approve_payment(p, gateway_payment_id="x")
+
+    def test_el_premio_pausa_y_pospone_el_cobro(self):
+        cobro = self.sub.next_charge_at
+        with patch("billing.gateways.requests.put", return_value=self.Ok()) as put:
+            self._referido_paga()
+        self.sub.refresh_from_db()
+        put.assert_called_once()
+        self.assertEqual(put.call_args.kwargs["json"], {"status": "paused"})
+        self.assertEqual(self.sub.gateway_status, "paused")
+        self.assertTrue(self.sub.auto_renew)
+        self.assertEqual(self.sub.paused_until, cobro + datetime.timedelta(days=30))
+        self.assertEqual(self.sub.next_charge_at, self.sub.paused_until)
+        self.assertEqual(self.sub.bonus_days, 30)
+
+    def test_pasado_el_mes_se_reanuda_y_el_webhook_no_la_apaga(self):
+        with patch("billing.gateways.requests.put", return_value=self.Ok()):
+            self._referido_paga()
+        self.sub.refresh_from_db()
+        # MP avisa que está pausada: sigue contando como renovación viva.
+        class Pre:
+            status_code = 200
+            def json(self_inner): return {"id": "pre-ana", "status": "paused", "external_reference": str(self.sub.pk)}
+        self.client.force_authenticate(None)
+        with patch("billing.gateways.requests.get", return_value=Pre()):
+            self.client.post(reverse("billing:mp-webhook") + "?type=subscription_preapproval&data.id=pre-ana", {}, format="json")
+        self.sub.refresh_from_db()
+        self.assertTrue(self.sub.auto_renew)
+        # Antes del plazo no se toca; al llegar, se reanuda.
+        with patch("billing.gateways.requests.put", return_value=self.Ok()) as put:
+            self.assertEqual(services.reanudar_suscripciones_pausadas(now=self.sub.paused_until - datetime.timedelta(hours=1)), 0)
+            put.assert_not_called()
+            self.assertEqual(services.reanudar_suscripciones_pausadas(now=self.sub.paused_until), 1)
+            self.assertEqual(put.call_args.kwargs["json"], {"status": "authorized"})
+        self.sub.refresh_from_db()
+        self.assertIsNone(self.sub.paused_until)
+        self.assertEqual(self.sub.gateway_status, "authorized")
+
+    def test_en_prueba_sin_pasarela_solo_alarga_la_prueba(self):
+        self.sub.auto_renew = False; self.sub.gateway_subscription_id = ""; self.sub.save()
+        fin = self.sub.trial_end
+        with patch("billing.gateways.requests.put") as put:
+            self._referido_paga()
+            put.assert_not_called()
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.trial_end, fin + datetime.timedelta(days=30))
+        self.assertIsNone(self.sub.paused_until)
+
+
+@override_settings(BILLING_GATEWAY="fake", DEBUG=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class AsientosTests(APITestCase):
+    """Asientos adicionales: personas por empresa y empresas por cuenta, como
+    add-ons recurrentes de la suscripción (activos al instante, cobrados
+    desde el próximo ciclo)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+
+    def _suscribir(self):
+        r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        sub = Subscription.objects.get(organization=self.org)
+        sub.auto_renew = True; sub.gateway_subscription_id = "fake-sub"; sub.save()
+        return sub
+
+    def _invitar(self, email):
+        return self.client.post(reverse("accounts:team"), {"email": email, "role": "viewer"}, format="json")
+
+    def test_sin_plan_con_renovacion_no_se_venden_asientos(self):
+        r = self.client.post(reverse("billing:addons"), {"member_seats": 1, "company_seats": 0}, format="json")
+        self.assertEqual(r.status_code, 409)
+
+    def test_la_cuarta_persona_exige_asiento_y_comprarlo_la_deja_entrar(self):
+        self._suscribir()
+        # Ana ocupa 1; caben 3 → dos invitaciones más.
+        self.assertEqual(self._invitar("b@x.pe").status_code, 201)
+        self.assertEqual(self._invitar("c@x.pe").status_code, 201)
+        r = self._invitar("d@x.pe")
+        self.assertEqual(r.status_code, 409, r.data)
+        self.assertEqual(r.data["code"], "limite_miembros")
+        self.assertEqual(r.data["seats"]["used"], 3)
+
+        r = self.client.post(reverse("billing:addons"), {"member_seats": 1, "company_seats": 0}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["addons"]["member_seats"], 1)
+        from billing.models import Plan
+        mensual = Plan.objects.get(code="mensual")
+        self.assertEqual(r.data["addons"]["cycle_amount"], str(mensual.price + mensual.extra_member_seat_price))
+        self.assertEqual(self._invitar("d@x.pe").status_code, 201)
+        # El equipo informa los asientos.
+        team = self.client.get(reverse("accounts:team")).data
+        self.assertEqual(team["seats"]["limit"], 4)
+
+    def test_no_se_puede_bajar_por_debajo_de_lo_usado(self):
+        self._suscribir()
+        self.client.post(reverse("billing:addons"), {"member_seats": 1, "company_seats": 0}, format="json")
+        for e in ("b@x.pe", "c@x.pe", "d@x.pe"):
+            self.assertEqual(self._invitar(e).status_code, 201)
+        r = self.client.post(reverse("billing:addons"), {"member_seats": 0, "company_seats": 0}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("quita personas", r.data["detail"])
+
+    def test_asiento_de_empresa_sube_el_tope_de_la_cuenta(self):
+        self._suscribir()
+        url = reverse("accounts:organizations")
+        for i in (2, 3):
+            self.assertEqual(self.client.post(url, {"ruc": f"2010000000{i}", "name": "E"}).status_code, 201)
+        self.assertEqual(self.client.post(url, {"ruc": "20100000004", "name": "E"}).status_code, 409)
+        r = self.client.post(
+            reverse("billing:addons"), {"member_seats": 0, "company_seats": 1}, format="json",
+            HTTP_X_ORGANIZATION=self.org.ruc,
+        )
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(self.client.post(url, {"ruc": "20100000004", "name": "E"}).status_code, 201)
+        self.assertEqual(self.client.get(reverse("accounts:profile")).data["seats"]["limit"], 4)
+
+    def test_el_monto_del_ciclo_se_manda_a_la_pasarela_por_meses_del_plan(self):
+        from billing.models import Plan
+        from billing.services import subscription_amount
+        sub = self._suscribir()
+        anual = Plan.objects.get(code="anual")
+        sub.plan = anual; sub.extra_member_seats = 2; sub.extra_company_seats = 1; sub.save()
+        esperado = anual.price + (2 * anual.extra_member_seat_price + anual.extra_company_seat_price) * 12
+        self.assertEqual(subscription_amount(sub), esperado)

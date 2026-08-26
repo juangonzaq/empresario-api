@@ -38,6 +38,28 @@ asientos viaja también en la sesión y en `/api/accounts/me/` como `seats`.
 Helpers en `billing/services.py`: `company_seat_limit(user)`,
 `companies_in_use(user)`, `can_add_company(user)`, `seat_summary(user)`.
 
+## Asientos comprados (add-ons de la suscripción)
+
+Además de la base del plan y de las cortesías del admin, el titular puede **comprar**
+asientos desde `/suscripcion` (pestaña Plan → «Asientos adicionales»), solo con un plan
+con renovación automática:
+
+- **Personas adicionales** (`Subscription.extra_member_seats`): accesos extra en ESA
+  empresa. El plan incluye `Plan.included_member_seats` (fixture: **3**; cuentan accesos
+  activos + invitaciones pendientes). Al invitar por encima del tope,
+  `POST /api/organizations/members/` responde **409** `limite_miembros` con `seats`.
+- **Empresas adicionales** (`Subscription.extra_company_seats`): suben el tope de empresas
+  de la cuenta del titular; se compran en la suscripción de su empresa principal.
+
+Precios por plan, editables en *Billing › Planes*: `extra_member_seat_price` y
+`extra_company_seat_price` (fixture: **S/ 9** al mes cada uno). `BILLING_EXTRA_COMPANY_PRICE`
+queda solo como respaldo cuando no hay plan.
+
+Se activan al instante y se cobran desde el próximo ciclo: `POST /api/billing/addons/`
+recalcula `subscription_amount` (plan + asientos × meses del plan) y lo manda a la pasarela
+(`update_amount`; en Mercado Pago, `PUT /preapproval` con el nuevo `transaction_amount`).
+Bajar asientos solo se permite si lo que queda alcanza para lo que ya está en uso.
+
 ## Usuarios por empresa (miembros e invitaciones)
 
 El acceso vive en `accounts.Membership` (ya existía). Nuevo: invitar por correo
