@@ -1,7 +1,7 @@
 """Update registry status/condition for known suppliers from the padrón reducido.
 
 The daily ZIP holds ~11M rows; it is streamed and filtered to only the RUCs
-present in Supplier plus the company's own RUC — nothing else touches the DB.
+present in Supplier plus every registered company — nothing else touches the DB.
 """
 
 from __future__ import annotations
@@ -27,8 +27,11 @@ class Command(BaseCommand):
     help = "Stream the daily padrón reducido ZIP and update supplier registry flags."
 
     def handle(self, *args: Any, **options: Any) -> None:
+        from accounts.models import Organization
+
+        self._own_rucs = set(Organization.objects.values_list("ruc", flat=True))
         wanted = set(Supplier.objects.values_list("ruc", flat=True))
-        wanted.add(settings.SUNAT["RUC"])
+        wanted |= self._own_rucs
         if not wanted:
             self.stdout.write("No suppliers stored yet; nothing to check.")
             return
@@ -84,7 +87,7 @@ class Command(BaseCommand):
         if len(cells) < 4:
             return 0
         name, status, condition = cells[1][:200], cells[2][:30], cells[3][:30]
-        if ruc == settings.SUNAT["RUC"]:
+        if ruc in self._own_rucs:
             self.stdout.write(f"own RUC {ruc}: {status} / {condition}")
         updated = Supplier.objects.filter(ruc=ruc).update(
             registry_status=status, registry_condition=condition

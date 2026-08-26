@@ -82,6 +82,13 @@ def compliance_metrics(obligations, today: datetime.date) -> dict:
             1 for ob in obligations
             if ob.applicability_status == enums.ApplicabilityStatus.NOT_APPLICABLE
         ),
+        # «Por determinar»: falta un hecho del perfil para saber si aplica.
+        # Fuera de la base del score (no se castiga ni premia lo desconocido);
+        # la pantalla lo convierte en preguntas pendientes.
+        "undetermined": sum(
+            1 for ob in obligations
+            if ob.applicability_status == enums.ApplicabilityStatus.UNKNOWN
+        ),
     }
 
     # Por dominio.

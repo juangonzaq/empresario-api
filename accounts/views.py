@@ -70,8 +70,21 @@ def _session_payload(user: User) -> dict:
     }
 
 
-class RegisterView(APIView):
+class PublicAuthView(APIView):
+    """Endpoint público del flujo de autenticación.
+
+    Sin autenticadores a propósito: aquí nadie llega ya autenticado, llega a
+    autenticarse. Con los autenticadores por defecto, una cookie de sesión del
+    admin de Django en el mismo navegador hacía que SessionAuthentication
+    exigiera CSRF en el POST y el login del frontend —que habla JWT, sin
+    token CSRF— muriera con «CSRF Failed» antes de mirar las credenciales.
+    """
+
+    authentication_classes: list = []
     permission_classes = [AllowAny]
+
+
+class RegisterView(PublicAuthView):
     throttle_classes = [RegistroThrottle, CorreoThrottle]
 
     def post(self, request: Request) -> Response:
@@ -83,18 +96,17 @@ class RegisterView(APIView):
         user = serializer.save()
 
         if already_existed:
-            # No se confirma ni se niega que el correo esté registrado. A quien
-            # ya tiene cuenta se le manda el enlace de recuperación, que es lo
-            # útil si llegó aquí por haber olvidado que se registró.
-            mail.send_password_reset(user)
+            # No se confirma ni se niega que el correo esté registrado. La
+            # verdad va al buzón, que solo ve su dueño: se le explica que ya
+            # tiene cuenta y se le deja el enlace de restablecer la clave por
+            # si llegó aquí por haberla olvidado.
+            mail.send_already_registered(user)
         else:
             mail.send_verification(user)
         return Response(NEUTRAL_EMAIL_REPLY, status=status.HTTP_202_ACCEPTED)
 
 
-class VerifyEmailView(APIView):
-    permission_classes = [AllowAny]
-
+class VerifyEmailView(PublicAuthView):
     def post(self, request: Request) -> Response:
         token = (request.data.get("token") or "").strip()
         row = OneTimeToken.objects.usable().filter(
@@ -126,8 +138,7 @@ class ResendVerificationView(APIView):
         return Response({"detail": "Te enviamos un nuevo enlace de verificación."})
 
 
-class LoginView(APIView):
-    permission_classes = [AllowAny]
+class LoginView(PublicAuthView):
     # Por cuenta y por IP a la vez: uno solo deja el hueco del otro.
     throttle_classes = [LoginPorCuentaThrottle, LoginPorIpThrottle]
 
@@ -152,8 +163,7 @@ class LogoutView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class PasswordResetRequestView(APIView):
-    permission_classes = [AllowAny]
+class PasswordResetRequestView(PublicAuthView):
     throttle_classes = [CorreoThrottle]
 
     def post(self, request: Request) -> Response:
@@ -167,8 +177,7 @@ class PasswordResetRequestView(APIView):
         return Response(NEUTRAL_EMAIL_REPLY, status=status.HTTP_202_ACCEPTED)
 
 
-class PasswordResetConfirmView(APIView):
-    permission_classes = [AllowAny]
+class PasswordResetConfirmView(PublicAuthView):
     # Adivinar el token también es fuerza bruta.
     throttle_classes = [LoginPorIpThrottle]
 

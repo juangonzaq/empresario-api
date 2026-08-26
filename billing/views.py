@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 from accounts.tenancy import CanManageOrganization, HasOrganization
 
 from . import services
-from .gateways import MercadoPagoGateway, get_gateway
+from .gateways import GatewayUnavailable, MercadoPagoGateway, get_gateway
 from .models import Payment, PaymentStatus, Plan
 from .serializers import (
     CheckoutSerializer, PaymentSerializer, PlanSerializer, UsageChargeSerializer,
@@ -67,6 +67,9 @@ class CheckoutView(APIView):
         plan = serializer.validated_data["plan"]
         try:
             payment = services.start_checkout(request.organization, plan, request.user, request)
+        except GatewayUnavailable as exc:
+            # No es un fallo de un tercero: es que no hay con qué cobrar.
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as exc:  # noqa: BLE001 — la pasarela es un tercero
             logger.exception("No se pudo iniciar el pago para %s", request.ruc)
             return Response(

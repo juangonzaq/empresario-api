@@ -58,6 +58,17 @@ RE_CAPTCHA_IMG = re.compile(r'id="CaptchaImg"[^>]*src="(data:image/[^"]+)"')
 # La página de login se reconoce por su formulario; si vuelve, no entramos.
 MARCA_LOGIN = 'id="frm-inicio-sesion"'
 
+# Contraseña vencida: AFPnet bloquea TODO el portal con su formulario de
+# cambio de clave (con HTTP 200 y la sesión «saludando»). Sin distinguirla,
+# cada consulta parseaba una página sin datos y se respondía «no encontrado»
+# sobre afiliados que sí existen.
+MARCA_CAMBIO_CLAVE = 'name="ContraseniaNueva"'
+MENSAJE_CAMBIO_CLAVE = (
+    "AFPnet está exigiendo cambiar la contraseña del usuario de la empresa. "
+    "Entra a www.afpnet.com.pe, cámbiala, y vuelve a conectar AFPnet aquí "
+    "con la clave nueva."
+)
+
 # AFPnet cierra por las noches y devuelve una pantalla propia —con HTTP 200— en
 # lugar de un 503. Sin distinguirla, su horario se leía como «el portal cambió»,
 # que manda a alguien a depurar un problema que no existe.

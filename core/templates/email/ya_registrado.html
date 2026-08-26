@@ -1,0 +1,7 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Ya tienes una cuenta" subtitulo="Alguien —probablemente tú— intentó registrarse con este correo, pero ya tiene una cuenta." %}
+<p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#0b1d1a;">Puedes <a href="{{ login_url }}" style="color:#045857;">entrar con tu contraseña de siempre</a>. ¿La olvidaste? Crea una nueva:</p>
+{% include "email/_boton.html" with url=url label="Crear una contraseña nueva" %}
+<p style="margin:0;font-size:13px;line-height:20px;color:#4f615c;">El enlace vence en {{ horas }} horas y solo se puede usar una vez. Si no fuiste tú, no hace falta que hagas nada: tu cuenta y tu contraseña siguen igual.</p>
+{% endblock %}

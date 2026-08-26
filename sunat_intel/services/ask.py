@@ -9,10 +9,13 @@ raw payloads or credentials.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..models import AnalysisStatus, Case, MessageAnalysis, VigiaMessage
-from . import llm
+from . import analyzer, cases, consultas, llm
+
+logger = logging.getLogger(__name__)
 
 # Turns of chat history replayed to the model for follow-up questions.
 HISTORY_TURNS = 10
@@ -70,8 +73,14 @@ jamás las describas como evasión, fraude u omisión. Distingue hechos \
 - No emitas conclusiones legales definitivas ni recomendaciones de pago o \
 impugnación como decisión tomada; puedes describir opciones y sugerir \
 consultarlas con el contador o asesor legal.
-- Los montos que menciones deben aparecer en el contexto; no estimes ni sumes \
-montos que no estén.
+- Los montos que menciones deben aparecer en el contexto o en el resultado de \
+una consulta que ejecutaste; no estimes ni sumes montos que no estén.
+- Tienes consultas a la base de datos de la empresa (ventas y compras por \
+mes, top de clientes/proveedores). Si la pregunta necesita periodos o \
+detalle que no están en el contexto —comparar contra el año pasado, una \
+tendencia, qué cliente explica una variación— EJECUTA la consulta y responde \
+con sus resultados, citándolos con kind "finance". No digas que te falta \
+información sin haber intentado la consulta que la traería.
 - Responde en español claro y ejecutivo, breve pero completo."""
 
 
@@ -271,9 +280,29 @@ def build_context(taxpayer_id: str) -> str:
     return "\n".join(sections)
 
 
+def _ensure_fresh_analysis(taxpayer_id: str) -> None:
+    """Antes de responder, analiza lo que quede pendiente del buzón.
+
+    El cache por huella hace que solo los mensajes nuevos cuesten; si no hay
+    nada nuevo, esto son dos consultas a la base. Y si el análisis falla (el
+    modelo caído, sin clave), la pregunta se responde igual con lo ya
+    analizado: mejor una respuesta con lo que hay que ninguna.
+    """
+    try:
+        stats = analyzer.analyze_pending(taxpayer_id=taxpayer_id)
+        if stats.get("analyzed"):
+            cases.rebuild_cases(taxpayer_id)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "No se pudo refrescar el análisis de %s antes de responder",
+            taxpayer_id, exc_info=True,
+        )
+
+
 def ask(taxpayer_id: str, question: str) -> dict[str, Any]:
     """Answer a question, replaying recent chat turns for follow-ups, and
     persist both sides of the exchange (this is also the consultation log)."""
+    _ensure_fresh_analysis(taxpayer_id)
     history = list(
         VigiaMessage.objects.filter(taxpayer_id=taxpayer_id).order_by(
             "-created_at"
@@ -290,7 +319,13 @@ def ask(taxpayer_id: str, question: str) -> dict[str, Any]:
             f"Pregunta del usuario: {question}"
         ),
     })
-    result = llm.structured_messages(messages, "vigia_answer", ASK_SCHEMA)
+    # El modelo puede ejecutar consultas a la base según la pregunta (ventas
+    # por mes, top de clientes…); el RUC va amarrado en cada una.
+    result = llm.structured_with_tools(
+        messages, "vigia_answer", ASK_SCHEMA,
+        tools=consultas.TOOL_SPECS,
+        executors=consultas.executors_for(taxpayer_id),
+    )
 
     # Both turns are stored only after a successful answer, so a failed call
     # can be retried without duplicating the question in the history.

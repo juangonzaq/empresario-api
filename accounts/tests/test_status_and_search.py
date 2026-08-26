@@ -37,8 +37,13 @@ class EstadoDeLaEmpresaTests(TenantAPITestCase):
         return {a["etiqueta"]: a for a in respuesta["avisos"]}
 
     def test_sin_datos_no_afirma_nada(self):
-        estados = {a["estado"] for a in self.client.get(self.url).data["avisos"]}
-        self.assertEqual(estados, {"desconocido"})
+        """Sin dato no se afirma nada — y tampoco se anuncia la ausencia por
+        cada fuente: REMYPE y buzón callan hasta tener algo que decir. Solo la
+        condición del RUC conserva su gris, porque esa ausencia sí informa."""
+        avisos = self.client.get(self.url).data["avisos"]
+        self.assertEqual(len(avisos), 1)
+        self.assertEqual(avisos[0]["estado"], "desconocido")
+        self.assertIn("Condición", avisos[0]["etiqueta"])
 
     def test_condicion_habido_y_activo_sale_en_verde(self):
         RucSnapshot.objects.create(

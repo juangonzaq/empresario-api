@@ -147,8 +147,9 @@ class SunatClient:
         conf = self.conf
         if not conf.get("CLIENT_ID") or not conf.get("CLIENT_SECRET"):
             raise SunatApiError(
-                "SUNAT_CLIENT_ID / SUNAT_CLIENT_SECRET missing from .env. "
-                "Generate them in SOL: Empresas > Credenciales de API SUNAT."
+                "Sin credenciales de API SUNAT: pásalas en `conf` al crear el "
+                "cliente. Se generan por RUC en SOL (Empresas > Credenciales "
+                "de API SUNAT); no existen credenciales globales en el entorno."
             )
         url = conf["TOKEN_URL"].format(client_id=conf["CLIENT_ID"])
         self.check_url(url)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from sunat_mailbox.models import Message, MessageType
@@ -13,15 +12,14 @@ from sunat_mailbox.services import (
     SunatLoginError,
     SunatMailboxClient,
 )
+from sync.cli import add_sol_arguments, sol_credentials
 
 
 class Command(BaseCommand):
     help = "Scrape the SUNAT electronic mailbox (buzón SOL) into the database."
 
     def add_arguments(self, parser) -> None:
-        parser.add_argument("--taxpayer-id", default=settings.SUNAT_RUC, help="RUC")
-        parser.add_argument("--username", default=settings.SUNAT_USER)
-        parser.add_argument("--password", default=settings.SUNAT_PASS)
+        add_sol_arguments(parser)
         parser.add_argument(
             "--type", type=int, action="append", dest="types",
             choices=list(MessageType.values),
@@ -50,23 +48,16 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        credentials = (
-            options["taxpayer_id"], options["username"], options["password"]
-        )
-        if not all(credentials):
-            raise CommandError(
-                "Missing credentials. Set SUNAT_RUC, SUNAT_USER and SUNAT_PASS in .env "
-                "or pass --taxpayer-id/--username/--password."
-            )
+        creds = sol_credentials(options)
 
         client = SunatMailboxClient(
-            taxpayer_id=options["taxpayer_id"],
-            username=options["username"],
-            password=options["password"],
+            taxpayer_id=creds.ruc,
+            username=creds.username,
+            password=creds.password,
             headless=not options["headful"],
         )
 
-        self.stdout.write(f"Authenticating {options['taxpayer_id']}/{options['username']} ...")
+        self.stdout.write(f"Authenticating {creds.ruc}/{creds.username} ...")
         try:
             client.login()
         except SunatLoginError as exc:
@@ -83,6 +74,6 @@ class Command(BaseCommand):
             message_types=options["types"], max_pages=options["max_pages"]
         )
 
-        stored = Message.objects.for_taxpayer(options["taxpayer_id"]).count()
+        stored = Message.objects.for_taxpayer(creds.ruc).count()
         style = self.style.WARNING if result.failed else self.style.SUCCESS
         self.stdout.write(style(f"Done: {result} ({stored} stored in total)"))

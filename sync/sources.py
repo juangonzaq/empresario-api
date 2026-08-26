@@ -194,7 +194,9 @@ def _afpnet(creds, cadence: str) -> dict[str, Any]:
 
 
 def _sunafil(creds, cadence: str) -> dict[str, Any]:
-    from sunafil.services import SunafilClient, SunafilLoginError, SunafilSynchronizer
+    from sunafil.services import (
+        SunafilClient, SunafilError, SunafilLoginError, SunafilSynchronizer,
+    )
 
     client = SunafilClient(
         taxpayer_id=creds.ruc, username=creds.username, password=creds.password
@@ -203,6 +205,10 @@ def _sunafil(creds, cadence: str) -> dict[str, Any]:
         client.login()
     except SunafilLoginError as exc:
         raise LoginFailed(str(exc)) from exc
+    except SunafilError as exc:
+        # Timeout o portal caído: no dice nada de la clave, y marcarla como
+        # rechazada saltaba el resto de fuentes por un portal saturado.
+        raise SourceFailed(str(exc)) from exc
     result = SunafilSynchronizer(client).run()
     return {"creados": getattr(result, "created", 0),
             "actualizados": getattr(result, "updated", 0)}
@@ -353,33 +359,6 @@ def _suppliers(creds, cadence: str) -> dict[str, Any]:
     return detalle
 
 
-def _intel(creds, cadence: str) -> dict[str, Any]:
-    """Pasa por el modelo los mensajes nuevos y reagrupa los casos.
-
-    Es lo que alimenta al asistente y al centro de casos. No sale a los
-    portales, pero sí cuesta dinero: cada mensaje sin analizar es una llamada
-    al modelo. El análisis se cachea por huella, así que una sincronización
-    sin mensajes nuevos no gasta nada, y va acotado a ESTA empresa para no
-    pagar por los mensajes de las demás.
-    """
-    from sunat_intel.services import analyzer, cases
-
-    stats = analyzer.analyze_pending(taxpayer_id=creds.ruc)
-    if stats["analyzed"] == 0 and stats["failed"]:
-        # Sin clave de OpenAI o con el modelo caído fallan todos. Callarlo
-        # dejaría al asistente respondiendo sobre datos viejos sin avisar.
-        raise SourceFailed(
-            f"No se pudo analizar ninguno de los {stats['failed']} mensajes "
-            f"pendientes."
-        )
-    case_stats = cases.rebuild_cases(creds.ruc)
-    return {
-        "analizados": stats["analyzed"],
-        "fallidos": stats["failed"],
-        "casos": case_stats["created"] + case_stats["updated"],
-    }
-
-
 def _analytics(creds, cadence: str) -> dict[str, Any]:
     """No sale a internet: recalcula alertas sobre lo ya guardado."""
     from finance_analytics.services.alerts import rebuild_alerts
@@ -425,12 +404,10 @@ SOURCES: list[Source] = [
     # La consulta de RUC es pública: no gasta la sesión SOL ni depende de ella.
     Source("suppliers", "Estado de proveedores", False, _suppliers,
            frozenset({INITIAL, DAILY})),
-    # Ni el análisis ni la analítica salen a los portales: van al final, sobre
-    # lo que los pasos anteriores acaban de guardar. El de IA sigue al buzón
-    # porque es lo que analiza, pero se deja aquí para que los scrapeos —que
-    # son los que pueden perder la sesión de SUNAT— terminen cuanto antes.
-    Source("intel", "Análisis con IA", False, _intel,
-           frozenset({INITIAL, DAILY})),
+    # La analítica no sale a los portales: va al final, sobre lo que los pasos
+    # anteriores acaban de guardar. El «Análisis con IA» del buzón dejó de ser
+    # un paso de la sincronización (se decidirá aparte); `sunat_intel` sigue
+    # existiendo para el asistente y para la tarea `analyze_mailbox`.
     Source("analytics", "Analítica financiera", False, _analytics,
            frozenset({INITIAL, DAILY, MONTHLY})),
 ]

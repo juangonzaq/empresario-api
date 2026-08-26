@@ -28,7 +28,7 @@ from ..models import (
     ComplianceRule, CompanyObligation, ObligationAssessment, ObligationEvidence,
 )
 from . import evaluators
-from .applicability import is_applicable
+from .applicability import evaluate_applicability, missing_facts_question
 from .context import CompanyContext, build_context
 
 _VERIFICATION_STRENGTH = {
@@ -81,57 +81,69 @@ def evaluate_company(organization, *, user=None, force: bool = False) -> dict:
         if not _rule_in_window(rule, today):
             continue
         ob = existing.get(rule.id)
-        applies = is_applicable(rule.applicability, ctx)
+        applies = evaluate_applicability(rule.applicability, ctx)
 
-        if not applies:
+        if applies.value is not True:
+            # Ausencia de dato ≠ «no aplica»: queda «por determinar» junto con
+            # la pregunta exacta que falta responder.
+            unknown = applies.value is None
             _apply_and_save(
                 organization, rule, ob, ctx, user, now,
-                applicability=enums.ApplicabilityStatus.NOT_APPLICABLE,
+                applicability=(enums.ApplicabilityStatus.UNKNOWN if unknown
+                               else enums.ApplicabilityStatus.NOT_APPLICABLE),
                 compliance=enums.ComplianceStatus.UNKNOWN,
                 verification=enums.VerificationStatus.UNVERIFIED,
                 source=enums.EvaluationSource.RULE_ENGINE,
-                reason="No aplica a tu empresa según tu perfil.",
+                reason=(missing_facts_question(applies.missing) if unknown
+                        else "No aplica a tu empresa según tu perfil."),
                 due_date=None,
             )
             touched += 1
             continue
 
-        # 2) Veredicto del evaluador (o UNKNOWN si no hay).
-        fn = evaluators.get_evaluator(rule.evaluator_key) if rule.evaluator_key else None
-        verdict = fn(ctx, rule) if fn else evaluators.Verdict(
-            reason="Requiere que confirmes su estado o adjuntes evidencia.",
-        )
-        compliance = verdict.compliance_status
-        verification = verdict.verification_status
-        source = verdict.evaluation_source
-        reason = verdict.reason
-        due_date = verdict.due_date
-
-        # 3) Evidencia registrada.
-        ev = _active_evidence(evidence_by_ob.get(ob.id, []), today) if ob else []
-        if ev:
-            best = max(ev, key=lambda e: _VERIFICATION_STRENGTH.get(e.verification_status, 0))
-            verification = _strongest(verification, best.verification_status)
-            if compliance != enums.ComplianceStatus.NON_COMPLIANT:
-                compliance = enums.ComplianceStatus.COMPLIANT
-                source = enums.EvaluationSource.EVIDENCE
-
-        # 4) Decisión humana (marcó la obligación como completada).
-        if ob and ob.workflow_status == enums.WorkflowStatus.COMPLETED \
-                and compliance != enums.ComplianceStatus.NON_COMPLIANT:
-            compliance = enums.ComplianceStatus.COMPLIANT
-            verification = _strongest(verification, enums.VerificationStatus.SELF_REPORTED)
-            source = enums.EvaluationSource.USER
-
+        verdict = _applicable_verdict(rule, ob, ctx, evidence_by_ob, today)
         _apply_and_save(
             organization, rule, ob, ctx, user, now,
             applicability=enums.ApplicabilityStatus.APPLICABLE,
-            compliance=compliance, verification=verification, source=source,
-            reason=reason, due_date=due_date,
+            compliance=verdict.compliance_status,
+            verification=verdict.verification_status,
+            source=verdict.evaluation_source,
+            reason=verdict.reason, due_date=verdict.due_date,
         )
         touched += 1
 
     return {"ruc": ruc, "rules_evaluated": touched, "evaluated_at": now.isoformat()}
+
+
+def _applicable_verdict(rule, ob, ctx: CompanyContext, evidence_by_ob: dict,
+                        today: datetime.date) -> evaluators.Verdict:
+    """Compliance verdict for a rule that applies: evaluator, then evidence,
+    then the human attestation — each layer can only strengthen the previous."""
+    # 2) Veredicto del evaluador (o UNKNOWN si no hay).
+    fn = evaluators.get_evaluator(rule.evaluator_key) if rule.evaluator_key else None
+    verdict = fn(ctx, rule) if fn else evaluators.Verdict(
+        reason="Requiere que confirmes su estado o adjuntes evidencia.",
+    )
+
+    # 3) Evidencia registrada.
+    ev = _active_evidence(evidence_by_ob.get(ob.id, []), today) if ob else []
+    if ev:
+        best = max(ev, key=lambda e: _VERIFICATION_STRENGTH.get(e.verification_status, 0))
+        verdict.verification_status = _strongest(
+            verdict.verification_status, best.verification_status)
+        if verdict.compliance_status != enums.ComplianceStatus.NON_COMPLIANT:
+            verdict.compliance_status = enums.ComplianceStatus.COMPLIANT
+            verdict.evaluation_source = enums.EvaluationSource.EVIDENCE
+
+    # 4) Decisión humana (marcó la obligación como completada).
+    if ob and ob.workflow_status == enums.WorkflowStatus.COMPLETED \
+            and verdict.compliance_status != enums.ComplianceStatus.NON_COMPLIANT:
+        verdict.compliance_status = enums.ComplianceStatus.COMPLIANT
+        verdict.verification_status = _strongest(
+            verdict.verification_status, enums.VerificationStatus.SELF_REPORTED)
+        verdict.evaluation_source = enums.EvaluationSource.USER
+
+    return verdict
 
 
 def _apply_and_save(organization, rule, ob, ctx: CompanyContext, user, now, *,
@@ -152,7 +164,10 @@ def _apply_and_save(organization, rule, ob, ctx: CompanyContext, user, now, *,
     ob.compliance_status = compliance
     ob.verification_status = verification
     ob.severity = rule.default_severity
-    ob.applicability_reason = reason if applicability == enums.ApplicabilityStatus.NOT_APPLICABLE else ob.applicability_reason
+    # El motivo de aplicabilidad se guarda también en «por determinar»: ahí vive
+    # la pregunta pendiente que la pantalla debe mostrar.
+    if applicability != enums.ApplicabilityStatus.APPLICABLE:
+        ob.applicability_reason = reason
     ob.current_assessment = reason
     ob.due_date = due_date
     ob.last_evaluated_at = now

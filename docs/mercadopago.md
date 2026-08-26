@@ -8,18 +8,38 @@ verificado (o por el admin, en modo manual).
 
 ## 1. Credenciales
 
-1. Entra a <https://www.mercadopago.com.pe/developers> → **Tus integraciones** → **Crear aplicación**
-   (tipo: pagos online, Checkout Pro).
-2. En la app: **Credenciales de prueba** → copia el **Access Token** (`TEST-…`) para probar;
-   **Credenciales de producción** → `APP_USR-…` cuando vayas en serio.
-3. Pega en `empresario-api/.env`:
+Para **Suscripciones**, Mercado Pago no usa las credenciales `TEST-…` de tu cuenta real:
+el checkout te trata como cuenta real y pide una tarjeta real. El método que recomienda su
+propio panel («Usa las credenciales productivas de una cuenta de prueba») es:
+
+1. En tu cuenta real → <https://www.mercadopago.com.pe/developers> → **Tus integraciones** →
+   tu app → **Cuentas de prueba** → crea dos: un **Vendedor** y un **Comprador** (Perú, con
+   saldo). Apunta usuario y contraseña de cada uno.
+2. En una **ventana privada**, entra a mercadopago.com.pe con el **vendedor de prueba** →
+   developers → **Crear aplicación** (Suscripciones) → **Credenciales de producción** → copia
+   el **Access Token** (`APP_USR-…`). Es «producción» de un usuario ficticio: no mueve dinero.
+3. Pega en `empresario-api/.env` y reinicia `runserver`:
 
    ```
-   MERCADOPAGO_ACCESS_TOKEN=TEST-xxxxxxxx
+   MERCADOPAGO_ACCESS_TOKEN=APP_USR-xxxxxxxx
    ```
 
-   Con el token presente la pasarela pasa a ser Mercado Pago automáticamente
-   (`BILLING_GATEWAY` puede quedar vacío). Reinicia `runserver`.
+   Con el token presente la pasarela es Mercado Pago (`BILLING_GATEWAY` puede quedar vacío).
+   Para comprobar de quién es un token: `GET https://api.mercadopago.com/users/me` con
+   `Authorization: Bearer …` debe devolver `tags: [..., "test_user"]`.
+4. Mercado Pago exige que pagador y cobrador sean **los dos de prueba o los dos reales**. Con
+   el vendedor de prueba, el pagador tiene que ser el **comprador de prueba**; su correo
+   (`test_user_…@testuser.com`, en *Cuentas de prueba*) va en:
+
+   ```
+   MERCADOPAGO_TEST_PAYER_EMAIL=test_user_xxxxxxxx@testuser.com
+   ```
+
+   Si falta, el checkout responde 503 explicándolo (no un 502 a ciegas).
+5. Para **cobrar de verdad**, el `APP_USR-…` de la app creada en tu **cuenta real**, y
+   `MERCADOPAGO_TEST_PAYER_EMAIL` vacío: el pagador es el usuario que paga.
+
+El Public Key, Client ID y Client Secret no se usan: el checkout se abre por redirección.
 
 ## 2. URLs de retorno y webhook
 
@@ -60,7 +80,8 @@ Admin → Planes → Anual.
 
 ## 3. Probar
 
-Con credenciales de prueba, paga con las tarjetas de prueba de Mercado Pago
+En **otra** ventana privada entra a mercadopago.com.pe con el **comprador de prueba**, abre
+Empresario por el túnel y dale a «Continuar». Paga con las tarjetas de prueba de Mercado Pago
 (<https://www.mercadopago.com.pe/developers/es/docs/checkout-pro/additional-content/your-integrations/test/cards>),
 p. ej. Visa `4009 1753 3280 6176`, CVV `123`, fecha futura, nombre `APRO` (aprobado) o `OTHE`
 (rechazado). El correo del pagador debe ser el de un **usuario de prueba comprador** de tu app

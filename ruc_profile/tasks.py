@@ -11,7 +11,6 @@ import logging
 from typing import Any
 
 from celery import shared_task
-from django.conf import settings
 
 from .models import RucSnapshot
 from .services import RucProfileSynchronizer
@@ -21,12 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 def profiled_rucs() -> list[str]:
-    """The project's own RUC plus every tracked supplier, de-duplicated."""
+    """Every registered company plus every tracked supplier, de-duplicated."""
+    from accounts.models import Organization
     from suppliers.models import Supplier
 
-    rucs = list(Supplier.objects.tracked().values_list("ruc", flat=True))
-    if settings.SUNAT_RUC:
-        rucs.insert(0, settings.SUNAT_RUC)
+    rucs = list(Organization.objects.values_list("ruc", flat=True))
+    rucs += list(Supplier.objects.tracked().values_list("ruc", flat=True))
     return list(dict.fromkeys(rucs))
 
 

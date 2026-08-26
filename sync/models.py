@@ -27,6 +27,7 @@ class JobStatus(models.TextChoices):
     DONE = "completo", "Completo"
     PARTIAL = "parcial", "Completo con fallas"
     FAILED = "fallido", "Fallido"
+    CANCELLED = "cancelado", "Cancelada"
 
 
 class StepStatus(models.TextChoices):
@@ -47,7 +48,11 @@ class JobKind(models.TextChoices):
 # Un trabajo completo tiene 2 horas de límite en Celery. Pasado ese margen
 # holgado, si sigue «en cola» o «ejecutando» es que nadie lo tomó o el worker
 # murió por el camino.
-STALE_AFTER = datetime.timedelta(hours=3)
+# Mientras corre, el worker late sobre `updated_at` cada 30 s (ver
+# `services._latido`). Cinco minutos sin latido = el proceso murió; se cierra
+# el trabajo para que nadie siga sondeando un avance que no va a moverse.
+STALE_AFTER = datetime.timedelta(minutes=5)
+HEARTBEAT_EVERY = datetime.timedelta(seconds=30)
 
 STALE_MESSAGE = (
     "La sincronización quedó a medias (el proceso no respondió). Puedes "
@@ -204,6 +209,41 @@ class SyncJob(BaseModel):
         self.save(update_fields=[
             "steps", "status", "error", "finished_at", "updated_at",
         ])
+
+    def cancel(self) -> None:
+        """Cancela el trabajo: los pasos pendientes se omiten y el estado
+        cierra ya. La cancelación es cooperativa — el paso que esté corriendo
+        en el worker termina lo suyo (un scrapeo a medias no se puede cortar
+        limpio), pero el bucle mira este estado antes de cada paso y no
+        arranca ninguno más."""
+        for step in self.steps:
+            if step.get("status") in (StepStatus.PENDING, StepStatus.RUNNING):
+                if step.get("status") == StepStatus.PENDING:
+                    step.update({
+                        "status": StepStatus.SKIPPED,
+                        "detail": "Cancelada por el usuario",
+                        "finished_at": timezone.now().isoformat(),
+                    })
+                else:
+                    step["detail"] = "Se detendrá al terminar este paso"
+        self.status = JobStatus.CANCELLED
+        self.error = ""
+        self.finished_at = timezone.now()
+        self.save(update_fields=[
+            "steps", "status", "error", "finished_at", "updated_at",
+        ])
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self.status == JobStatus.CANCELLED
+
+    def cancellation_requested(self) -> bool:
+        """Lo consulta el bucle del worker entre paso y paso, contra la base:
+        la cancelación llega por el API mientras este proceso tiene el trabajo
+        en memoria."""
+        return type(self).objects.filter(
+            pk=self.pk, status=JobStatus.CANCELLED
+        ).exists()
 
     def start(self) -> None:
         self.status = JobStatus.RUNNING

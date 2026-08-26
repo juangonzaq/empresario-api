@@ -27,8 +27,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--ruc", action="append", dest="rucs",
-            help="Capture only these RUCs. Repeatable. "
-                 "Defaults to the company RUC plus every tracked supplier.",
+            help="Capture only these RUCs. Repeatable. Defaults to every "
+                 "registered company plus every tracked supplier.",
         )
         parser.add_argument(
             "--max-age-days", type=int, default=DEFAULT_MAX_AGE_DAYS,
@@ -43,7 +43,7 @@ class Command(BaseCommand):
         rucs = options["rucs"] or profiled_rucs()
         if not rucs:
             raise CommandError(
-                "No RUCs to capture. Register suppliers or set SUNAT_RUC in .env."
+                "No RUCs to capture. Register a company or track suppliers first."
             )
 
         self.stdout.write(f"Capturing {len(rucs)} RUC profile(s) from SUNAT ...")

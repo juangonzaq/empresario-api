@@ -509,6 +509,15 @@ class BusinessProfile(BaseModel):
     primary_goal = models.CharField(max_length=15, choices=Goal, blank=True)
     business_age = models.CharField(max_length=15, choices=Age, blank=True)
     people_count = models.PositiveSmallIntegerField(default=1)
+    # Tri-estado a propósito (True/False/None): None = «no lo sé todavía». El
+    # motor de obligaciones nunca convierte esa ausencia en un «no»; deja la
+    # obligación «por determinar» con la pregunta pendiente.
+    sells_to_consumers = models.BooleanField(
+        "vende al consumidor final", null=True, blank=True, default=None)
+    has_premises = models.BooleanField(
+        "atiende en local físico", null=True, blank=True, default=None)
+    sells_online = models.BooleanField(
+        "vende por internet", null=True, blank=True, default=None)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

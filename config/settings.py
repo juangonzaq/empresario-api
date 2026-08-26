@@ -30,24 +30,21 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
-# Credenciales SOL de respaldo. Desde la conversión a multiempresa cada
-# organización guarda las suyas (accounts.SunatCredential); esto solo sirve
-# para los comandos de mantenimiento que se corren a mano contra una cuenta.
-SUNAT_RUC = os.getenv("SUNAT_RUC", "")
-SUNAT_USER = os.getenv("SUNAT_USER", "")
-SUNAT_PASS = os.getenv("SUNAT_PASS", "")
-
 # Llave Fernet con la que se cifra la clave SOL de cada empresa. Vive en el
 # entorno, nunca en la base ni en el repositorio; ver accounts/services/crypto.py.
 FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
 
-# SUNAT SIRE APIs (sensor_sunat prototype) — credentials live in .env, never in git
+# SUNAT SIRE APIs (prototipo sensor_sunat). Aquí solo viven las constantes de
+# los endpoints: las credenciales son de cada empresa (accounts.SunatCredential
+# guarda las SOL; el client_id/secret del SIRE se genera por RUC en el menú SOL
+# y todavía no se guarda por empresa, así que el prototipo queda sin credencial
+# hasta que eso exista — nunca vuelve a leerlas del entorno).
 SUNAT = {
-    "RUC": os.getenv("SUNAT_RUC", "20604442533"),
-    "SOL_USER": os.getenv("SUNAT_SOL_USER", os.getenv("SUNAT_USER", "")),
-    "SOL_PASS": os.getenv("SUNAT_SOL_PASS", os.getenv("SUNAT_PASS", "")),
-    "CLIENT_ID": os.getenv("SUNAT_CLIENT_ID"),
-    "CLIENT_SECRET": os.getenv("SUNAT_CLIENT_SECRET"),
+    "RUC": "",
+    "SOL_USER": "",
+    "SOL_PASS": "",
+    "CLIENT_ID": "",
+    "CLIENT_SECRET": "",
     "TOKEN_URL": "https://api-seguridad.sunat.gob.pe/v1/clientessol/{client_id}/oauth2/token/",
     "SCOPE": "https://api-sire.sunat.gob.pe",
     "BASE": "https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros",
@@ -84,6 +81,12 @@ CORS_ALLOWED_ORIGINS = env_list(
     "http://localhost:3000,http://localhost:3001,"
     "http://127.0.0.1:3000,http://127.0.0.1:3001",
 )
+
+# El frontend entra con JWT, pero SessionAuthentication sigue activa para el
+# admin: si el navegador trae una cookie de sesión (p. ej. por haber entrado
+# al admin), DRF exige CSRF también en el login del API, y sin esta lista el
+# chequeo de Origin rechaza al frontend aunque CORS lo permita.
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
 
 # Application definition
@@ -199,14 +202,20 @@ LEADS_NOTIFY_EMAIL = os.getenv("LEADS_NOTIFY_EMAIL", "")
 API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "").rstrip("/")
 BILLING_TRIAL_DAYS = int(os.getenv("BILLING_TRIAL_DAYS", "7"))
 MERCADOPAGO_ACCESS_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN", "")
-# fake (aprueba al instante, solo DEBUG) · manual (pendiente + correo) · mercadopago.
-# Con token de Mercado Pago presente, es Mercado Pago salvo que se diga otra cosa.
+# mercadopago · manual (pendiente + correo) · fake (aprueba al instante; solo
+# DEBUG y solo si se pide EXPLÍCITAMENTE). Sin token y sin pedir nada, no hay
+# pasarela: el checkout se rechaza. Antes DEBUG activaba `fake` solo, y un
+# clic en «Continuar» activaba el plan y mandaba correos sin que nadie
+# hubiera configurado cobros.
 BILLING_GATEWAY = os.getenv(
-    "BILLING_GATEWAY",
-    "mercadopago" if MERCADOPAGO_ACCESS_TOKEN else ("fake" if DEBUG else "manual"),
+    "BILLING_GATEWAY", "mercadopago" if MERCADOPAGO_ACCESS_TOKEN else "",
 )
 BILLING_NOTIFY_EMAIL = os.getenv("BILLING_NOTIFY_EMAIL", "")
 MERCADOPAGO_WEBHOOK_SECRET = os.getenv("MERCADOPAGO_WEBHOOK_SECRET", "")
+# Solo para probar con un VENDEDOR de prueba: correo del COMPRADOR de prueba que
+# pagará. Mercado Pago exige que pagador y cobrador sean los dos reales o los dos
+# de prueba, así que el correo del usuario real no sirve ahí.
+MERCADOPAGO_TEST_PAYER_EMAIL = os.getenv("MERCADOPAGO_TEST_PAYER_EMAIL", "")
 REFERRAL_TARGET = int(os.getenv("REFERRAL_TARGET", "5"))
 REFERRAL_REWARD_DAYS = int(os.getenv("REFERRAL_REWARD_DAYS", "30"))
 
@@ -245,7 +254,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+# En español: los mensajes de validación de Django y DRF llegan tal cual a la
+# pantalla del usuario.
+LANGUAGE_CODE = 'es'
 
 TIME_ZONE = os.getenv('DJANGO_TIME_ZONE', 'America/Lima')
 
@@ -376,6 +387,10 @@ CELERY_RESULT_EXPIRES = 60 * 60 * 24 * 30     # keep a month of task history
 
 # Run tasks inline when there is no broker, so tests and one-off scripts work.
 CELERY_TASK_ALWAYS_EAGER = env_bool('CELERY_TASK_ALWAYS_EAGER', False)
+# Bajo el runner de tests el correo se entrega en línea (core/emails.py): los
+# tests miran el outbox y no hay broker. No se fuerza eager global porque los
+# tests de sync sí cuentan con que sus tareas queden encoladas.
+TESTING = "test" in sys.argv
 CELERY_TASK_EAGER_PROPAGATES = True
 
 

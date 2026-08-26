@@ -254,9 +254,10 @@ def _caducar(sesion: AfpnetSession, exc: Exception) -> SinSesion:
     interfaz no sabía que lo que tocaba era volver a entrar.
     """
     sesion.marcar_caducada(str(exc))
-    return SinSesion(
-        "La sesión de AFPnet caducó. Vuelve a iniciarla para continuar."
-    )
+    # El motivo original viaja tal cual: «caducó por inactividad» y «hay que
+    # cambiar la contraseña en AFPnet» piden acciones distintas del usuario,
+    # y aplanarlos a un genérico dejaba a la persona reconectando en vano.
+    return SinSesion(str(exc))
 
 
 def historial_de(organization: Organization, cuspp: str) -> int:

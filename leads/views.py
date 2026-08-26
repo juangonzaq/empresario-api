@@ -40,6 +40,10 @@ def _notify(lead: Lead) -> None:
 
 
 class LeadCreateView(APIView):
+    # Sin autenticadores: es el formulario público de la landing. Una cookie
+    # de sesión del admin en el mismo navegador haría que SessionAuthentication
+    # exigiera CSRF y el envío muriera con «CSRF Failed».
+    authentication_classes: list = []
     permission_classes = [AllowAny]
     throttle_classes = [LeadThrottle]
 

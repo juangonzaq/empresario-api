@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from compliance_profile.models import ComplianceRating
@@ -13,15 +12,14 @@ from compliance_profile.services import (
     CompliancePortalError,
     ComplianceSynchronizer,
 )
+from sync.cli import add_sol_arguments, sol_credentials
 
 
 class Command(BaseCommand):
     help = "Scrape the SUNAT compliance profile (perfil de cumplimiento) into the database."
 
     def add_arguments(self, parser) -> None:
-        parser.add_argument("--taxpayer-id", default=settings.SUNAT_RUC, help="RUC")
-        parser.add_argument("--username", default=settings.SUNAT_USER)
-        parser.add_argument("--password", default=settings.SUNAT_PASS)
+        add_sol_arguments(parser)
         parser.add_argument(
             "--skip-details", action="store_true",
             help="Only sync the quarterly headers, not each quarter's variables.",
@@ -36,23 +34,16 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        credentials = (
-            options["taxpayer_id"], options["username"], options["password"]
-        )
-        if not all(credentials):
-            raise CommandError(
-                "Missing credentials. Set SUNAT_RUC, SUNAT_USER and SUNAT_PASS in .env "
-                "or pass --taxpayer-id/--username/--password."
-            )
+        creds = sol_credentials(options)
 
         client = CompliancePortalClient(
-            taxpayer_id=options["taxpayer_id"],
-            username=options["username"],
-            password=options["password"],
+            taxpayer_id=creds.ruc,
+            username=creds.username,
+            password=creds.password,
             headless=not options["headful"],
         )
 
-        self.stdout.write(f"Authenticating {options['taxpayer_id']}/{options['username']} ...")
+        self.stdout.write(f"Authenticating {creds.ruc}/{creds.username} ...")
         try:
             client.login()
         except CompliancePortalError as exc:
@@ -66,9 +57,9 @@ class Command(BaseCommand):
         )
         result = synchronizer.run()
 
-        stored = ComplianceRating.objects.for_taxpayer(options["taxpayer_id"]).count()
+        stored = ComplianceRating.objects.for_taxpayer(creds.ruc).count()
         current = (
-            ComplianceRating.objects.for_taxpayer(options["taxpayer_id"])
+            ComplianceRating.objects.for_taxpayer(creds.ruc)
             .current().first()
         )
         style = self.style.WARNING if result.details_failed else self.style.SUCCESS

@@ -73,6 +73,30 @@ class EvaluatorTests(TestCase):
         ob = CompanyObligation.objects.get(account_ruc=org.ruc, rule__code="tax-consistency-control")
         self.assertEqual(ob.compliance_status, enums.ComplianceStatus.NON_COMPLIANT)
 
+    def test_risk_signals_are_unknown_without_a_ficha_ruc(self):
+        """Cuenta nueva, sin SUNAT conectada: nada puede salir en «cumple».
+        La ausencia de ficha RUC no es «sin señales de riesgo»."""
+        org = _rmt_org("20100000003")
+        evaluate_company(org)
+        self.assertFalse(
+            CompanyObligation.objects.filter(
+                account_ruc=org.ruc, compliance_status=enums.ComplianceStatus.COMPLIANT,
+            ).exists()
+        )
+        ob = CompanyObligation.objects.get(account_ruc=org.ruc, rule__evaluator_key="risk_signals_clear")
+        self.assertEqual(ob.compliance_status, enums.ComplianceStatus.UNKNOWN)
+        self.assertEqual(ob.verification_status, enums.VerificationStatus.UNVERIFIED)
+
+    def test_risk_signals_clear_with_a_clean_ficha_ruc(self):
+        org = _rmt_org("20100000004")
+        from ruc_profile.models import RucSnapshot
+
+        RucSnapshot.objects.create(ruc=org.ruc, captured_on=timezone.localdate())
+        evaluate_company(org)
+        ob = CompanyObligation.objects.get(account_ruc=org.ruc, rule__evaluator_key="risk_signals_clear")
+        self.assertEqual(ob.compliance_status, enums.ComplianceStatus.COMPLIANT)
+        self.assertEqual(ob.verification_status, enums.VerificationStatus.INFERRED)
+
     def test_payroll_registration_counts_employees(self):
         ctx = CompanyContext(
             account_ruc="20100000001", today=timezone.localdate(),

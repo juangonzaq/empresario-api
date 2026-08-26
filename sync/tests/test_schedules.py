@@ -76,12 +76,10 @@ class CadenceTests(TestCase):
                 f"{cadence} no corre todas las fuentes",
             )
 
-    def test_el_analisis_de_ia_va_despues_del_buzon(self):
-        """Analiza los mensajes que el buzón acaba de traer, así que si corre
-        antes trabaja sobre lo del día anterior."""
-        for cadence in (Cadence.INITIAL, Cadence.DAILY):
-            keys = [s.key for s in sources_for(cadence)]
-            self.assertLess(keys.index("mailbox"), keys.index("intel"), cadence)
+    def test_el_analisis_con_ia_no_es_un_paso(self):
+        """Se quitó de la sincronización: ninguna cadencia debe ofrecerlo ni
+        gastar llamadas al modelo al sincronizar."""
+        self.assertNotIn("intel", {s.key for s in SOURCES})
 
     def test_analytics_always_runs_last(self):
         for cadence in (Cadence.INITIAL, Cadence.DAILY, Cadence.MONTHLY):
@@ -230,7 +228,8 @@ class StaleJobTests(TestCase):
         self.assertEqual(abandoned.status, JobStatus.FAILED)
 
     def test_a_job_still_within_time_is_respected(self):
-        running = self._abandoned(status=JobStatus.RUNNING, hours=1)
+        # Dos minutos sin latido caben en el plazo (5 min): sigue vivo.
+        running = self._abandoned(status=JobStatus.RUNNING, hours=2 / 60)
 
         result = sync_all(JobKind.DAILY)
 

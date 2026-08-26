@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from django.utils import timezone
 
 from accounts.models import Organization, SunatConnectionStatus
 
-from .models import STALE_MESSAGE, JobKind, JobStatus, StepStatus, SyncJob
+from .models import (
+    HEARTBEAT_EVERY, STALE_MESSAGE, JobKind, JobStatus, StepStatus, SyncJob,
+)
 from .sources import (
-    Cadence, LoginFailed, SOURCES_BY_KEY, Source, initial_steps, sources_for,
+    Cadence, LoginFailed, SOURCES_BY_KEY, Source, SourceFailed, initial_steps,
+    sources_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,6 +175,41 @@ def _sol_ya_funciono(job: SyncJob) -> bool:
     return False
 
 
+def _motivo_amigable(exc: Exception) -> str:
+    """Lo que ve la persona en el paso caído.
+
+    El traceback va al log; aquí va una frase que diga qué pasó y qué hacer.
+    Un «Read timed out (read timeout=60)» de urllib3 en pantalla no explica
+    nada y parece un fallo nuestro, cuando es SUNAT que no contestó.
+    """
+    from requests import exceptions as rq
+
+    if isinstance(exc, SourceFailed):
+        # Ya viene redactada por la fuente.
+        return str(exc)
+    # Playwright (ITF, perfil de cumplimiento) tiene su propio TimeoutError;
+    # se detecta por nombre para no importar la librería aquí.
+    if isinstance(exc, (rq.Timeout, TimeoutError)) \
+            or type(exc).__name__ == "TimeoutError":
+        return ("SUNAT tardó demasiado en responder y se cortó la consulta. "
+                "Suele ser temporal: vuelve a intentarlo en unos minutos.")
+    if isinstance(exc, rq.SSLError):
+        return ("No se pudo establecer una conexión segura con SUNAT. "
+                "Vuelve a intentarlo en unos minutos.")
+    if isinstance(exc, (rq.ConnectionError, ConnectionError, OSError)):
+        return ("No se pudo conectar con SUNAT. Revisa tu conexión o vuelve a "
+                "intentarlo en unos minutos.")
+    if isinstance(exc, rq.HTTPError):
+        codigo = getattr(getattr(exc, "response", None), "status_code", None)
+        if codigo and codigo >= 500:
+            return ("SUNAT respondió con un error en su servidor. "
+                    "Vuelve a intentarlo más tarde.")
+        return ("SUNAT rechazó la consulta. Si se repite, desconecta y vuelve "
+                "a conectar tus credenciales.")
+    return ("No se pudo completar esta fuente por un error inesperado. "
+            "Vuelve a intentarlo; si persiste, avísanos.")
+
+
 def _run_source(
     job: SyncJob,
     source: Source,
@@ -221,7 +261,7 @@ def _run_source(
         return str(exc)
     except Exception as exc:  # noqa: BLE001 — un paso caído no tumba el resto
         logger.exception("Falló el paso %s de %s", source.key, organization.ruc)
-        job.mark_step(source.key, StepStatus.FAILED, str(exc)[:300])
+        job.mark_step(source.key, StepStatus.FAILED, _motivo_amigable(exc)[:300])
         return ""
 
     detail = ", ".join(f"{k}: {v}" for k, v in (result or {}).items())
@@ -254,15 +294,57 @@ def _wrap_up(job: SyncJob, error: str) -> SyncJob:
     return job
 
 
+@contextmanager
+def _latido(job: SyncJob):
+    """Mantiene fresco `updated_at` mientras el trabajo corre.
+
+    Un paso (comprobantes, ITF) puede pasar muchos minutos dentro de una sola
+    llamada sin tocar la base; sin latido no hay forma de distinguir «sigue
+    trabajando» de «el worker murió». Con él, `STALE_AFTER` puede ser corto y
+    un trabajo huérfano se cierra en minutos, no en horas.
+
+    Hilo demonio con su propia conexión (se cierra al salir). Solo escribe si
+    el trabajo sigue en marcha, para no resucitar uno cancelado o terminado.
+    """
+    from django.db import connection
+
+    stop = threading.Event()
+
+    def latir() -> None:
+        try:
+            while not stop.wait(HEARTBEAT_EVERY.total_seconds()):
+                SyncJob.objects.filter(
+                    pk=job.pk, status=JobStatus.RUNNING,
+                ).update(updated_at=timezone.now())
+        finally:
+            connection.close()
+
+    hilo = threading.Thread(target=latir, name=f"sync-latido-{job.pk}", daemon=True)
+    hilo.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        hilo.join(timeout=5)
+
+
 def execute(job: SyncJob) -> SyncJob:
     """Corre los pasos en serie. Aislado de Celery para poder probarlo.
 
     Corre las fuentes que el trabajo tiene en ``steps`` —que normalmente son las
     de su cadencia, pero pueden ser un subconjunto elegido por el usuario—."""
+    with _latido(job):
+        return _execute(job)
+
+
+def _execute(job: SyncJob) -> SyncJob:
     organization = job.organization
     sources = [
         SOURCES_BY_KEY[s["key"]] for s in job.steps if s["key"] in SOURCES_BY_KEY
     ] or sources_for(job.kind)
+    # Cancelado mientras esperaba en la cola: no se arranca nada.
+    if job.cancellation_requested():
+        return _abandonar_por_cancelacion(job)
     job.start()
 
     try:
@@ -275,12 +357,33 @@ def execute(job: SyncJob) -> SyncJob:
 
     fatal = ""
     for source in sources:
+        # La cancelación es cooperativa: se mira entre paso y paso. El paso en
+        # curso termina lo suyo (un scrapeo a medias no se corta limpio), pero
+        # no arranca ninguno más.
+        if job.cancellation_requested():
+            return _abandonar_por_cancelacion(job)
         if fatal and source.needs_sol:
             job.mark_step(source.key, StepStatus.SKIPPED, "No se pudo entrar a SUNAT")
             continue
         fatal = _run_source(job, source, credentials) or fatal
 
+    if job.cancellation_requested():
+        return _abandonar_por_cancelacion(job)
     return _wrap_up(job, fatal)
+
+
+def _abandonar_por_cancelacion(job: SyncJob) -> SyncJob:
+    """Cierra la corrida respetando la cancelación.
+
+    Se re-marca desde el estado fresco de la base: el ``mark_step`` del paso
+    que estaba corriendo escribe la lista de pasos que este proceso tiene en
+    memoria, y eso puede haber pisado los «omitido» que dejó ``cancel()``."""
+    job.refresh_from_db()
+    job.cancel()
+    logger.info(
+        "Sincronización de %s cancelada por el usuario", job.organization.ruc
+    )
+    return job
 
 
 def execute_step(job: SyncJob, key: str, cadence: str | None = None) -> SyncJob:
@@ -294,6 +397,11 @@ def execute_step(job: SyncJob, key: str, cadence: str | None = None) -> SyncJob:
     if source is None:
         raise CannotRetry(f"El paso «{key}» no existe.")
 
+    with _latido(job):
+        return _execute_step(job, source, key, cadence)
+
+
+def _execute_step(job: SyncJob, source: Source, key: str, cadence: str | None) -> SyncJob:
     job.start()
     try:
         credentials = credentials_for(job.organization)
@@ -313,6 +421,18 @@ def execute_step(job: SyncJob, key: str, cadence: str | None = None) -> SyncJob:
 
     fatal = _run_source(job, source, credentials, cadence)
     return _wrap_up(job, fatal)
+
+
+def cancel_sync(organization: Organization) -> SyncJob:
+    """Cancela el trabajo en curso (o en cola) de la empresa."""
+    job = (
+        SyncJob.objects.filter(organization=organization)
+        .unfinished().order_by("-created_at").first()
+    )
+    if job is None:
+        raise CannotRetry("No hay ninguna sincronización en curso que cancelar.")
+    job.cancel()
+    return job
 
 
 def _job_para_un_paso(organization: Organization) -> SyncJob:

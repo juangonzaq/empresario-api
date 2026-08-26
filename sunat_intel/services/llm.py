@@ -39,6 +39,59 @@ def structured_messages(
     return json.loads(response.choices[0].message.content or "{}")
 
 
+def structured_with_tools(
+    messages: list[dict[str, Any]],
+    schema_name: str,
+    schema: dict[str, Any],
+    tools: list[dict[str, Any]],
+    executors: dict[str, Any],
+    max_rounds: int = 4,
+) -> dict[str, Any]:
+    """Como :func:`structured_messages`, pero el modelo puede ejecutar
+    consultas registradas antes de responder.
+
+    El bucle es acotado: hasta ``max_rounds`` tandas de consultas y una
+    respuesta final. Un error en una consulta (parámetros inválidos, p. ej.)
+    vuelve al modelo como ``{"error": …}`` para que lo corrija o responda sin
+    ese dato — nunca tumba la pregunta.
+    """
+    convo = list(messages)
+    formato = {
+        "type": "json_schema",
+        "json_schema": {"name": schema_name, "strict": True, "schema": schema},
+    }
+    for _ in range(max_rounds):
+        response = get_client().chat.completions.create(
+            model=INTEL_MODEL, messages=convo, tools=tools,
+            response_format=formato,
+        )
+        message = response.choices[0].message
+        if not message.tool_calls:
+            return json.loads(message.content or "{}")
+        convo.append({
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [tc.model_dump() for tc in message.tool_calls],
+        })
+        for tc in message.tool_calls:
+            fn = executors.get(tc.function.name)
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+                result = fn(**args) if fn else {"error": "Consulta desconocida."}
+            except Exception as exc:  # noqa: BLE001 — el modelo decide qué hacer
+                result = {"error": str(exc)}
+            convo.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": json.dumps(result, ensure_ascii=False, default=str),
+            })
+    # Tandas agotadas: última llamada sin herramientas para forzar la respuesta.
+    response = get_client().chat.completions.create(
+        model=INTEL_MODEL, messages=convo, response_format=formato,
+    )
+    return json.loads(response.choices[0].message.content or "{}")
+
+
 def structured_completion(
     system: str,
     user: str,

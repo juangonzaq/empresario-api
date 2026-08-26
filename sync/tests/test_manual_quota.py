@@ -80,8 +80,11 @@ class SyncHistoryApiTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["quota"]["used"], 1)
         self.assertTrue(any(s["key"] == "cpe" for s in res.data["sources"]))
-        self.assertEqual(len(res.data["jobs"]), 1)
-        self.assertTrue(res.data["jobs"][0]["is_manual"])
+        # La analítica con IA no se ofrece en el checklist.
+        self.assertFalse(any(s["key"] == "intel" for s in res.data["sources"]))
+        self.assertEqual(res.data["jobs"]["count"], 1)
+        self.assertEqual(len(res.data["jobs"]["results"]), 1)
+        self.assertTrue(res.data["jobs"]["results"][0]["is_manual"])
 
     def test_start_over_limit_returns_402(self):
         _finished_manual(self.org, 2)

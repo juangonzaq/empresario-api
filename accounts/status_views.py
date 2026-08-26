@@ -11,6 +11,12 @@ su propio ``estado``, y ``desconocido`` es un valor de primera clase que la
 interfaz pinta en gris. Es la diferencia entre «estás habido» y «todavía no lo
 hemos mirado», que para quien decide no es un matiz.
 
+Matiz posterior: no afirmar nada tampoco obliga a anunciarlo. Un chip gris por
+cada fuente sin consultar («REMYPE sin consultar», «Buzón sin sincronizar»)
+llenaba la barra de ruido permanente; esas fuentes ahora simplemente callan
+hasta tener algo que decir. La condición del RUC sí conserva su gris: es la
+afirmación de base sobre la empresa y su ausencia es información.
+
 Va en una sola petición porque la barra está en todas las páginas: tres
 llamadas por navegación para tres etiquetas sería caro sin ganar nada.
 """
@@ -51,7 +57,7 @@ def _condicion_ruc(ruc: str) -> dict:
     )
 
 
-def _remype(ruc: str) -> dict:
+def _remype(ruc: str) -> dict | None:
     from remype.models import RemypeCheck
 
     check = (
@@ -60,13 +66,13 @@ def _remype(ruc: str) -> dict:
         .first()
     )
     if check is None:
-        return _aviso("desconocido", "REMYPE sin consultar")
+        return None  # Sin consultar: nada que anunciar todavía.
     if check.is_registered:
         return _aviso("ok", "REMYPE acreditado", check.message or "")
     return _aviso("atencion", "Sin acreditación REMYPE", check.message or "")
 
 
-def _buzon(ruc: str) -> dict:
+def _buzon(ruc: str) -> dict | None:
     from sunat_mailbox.models import Message
 
     totales = Message.objects.filter(taxpayer_id=ruc).aggregate(
@@ -77,7 +83,7 @@ def _buzon(ruc: str) -> dict:
         ),
     )
     if not totales["total"]:
-        return _aviso("desconocido", "Buzón sin sincronizar")
+        return None  # Sin sincronizar: nada que anunciar todavía.
     if totales["urgentes"]:
         return _aviso(
             "atencion",
@@ -92,7 +98,8 @@ class CompanyStatusView(OrganizationAPIView):
 
     def get(self, request: Request) -> Response:
         ruc = request.ruc
+        avisos = [_condicion_ruc(ruc), _remype(ruc), _buzon(ruc)]
         return Response({
             "ruc": ruc,
-            "avisos": [_condicion_ruc(ruc), _remype(ruc), _buzon(ruc)],
+            "avisos": [a for a in avisos if a is not None],
         })

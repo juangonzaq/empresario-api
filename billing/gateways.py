@@ -1,7 +1,10 @@
 """Pasarelas de pago, detrás de una interfaz mínima.
 
-* ``fake``: aprueba en el acto. Solo con ``DEBUG``: sirve para probar el flujo
-  completo (prueba → plan → activo → referidos) sin tarjeta ni cuenta.
+* sin configurar (``BILLING_GATEWAY`` vacío): no se puede pagar. El checkout
+  responde 503 y no se crea ningún pago ni se manda ningún correo.
+* ``fake``: aprueba en el acto. Solo con ``DEBUG`` **y** pedida a mano en el
+  ``.env``: sirve para probar el flujo completo (prueba → plan → activo →
+  referidos) sin tarjeta ni cuenta. Nunca se activa sola.
 * ``manual``: deja el pago pendiente y avisa por correo; alguien lo aprueba en
   el admin. Es el modo seguro por defecto en producción hasta tener pasarela.
 * ``mercadopago``: Checkout Pro. Se crea una preferencia, la persona paga en
@@ -14,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import re
 
 import requests
 from django.conf import settings
@@ -51,9 +55,17 @@ def api_public_url(request=None) -> str:
     return settings.API_PUBLIC_URL or public_origin(request)
 
 
+class GatewayUnavailable(Exception):
+    """No hay pasarela con la que cobrar. Se corta antes de crear nada."""
+
+
 class Gateway:
     name = "base"
     supports_recurring = False
+
+    def ensure_available(self) -> None:
+        """Lanza ``GatewayUnavailable`` si con esta pasarela no se puede cobrar."""
+        return None
 
     def create_checkout(self, payment: Payment, request=None) -> None:  # pragma: no cover
         raise NotImplementedError
@@ -101,6 +113,28 @@ class FakeGateway(Gateway):
         return None
 
 
+class UnconfiguredGateway(Gateway):
+    """Lo que hay cuando nadie configuró cobros: se niega a todo."""
+
+    name = "none"
+    MENSAJE = (
+        "Los pagos todavía no están habilitados en esta instalación: falta "
+        "configurar la pasarela de cobro."
+    )
+
+    def ensure_available(self) -> None:
+        raise GatewayUnavailable(self.MENSAJE)
+
+    def create_checkout(self, payment: Payment, request=None) -> None:
+        raise GatewayUnavailable(self.MENSAJE)
+
+    def create_subscription(self, payment: Payment, request=None) -> None:
+        raise GatewayUnavailable(self.MENSAJE)
+
+    def cancel_subscription(self, sub: Subscription) -> None:
+        return None
+
+
 class ManualGateway(Gateway):
     name = "manual"
 
@@ -108,6 +142,107 @@ class ManualGateway(Gateway):
         from . import emails
 
         emails.pago_manual(payment)
+
+
+class MercadoPagoError(Exception):
+    """Mercado Pago rechazó la petición; lleva el motivo que devolvió."""
+
+
+def _mp_ok(response: requests.Response) -> dict:
+    """`raise_for_status` con el motivo real de Mercado Pago en el mensaje.
+
+    Un «400 Bad Request» a secas no dice si fue el correo del pagador, la URL
+    de retorno o la moneda; el cuerpo de la respuesta sí."""
+    if 200 <= response.status_code < 300:
+        try:
+            return response.json() or {}
+        except ValueError:
+            return {}
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+    motivo = data.get("message") or getattr(response, "text", "")[:300]
+    causas = data.get("cause") or []
+    if causas:
+        motivo += " · " + "; ".join(
+            str(c.get("description") or c.get("code") or c) for c in causas
+        )
+    logger.error("Mercado Pago %s en %s: %s", response.status_code, getattr(response, "url", "?"), motivo)
+    raise MercadoPagoError(f"Mercado Pago respondió {response.status_code}: {motivo}")
+
+
+def _exigir_origen_publico(request) -> None:
+    """Mercado Pago rechaza `back_url`/`notification_url` que no sean URLs
+    públicas (https, con dominio): con `http://localhost:3000` responde
+    «Invalid value for back_url». Mejor decirlo antes, en palabras, que
+    devolver un 502 a ciegas."""
+    from urllib.parse import urlsplit
+
+    origen = public_origin(request)
+    partes = urlsplit(origen)
+    host = partes.hostname or ""
+    if partes.scheme != "https" or host in ("localhost", "127.0.0.1") or host.endswith(".local"):
+        raise GatewayUnavailable(
+            f"Mercado Pago necesita una dirección pública (https) para volver "
+            f"después del pago y avisar del cobro, y ahora mismo estás en "
+            f"{origen}. En desarrollo abre Empresario desde el túnel "
+            f"(cloudflared) en lugar de localhost."
+        )
+
+
+_COLLECTOR_ES_DE_PRUEBA: dict[str, bool] = {}
+
+
+def _collector_es_de_prueba(token: str) -> bool:
+    """¿El dueño del token es un usuario de prueba de Mercado Pago?
+
+    Solo se consulta para tokens `APP_USR-…` (los `TEST-…` son de la cuenta
+    real) y una vez por proceso. Si MP no contesta, se asume que no."""
+    if not token.startswith("APP_USR-"):
+        return False
+    if token not in _COLLECTOR_ES_DE_PRUEBA:
+        try:
+            me = requests.get(
+                f"{MP_API}/users/me", headers={"Authorization": f"Bearer {token}"}, timeout=10,
+            ).json()
+            _COLLECTOR_ES_DE_PRUEBA[token] = "test_user" in (me.get("tags") or [])
+        except Exception:  # noqa: BLE001 — sin red se sigue como cuenta real
+            _COLLECTOR_ES_DE_PRUEBA[token] = False
+    return _COLLECTOR_ES_DE_PRUEBA[token]
+
+
+def _normalizar_correo_de_prueba(valor: str) -> str:
+    """Acepta lo que el panel de Mercado Pago deja copiar.
+
+    En «Cuentas de prueba» se copia el usuario (`TESTUSER9054…`), no el
+    correo; y en un .env es fácil dejar comillas. El correo real de un usuario
+    de prueba es `test_user_<dígitos>@testuser.com`, así que se deriva."""
+    v = (valor or "").strip().strip('"').strip("'")
+    m = re.fullmatch(r"(?i)testuser(\d+)", v)
+    if m:
+        return f"test_user_{m.group(1)}@testuser.com"
+    return v
+
+
+def _payer_email(payment: Payment) -> str:
+    """Correo del pagador para Mercado Pago.
+
+    MP rechaza mezclar: «Both payer and collector must be real or test users».
+    Con un vendedor de prueba el pagador tiene que ser un comprador de prueba,
+    y ese correo no es el del usuario de Empresario: viene de
+    `MERCADOPAGO_TEST_PAYER_EMAIL`."""
+    forzado = _normalizar_correo_de_prueba(getattr(settings, "MERCADOPAGO_TEST_PAYER_EMAIL", ""))
+    if forzado:
+        return forzado
+    if _collector_es_de_prueba(settings.MERCADOPAGO_ACCESS_TOKEN):
+        raise GatewayUnavailable(
+            "El vendedor configurado en Mercado Pago es un usuario de prueba, y "
+            "Mercado Pago solo le acepta pagos de compradores de prueba. Define "
+            "MERCADOPAGO_TEST_PAYER_EMAIL en el .env con el correo del comprador "
+            "de prueba (test_user_…@testuser.com) y reinicia el API."
+        )
+    return payment.created_by.email if payment.created_by else ""
 
 
 class MercadoPagoGateway(Gateway):
@@ -129,6 +264,7 @@ class MercadoPagoGateway(Gateway):
         return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
     def create_checkout(self, payment: Payment, request=None) -> None:
+        _exigir_origen_publico(request)
         org = payment.subscription.organization
         body = {
             "items": [{
@@ -149,19 +285,20 @@ class MercadoPagoGateway(Gateway):
             "notification_url": f"{api_public_url(request)}/api/billing/webhook/mercadopago/",
             "statement_descriptor": "EMPRESARIO",
         }
-        if payment.created_by:
-            body["payer"] = {"email": payment.created_by.email}
+        email = _payer_email(payment)
+        if email:
+            body["payer"] = {"email": email}
         response = requests.post(
             f"{MP_API}/checkout/preferences", json=body, headers=self._headers(), timeout=15,
         )
-        response.raise_for_status()
-        data = response.json()
+        data = _mp_ok(response)
         payment.gateway_reference = str(data.get("id", ""))
         payment.checkout_url = data.get("init_point") or data.get("sandbox_init_point") or ""
         payment.save(update_fields=["gateway_reference", "checkout_url", "updated_at"])
 
     # ------------------------------------------------------------ recurrente
     def create_subscription(self, payment: Payment, request=None) -> None:
+        _exigir_origen_publico(request)
         sub = payment.subscription
         org = sub.organization
         plan = payment.plan
@@ -170,7 +307,7 @@ class MercadoPagoGateway(Gateway):
             # La referencia es la suscripción local: todos los cobros que
             # genere esta autorización vuelven con ella.
             "external_reference": str(sub.pk),
-            "payer_email": payment.created_by.email if payment.created_by else "",
+            "payer_email": _payer_email(payment),
             "auto_recurring": {
                 "frequency": plan.months,
                 "frequency_type": "months",
@@ -181,8 +318,7 @@ class MercadoPagoGateway(Gateway):
             "status": "pending",
         }
         response = requests.post(f"{MP_API}/preapproval", json=body, headers=self._headers(), timeout=15)
-        response.raise_for_status()
-        data = response.json()
+        data = _mp_ok(response)
         sub.gateway = self.name
         sub.gateway_subscription_id = str(data.get("id", ""))
         sub.gateway_status = data.get("status", "pending")
@@ -196,17 +332,15 @@ class MercadoPagoGateway(Gateway):
             f"{MP_API}/preapproval/{sub.gateway_subscription_id}",
             json={"status": "cancelled"}, headers=self._headers(), timeout=15,
         )
-        response.raise_for_status()
+        _mp_ok(response)
 
     def fetch_preapproval(self, preapproval_id: str) -> dict:
         response = requests.get(f"{MP_API}/preapproval/{preapproval_id}", headers=self._headers(), timeout=15)
-        response.raise_for_status()
-        return response.json()
+        return _mp_ok(response)
 
     def fetch_authorized_payment(self, authorized_id: str) -> dict:
         response = requests.get(f"{MP_API}/authorized_payments/{authorized_id}", headers=self._headers(), timeout=15)
-        response.raise_for_status()
-        return response.json()
+        return _mp_ok(response)
 
     def _sync_preapproval(self, info: dict) -> Subscription | None:
         sub = None
@@ -233,7 +367,7 @@ class MercadoPagoGateway(Gateway):
         response = requests.get(
             f"{MP_API}/v1/payments/{mp_payment_id}", headers=self._headers(), timeout=15,
         )
-        response.raise_for_status()
+        _mp_ok(response)
         return response.json()
 
     @staticmethod
@@ -324,9 +458,20 @@ class MercadoPagoGateway(Gateway):
 
 
 def get_gateway() -> Gateway:
-    name = getattr(settings, "BILLING_GATEWAY", "manual")
+    name = getattr(settings, "BILLING_GATEWAY", "") or ""
     if name == "fake":
+        # Fuera de DEBUG una pasarela que aprueba todo es un agujero, no un modo.
+        if not settings.DEBUG:
+            logger.error("BILLING_GATEWAY=fake ignorada: solo se permite con DEBUG")
+            return UnconfiguredGateway()
         return FakeGateway()
     if name == "mercadopago":
+        if not getattr(settings, "MERCADOPAGO_ACCESS_TOKEN", ""):
+            logger.error("BILLING_GATEWAY=mercadopago sin MERCADOPAGO_ACCESS_TOKEN")
+            return UnconfiguredGateway()
         return MercadoPagoGateway()
-    return ManualGateway()
+    if name == "manual":
+        return ManualGateway()
+    if name:
+        logger.error("BILLING_GATEWAY=%r desconocida", name)
+    return UnconfiguredGateway()

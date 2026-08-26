@@ -75,6 +75,37 @@ def send_password_reset(user: User) -> OneTimeToken:
     return token
 
 
+def send_already_registered(user: User) -> OneTimeToken:
+    """Alguien intentó registrarse con un correo que ya tiene cuenta.
+
+    El API responde igual que a un registro nuevo para no delatar quién es
+    cliente; la verdad se cuenta aquí, en el buzón, que solo ve su dueño. El
+    correo de «pediste restablecer tu contraseña» confundía: quien intentó
+    registrarse no pidió eso — se le explica lo que pasó y, por si llegó ahí
+    por olvidar su clave, se le deja el enlace de restablecerla.
+    """
+    token = OneTimeToken.issue(user, TokenPurpose.PASSWORD_RESET, hours=RESET_HOURS)
+    url = _link('/nueva-contrasena', token.token)
+    _send(
+        "Ya tienes una cuenta",
+        (
+            "Alguien —probablemente tú— intentó registrarse con este correo, "
+            "pero ya tiene una cuenta.\n\n"
+            f"Puedes entrar en {settings.FRONTEND_URL}/ingresar\n\n"
+            "¿Olvidaste tu contraseña? Crea una nueva aquí:\n\n"
+            f"{url}\n\n"
+            f"El enlace vence en {RESET_HOURS} horas y solo se puede usar una "
+            "vez. Si no fuiste tú, no hace falta que hagas nada: tu cuenta y "
+            "tu contraseña siguen igual.\n"
+        ),
+        user.email,
+        "ya_registrado",
+        {"url": url, "horas": RESET_HOURS,
+         "login_url": f"{settings.FRONTEND_URL}/ingresar"},
+    )
+    return token
+
+
 def send_password_changed(user: User) -> None:
     """Aviso de seguridad: si el cambio no fue suyo, quiere enterarse hoy."""
     _send(

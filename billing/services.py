@@ -163,6 +163,8 @@ def start_checkout(organization: Organization, plan: Plan, user: User, request=N
     from .gateways import get_gateway
 
     gateway = get_gateway()
+    # Antes de dejar rastro: sin pasarela no hay pago pendiente ni correo.
+    gateway.ensure_available()
     sub = ensure_subscription(organization)
     recurring = plan.recurring and gateway.supports_recurring
     payment = Payment.objects.create(

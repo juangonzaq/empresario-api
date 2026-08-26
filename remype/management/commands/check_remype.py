@@ -18,8 +18,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--ruc", action="append", dest="rucs",
-            help="Check only these RUCs. Repeatable. "
-                 "Defaults to the company RUC plus every tracked supplier.",
+            help="Check only these RUCs. Repeatable. Defaults to every "
+                 "registered company plus every tracked supplier.",
         )
         parser.add_argument(
             "--max-age-days", type=int, default=DEFAULT_MAX_AGE_DAYS,
@@ -34,7 +34,7 @@ class Command(BaseCommand):
         rucs = options["rucs"] or monitored_rucs()
         if not rucs:
             raise CommandError(
-                "No RUCs to check. Register suppliers or set SUNAT_RUC in .env."
+                "No RUCs to check. Register a company or track suppliers first."
             )
 
         self.stdout.write(f"Checking {len(rucs)} RUC(s) in REMYPE ...")

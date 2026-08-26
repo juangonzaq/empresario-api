@@ -97,7 +97,12 @@ class SunafilClient:
             )
             login_url = redirect.headers.get("Location")
             if not login_url:
-                raise SunafilLoginError("SUNAT did not return a login URL.")
+                # Fallo del portal, no de la clave: no debe marcar la
+                # credencial como rechazada.
+                raise SunafilError(
+                    "SUNAT no devolvió la página de ingreso a SUNAFIL; "
+                    "suele ser temporal."
+                )
             self.session.get(login_url, timeout=self.timeout)
 
             query = parse_qs(urlparse(login_url).query)
@@ -112,13 +117,25 @@ class SunafilClient:
                 "lang": query.get("lang", ["es-PE"])[0],
                 "state": query.get("state", [""])[0],
             }, headers={"Referer": login_url}, timeout=self.timeout)
+        except requests.Timeout as exc:
+            # El detalle técnico («HTTPSConnectionPool… read timeout») acababa
+            # tal cual en la pantalla del usuario. Un portal que no responde
+            # es un problema del portal, no de las credenciales.
+            raise SunafilError(
+                "SUNAFIL no respondió a tiempo. El portal se satura a ratos; "
+                "reintenta en unos minutos."
+            ) from exc
         except requests.RequestException as exc:
-            raise SunafilLoginError(f"SUNAFIL login failed: {exc}") from exc
+            raise SunafilError(
+                "No se pudo conectar con SUNAFIL "
+                f"({exc.__class__.__name__}). Reintenta en unos minutos."
+            ) from exc
 
         if LANDING_PATH not in result.url:
             raise SunafilLoginError(
-                "Login did not reach the casilla. Check the SOL credentials, or "
-                "whether SUNAT is showing a captcha after failed attempts."
+                "SUNAT no aceptó el ingreso con la clave SOL. Revisa las "
+                "credenciales; tras varios intentos fallidos SUNAT puede "
+                "además pedir un captcha."
             )
         self.logged_in = True
         logger.info("SUNAFIL casilla login succeeded for %s", self.taxpayer_id)
@@ -128,7 +145,11 @@ class SunafilClient:
         def read(name: str) -> str:
             match = re.search(rf'var {name}\s*=\s*[\'"]([^\'"]+)[\'"]', page)
             if not match:
-                raise SunafilLoginError(f"Could not read {name} from the entry page.")
+                # La página de entrada cambió: portal, no credenciales.
+                raise SunafilError(
+                    f"El portal de SUNAFIL cambió su página de ingreso "
+                    f"(no se encontró «{name}»)."
+                )
             return match.group(1)
 
         client_id = read("cid")

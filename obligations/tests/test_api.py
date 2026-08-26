@@ -39,7 +39,20 @@ class ComplianceApiTests(APITestCase):
         self.assertTrue(all(r["domain"] == "LABOR" for r in res.data["results"]))
         self.assertGreater(res.data["count"], 0)
 
+    def _declare_premises(self):
+        """Las reglas municipales ahora piden saber si hay local físico; sin la
+        respuesta quedan «por determinar» y ni la evidencia ni el flujo humano
+        las tocan. Se declara el hecho como lo haría la persona en su perfil."""
+        from accounts.models import BusinessProfile
+        from django.utils import timezone
+
+        BusinessProfile.objects.update_or_create(
+            organization=self.org,
+            defaults={"has_premises": True, "completed_at": timezone.now()},
+        )
+
     def test_completing_via_patch_marks_compliant(self):
+        self._declare_premises()
         self.client.get(reverse("obligations:overview"))
         ob = CompanyObligation.objects.get(account_ruc=self.org.ruc, rule__code="muni-license")
         res = self.client.patch(
@@ -50,6 +63,7 @@ class ComplianceApiTests(APITestCase):
         self.assertEqual(res.data["compliance_status"], enums.ComplianceStatus.COMPLIANT)
 
     def test_adding_evidence_confirms_the_obligation(self):
+        self._declare_premises()
         self.client.get(reverse("obligations:overview"))
         ob = CompanyObligation.objects.get(account_ruc=self.org.ruc, rule__code="muni-itse")
         res = self.client.post(

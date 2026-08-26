@@ -12,7 +12,8 @@ prefijo `/api/compliance/` ya lo usa `compliance_profile`).
 ## Modelo
 
 Catálogo global (versionado, mismo para todas las empresas):
-- `ComplianceDomain` — áreas (TAX, LABOR, CORPORATE, DATA_PROTECTION, MUNICIPAL).
+- `ComplianceDomain` — áreas (TAX, LABOR, CORPORATE, DATA_PROTECTION, MUNICIPAL,
+  CONSUMER).
 - `ComplianceRule` — cada obligación/control. `applicability` es JSON declarativo
   (`{"all"|"any": [{field, operator, value}]}`, sin código en BD); la lógica dura
   vive tras un `evaluator_key` en un registro controlado (`services/evaluators.py`).
@@ -32,13 +33,25 @@ Por empresa (`account_ruc`):
 `context.build_context(org)` arma una foto de solo lectura desde los modelos
 existentes: `Organization.tax_regime`, `RucSnapshot` (worker_count, señales de
 riesgo, actividades), conteo `Colaborador.is_active`, `DeclaredSummary`,
-`ConsistencyScore`, `ComplianceRating` (categoría A–E). `applicability` la evalúa
-declarativamente; `engine.evaluate_company(org)` recorre el catálogo, decide
-aplicabilidad, corre el evaluador, superpone evidencia y decisión humana
-(precedencia creciente), hace upsert y anexa un assessment solo cuando el
-veredicto cambia. Cuando no hay datos, el veredicto es UNKNOWN/UNVERIFIED con una
-razón honesta — nunca un check que no se puede sustentar, nunca una brecha
-presentada como evasión.
+`ConsistencyScore`, `ComplianceRating` (categoría A–E). Un hecho que la
+plataforma no conoce entra al contexto como `None`, nunca como `""`/`0`.
+
+**La aplicabilidad es ternaria** (idea central tomada de la matriz de
+responsabilidades, `matriz_responsabilidades_empresariales_peru.md`):
+`evaluate_applicability` devuelve True/False/None con lógica de Kleene
+(`false AND unknown = false`, `true OR unknown = true`). Ausencia de dato →
+`ApplicabilityStatus.UNKNOWN` («Por determinar») más la pregunta pendiente
+(`FIELD_QUESTION`); **nunca** un «no te aplica» concluido del silencio. Solo un
+hecho explícito produce NOT_APPLICABLE. Hechos declarados: los tri-estados del
+`BusinessProfile` (`sells_to_consumers`, `has_premises`, `sells_online`) y
+`worker_count` (planilla propia → ficha RUC → perfil completado; sin ninguna
+fuente es desconocido). `company.is_juridical` sale del prefijo del RUC (20…).
+
+`engine.evaluate_company(org)` recorre el catálogo, decide aplicabilidad, corre
+el evaluador, superpone evidencia y decisión humana (precedencia creciente),
+hace upsert y anexa un assessment solo cuando el veredicto cambia. Cuando no hay
+datos, el veredicto es UNKNOWN/UNVERIFIED con una razón honesta — nunca un check
+que no se puede sustentar, nunca una brecha presentada como evasión.
 
 Evaluadores automáticos hoy: `tax_monthly_declaration` (¿está el periodo en tus
 `DeclaredSummary`?), `consistency_control` (lee `ConsistencyScore`),
@@ -87,5 +100,8 @@ en vez de duplicarlos.
 - Enganchar `recalculate_company` en `on_commit` de las apps fuente y una beat
   diaria para `snapshot_all`.
 
-El catálogo semilla (`migrations/0002_seed_catalog.py`) es un punto de partida de
-15 obligaciones PYME-PE, no el universo completo.
+El catálogo (`migrations/0002_seed_catalog.py` + `0005_matrix_catalog.py`) trae
+26 obligaciones PYME-PE en 6 dominios — umbrales laborales (RIT >100, cuota de
+discapacidad >50), contribuciones por sector (SENCICO, SENATI), bancarización y
+el Libro de Reclamaciones físico/virtual —, no el universo completo. Tras tocar
+el catálogo, regenera `fixtures/datos_generales.json` con el mismo `dumpdata`.

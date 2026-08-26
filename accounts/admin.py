@@ -1,26 +1,117 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from billing.models import Referral, ReferralReward
 from .models import (
-    BusinessProfile, Invitation, Membership, Organization, SunatCredential, User,
+    BusinessProfile, Invitation, Membership, OneTimeToken, Organization,
+    SunatAuthorization, SunatCredential, User,
 )
+
+
+class SoloLecturaInline(admin.TabularInline):
+    """Historial que escribe el sistema: se consulta, no se edita a mano."""
+
+    extra = 0
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class MembershipUserInline(admin.TabularInline):
+    model = Membership
+    fk_name = "user"
+    verbose_name = "empresa"
+    verbose_name_plural = "Empresas (membresías)"
+    extra = 0
+    fields = ("organization", "role", "is_active", "invited_by", "created_at")
+    readonly_fields = ("created_at",)
+    autocomplete_fields = ("organization", "invited_by")
+    show_change_link = True
+
+
+class OneTimeTokenInline(SoloLecturaInline):
+    model = OneTimeToken
+    verbose_name_plural = "Tokens de verificación y recuperación"
+    fields = ("purpose", "token", "created_at", "expires_at", "used_at", "vigente")
+    readonly_fields = fields
+
+    @admin.display(boolean=True, description="vigente")
+    def vigente(self, token: OneTimeToken) -> bool:
+        return token.is_usable
+
+
+class SunatAuthorizationUserInline(SoloLecturaInline):
+    model = SunatAuthorization
+    fk_name = "user"
+    verbose_name_plural = "Autorizaciones SUNAT aceptadas"
+    fields = ("organization", "sol_username", "version", "accepted_at",
+              "ip_address", "revoked_at")
+    readonly_fields = fields
+
+
+class ReferralInline(SoloLecturaInline):
+    model = Referral
+    fk_name = "referrer"
+    verbose_name_plural = "Referidos que trajo"
+    fields = ("referred", "created_at", "converted_at")
+    readonly_fields = fields
+
+
+class ReferralRewardInline(SoloLecturaInline):
+    model = ReferralReward
+    verbose_name_plural = "Premios por referidos"
+    fields = ("days", "conversions_at_grant", "applied_to", "applied_at", "created_at")
+    readonly_fields = fields
+
+
+class VerificadoFilter(admin.SimpleListFilter):
+    """`email_verified_at` es una fecha; para filtrar lo que importa es si existe."""
+
+    title = "correo verificado"
+    parameter_name = "verificado"
+
+    def lookups(self, request, model_admin):
+        return (("si", "Sí"), ("no", "No"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "si":
+            return queryset.filter(email_verified_at__isnull=False)
+        if self.value() == "no":
+            return queryset.filter(email_verified_at__isnull=True)
+        return queryset
 
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     ordering = ("email",)
-    list_display = ("email", "first_name", "last_name", "companies_summary",
-                    "extra_company_seats", "email_verified_at", "is_staff")
-    list_filter = ("is_staff", "is_superuser", "is_active")
+    list_display = ("email", "nombre", "phone", "companies_summary",
+                    "extra_company_seats", "verificado", "is_active", "is_staff",
+                    "created_at", "last_login")
+    list_filter = (VerificadoFilter, "is_active", "is_staff", "is_superuser",
+                   "memberships__role", "created_at")
     list_editable = ("extra_company_seats",)
-    search_fields = ("email", "first_name", "last_name")
-    readonly_fields = ("last_login", "created_at", "updated_at", "companies_summary")
+    date_hierarchy = "created_at"
+    # Por empresa también: «¿quiénes entran a la empresa con RUC …?» se
+    # responde buscando el RUC o la razón social aquí mismo.
+    search_fields = ("email", "first_name", "last_name", "phone", "referral_code",
+                     "memberships__organization__ruc",
+                     "memberships__organization__name")
+    readonly_fields = ("last_login", "created_at", "updated_at",
+                       "companies_summary", "referral_code")
+    autocomplete_fields = ("referred_by",)
+    inlines = [MembershipUserInline, SunatAuthorizationUserInline,
+               ReferralInline, ReferralRewardInline, OneTimeTokenInline]
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Datos", {"fields": ("first_name", "last_name", "phone")}),
         # Asientos de empresa: los que incluye el plan del titular más estos
         # extra que le otorgas. `companies_summary` muestra el uso actual.
         ("Empresas y asientos", {"fields": ("extra_company_seats", "companies_summary")}),
+        ("Referidos", {"fields": ("referral_code", "referred_by")}),
         ("Estado", {"fields": ("is_active", "email_verified_at")}),
         ("Permisos", {"fields": ("is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Fechas", {"fields": ("last_login", "created_at", "updated_at")}),
@@ -31,6 +122,20 @@ class UserAdmin(DjangoUserAdmin):
             "fields": ("email", "password1", "password2"),
         }),
     )
+
+    def get_search_results(self, request, queryset, search_term):
+        # Buscar por empresa recorre memberships (un join uno-a-muchos):
+        # sin distinct, un usuario con varias empresas saldría repetido.
+        queryset, _ = super().get_search_results(request, queryset, search_term)
+        return queryset.distinct(), False
+
+    @admin.display(description="Nombre", ordering="first_name")
+    def nombre(self, user: User) -> str:
+        return user.full_name or "—"
+
+    @admin.display(boolean=True, description="Verificado", ordering="email_verified_at")
+    def verificado(self, user: User) -> bool:
+        return user.email_verified
 
     @admin.display(description="Empresas (uso / tope)")
     def companies_summary(self, user: User) -> str:
@@ -93,9 +198,6 @@ class SunatCredentialAdmin(admin.ModelAdmin):
     search_fields = ("organization__ruc", "sol_username")
     exclude = ("encrypted_password",)
     readonly_fields = ("last_verified_at", "last_error", "connected_by")
-
-
-from .models import SunatAuthorization  # noqa: E402
 
 
 @admin.register(SunatAuthorization)

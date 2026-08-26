@@ -84,12 +84,23 @@ class Portal:
             raise client.SesionCaducada(
                 "La sesión de AFPnet caducó por inactividad. Vuelve a iniciarla."
             )
-        client.comprobar_abierto(respuesta.text)
-        if client.MARCA_LOGIN in respuesta.text:
+        self._comprobar_utilizable(respuesta.text)
+        return respuesta.text
+
+    @staticmethod
+    def _comprobar_utilizable(html: str) -> None:
+        """Corta si la respuesta no es una pantalla de trabajo: portal en
+        mantenimiento, sesión de vuelta al login, o contraseña vencida (AFPnet
+        bloquea todo con su formulario de cambio de clave). Parsear cualquiera
+        de esas como si fuera la pantalla pedida producía «no encontrado»
+        falsos."""
+        client.comprobar_abierto(html)
+        if client.MARCA_LOGIN in html:
             raise client.SesionCaducada(
                 "La sesión de AFPnet caducó. Hay que volver a iniciarla."
             )
-        return respuesta.text
+        if client.MARCA_CAMBIO_CLAVE in html:
+            raise client.SesionCaducada(client.MENSAJE_CAMBIO_CLAVE)
 
     def _token(self, ruta: str) -> str:
         """El token antifalsificación de una página, pidiéndola si hace falta."""
@@ -136,7 +147,7 @@ class Portal:
             respuesta.raise_for_status()
         except requests.RequestException as exc:
             raise PortalError(f"Falló la consulta {ruta}: {exc}") from exc
-        client.comprobar_abierto(respuesta.text)
+        self._comprobar_utilizable(respuesta.text)
         return respuesta.text
 
     # ── Consultas ─────────────────────────────────────────────────────────

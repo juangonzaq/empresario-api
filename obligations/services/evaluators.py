@@ -127,6 +127,12 @@ def payroll_registration(ctx: CompanyContext, rule) -> Verdict:
 def risk_signals_clear(ctx: CompanyContext, rule) -> Verdict:
     """Preventive: does the ficha RUC show risk signals (deuda coactiva,
     omisiones)? Read straight from the latest snapshot."""
+    if not ctx.has_snapshot:
+        return Verdict(
+            compliance_status=enums.ComplianceStatus.UNKNOWN,
+            verification_status=enums.VerificationStatus.UNVERIFIED,
+            reason="Aún no tenemos tu ficha RUC sincronizada para revisar señales de riesgo.",
+        )
     if ctx.get("company.has_coactive_debt") or ctx.get("company.has_tax_omissions"):
         return Verdict(
             compliance_status=enums.ComplianceStatus.NON_COMPLIANT,

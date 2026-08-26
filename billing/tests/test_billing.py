@@ -165,7 +165,7 @@ class ReferidosTests(APITestCase):
         self.assertEqual(Subscription.objects.get(organization__ruc="20604442533").bonus_days, 30)
 
 
-@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe")
+@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="")
 class MercadoPagoTests(APITestCase):
     def setUp(self):
         self.ana = make_user("ana@uno.pe")
@@ -176,6 +176,7 @@ class MercadoPagoTests(APITestCase):
         # Plan de pago único: va por Checkout Pro (preferencia), no por suscripción.
         Plan.objects.filter(code="mensual").update(recurring=False)
         class Resp:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "pref-1", "init_point": "https://www.mercadopago.com.pe/checkout/v1/redirect?pref_id=pref-1"}
         with patch("billing.gateways.requests.post", return_value=Resp()) as post:
@@ -191,6 +192,7 @@ class MercadoPagoTests(APITestCase):
     def test_sin_api_public_url_las_urls_salen_del_origen_de_la_peticion(self):
         Plan.objects.filter(code="mensual").update(recurring=False)
         class Resp:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "pref-2", "init_point": "https://mp/x"}
         with patch("billing.gateways.requests.post", return_value=Resp()) as post:
@@ -208,6 +210,7 @@ class MercadoPagoTests(APITestCase):
             amount=99.90, gateway="mercadopago", created_by=self.ana,
         )
         class Resp:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": 777, "status": "approved", "external_reference": str(pago.pk)}
         self.client.force_authenticate(None)
@@ -254,7 +257,7 @@ class RecurrenteFakeTests(APITestCase):
         self.assertEqual(self.client.get(reverse("sync:status")).status_code, 200)
 
 
-@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe")
+@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", API_PUBLIC_URL="https://api.empresario.pe", FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="")
 class MercadoPagoRecurrenteTests(APITestCase):
     def setUp(self):
         self.ana = make_user("ana@uno.pe")
@@ -263,6 +266,7 @@ class MercadoPagoRecurrenteTests(APITestCase):
 
     def test_checkout_recurrente_crea_preapproval_y_devuelve_init_point(self):
         class Resp:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "pre-1", "status": "pending", "init_point": "https://www.mercadopago.com.pe/subscriptions/checkout?preapproval_id=pre-1"}
         with patch("billing.gateways.requests.post", return_value=Resp()) as post:
@@ -282,6 +286,7 @@ class MercadoPagoRecurrenteTests(APITestCase):
 
     def test_el_anual_cobra_cada_doce_meses(self):
         class Resp:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "pre-2", "status": "pending", "init_point": "https://mp/x"}
         with patch("billing.gateways.requests.post", return_value=Resp()) as post:
@@ -299,6 +304,7 @@ class MercadoPagoRecurrenteTests(APITestCase):
         sub, setup = self._con_preapproval()
         self.client.force_authenticate(None)
         class Pre:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "pre-1", "status": "authorized", "external_reference": str(sub.pk), "next_payment_date": "2026-09-23T12:00:00.000-04:00"}
         with patch("billing.gateways.requests.get", return_value=Pre()):
@@ -308,6 +314,7 @@ class MercadoPagoRecurrenteTests(APITestCase):
         self.assertIsNotNone(sub.next_charge_at)
         # primer cobro: llega como pago con external_reference = suscripción
         class Pay:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": 9001, "status": "approved", "external_reference": str(sub.pk), "transaction_amount": 99.9, "currency_id": "PEN", "metadata": {"preapproval_id": "pre-1"}}
         with patch("billing.gateways.requests.get", return_value=Pay()):
@@ -319,6 +326,7 @@ class MercadoPagoRecurrenteTests(APITestCase):
         fin1 = sub.current_period_end
         # segundo cobro (mes siguiente): nuevo pago y periodo extendido
         class Pay2:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "ap-1", "preapproval_id": "pre-1", "status": "processed", "transaction_amount": 99.9, "currency_id": "PEN", "payment": {"id": 9002, "status": "approved"}}
         with patch("billing.gateways.requests.get", return_value=Pay2()):
@@ -334,6 +342,7 @@ class MercadoPagoRecurrenteTests(APITestCase):
         sub, _ = self._con_preapproval()
         sub.auto_renew = True; sub.save()
         class Resp:
+            status_code = 200
             def raise_for_status(self): pass
             def json(self): return {"id": "pre-1", "status": "cancelled"}
         with patch("billing.gateways.requests.put", return_value=Resp()) as put:
@@ -396,3 +405,115 @@ class CorreosTests(APITestCase):
         self.assertIn("/verificar-correo?token=", m.body)
         html = m.alternatives[0][0]
         self.assertIn("Confirmar mi correo", html); self.assertIn("/verificar-correo?token=", html)
+
+
+@override_settings(BILLING_GATEWAY="", DEBUG=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class SinPasarelaTests(APITestCase):
+    """Sin credenciales de cobro no se puede pagar, ni en desarrollo.
+
+    Caso real: con DEBUG y sin token, `fake` se activaba sola; un clic en
+    «Continuar» dejaba el plan activo y mandaba el correo de bienvenida sin
+    que nadie hubiera levantado una pasarela.
+    """
+
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+
+    def test_el_checkout_se_rechaza_sin_crear_pago_ni_correo(self):
+        from django.core import mail
+        from billing.models import Payment
+
+        r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+
+        self.assertEqual(r.status_code, 503, r.data)
+        self.assertIn("no están habilitados", r.data["detail"])
+        self.assertEqual(Payment.objects.count(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+        sub = Subscription.objects.get(organization=self.org)
+        self.assertEqual(sub.status, "trialing")
+
+    def test_la_pantalla_sabe_que_no_hay_pasarela(self):
+        r = self.client.get(reverse("billing:subscription"))
+        self.assertEqual(r.data["gateway"], "none")
+
+    @override_settings(BILLING_GATEWAY="fake", DEBUG=False)
+    def test_fake_fuera_de_debug_no_existe(self):
+        r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 503)
+
+    @override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="", MERCADOPAGO_TEST_PAYER_EMAIL="")
+    def test_mercadopago_sin_token_no_procede(self):
+        r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 503)
+
+
+@override_settings(BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="TEST-token", FRONTEND_URL="http://localhost:3000", MERCADOPAGO_TEST_PAYER_EMAIL="")
+class MercadoPagoDesdeLocalhostTests(APITestCase):
+    """Mercado Pago rechaza URLs de retorno que no sean públicas. Se explica
+    antes de llamar, en vez de devolver un 502 con «400 Bad Request»."""
+
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+
+    def test_explica_que_hace_falta_el_tunel(self):
+        from billing.models import Payment
+
+        r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 503, r.data)
+        self.assertIn("túnel", r.data["detail"])
+        self.assertEqual(Payment.objects.count(), 1)  # el pago queda como rastro, sin aprobar
+        self.assertEqual(Payment.objects.get().status, "pending")
+
+
+@override_settings(
+    BILLING_GATEWAY="mercadopago", MERCADOPAGO_ACCESS_TOKEN="APP_USR-vendedor-de-prueba",
+    FRONTEND_URL="https://app.empresario.pe", MERCADOPAGO_TEST_PAYER_EMAIL="",
+)
+class VendedorDePruebaTests(APITestCase):
+    """Con un vendedor de prueba, el pagador debe ser un comprador de prueba.
+
+    Caso real: «Both payer and collector must be real or test users» al mandar
+    el correo del usuario de Empresario con el token de un test_user.
+    """
+
+    def setUp(self):
+        self.ana = make_user("ana@uno.pe")
+        self.org = make_org("20100000001", self.ana)
+        self.client.force_authenticate(self.ana)
+        from billing import gateways
+        gateways._COLLECTOR_ES_DE_PRUEBA.clear()
+
+    class Me:
+        status_code = 200
+        def json(self): return {"id": 1, "tags": ["test_user", "user_product_seller"]}
+
+    def test_sin_correo_de_comprador_de_prueba_se_explica(self):
+        with patch("billing.gateways.requests.get", return_value=self.Me()):
+            r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 503, r.data)
+        self.assertIn("MERCADOPAGO_TEST_PAYER_EMAIL", r.data["detail"])
+
+    @override_settings(MERCADOPAGO_TEST_PAYER_EMAIL="test_user_9@testuser.com")
+    def test_con_correo_de_comprador_de_prueba_se_usa_ese(self):
+        class Resp:
+            status_code = 200
+            def json(self): return {"id": "pre-9", "status": "pending", "init_point": "https://www.mercadopago.com.pe/subscriptions/checkout?preapproval_id=pre-9"}
+        with patch("billing.gateways.requests.get", return_value=self.Me()), \
+                patch("billing.gateways.requests.post", return_value=Resp()) as post:
+            r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(post.call_args.kwargs["json"]["payer_email"], "test_user_9@testuser.com")
+
+
+class NormalizarCorreoDePruebaTests(APITestCase):
+    def test_usuario_o_comillas_se_convierten_al_correo(self):
+        from billing.gateways import _normalizar_correo_de_prueba as n
+
+        self.assertEqual(n('"TESTUSER9054147675332198239"'), "test_user_9054147675332198239@testuser.com")
+        self.assertEqual(n("testuser12"), "test_user_12@testuser.com")
+        self.assertEqual(n(" test_user_1@testuser.com "), "test_user_1@testuser.com")
+        self.assertEqual(n(""), "")

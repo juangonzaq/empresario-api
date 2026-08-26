@@ -142,6 +142,7 @@ def build_overview(organization, *, force: bool = False) -> dict:
             "unverified": counts["unverified"],
             "overdue": counts["overdue"],
             "not_applicable": counts["not_applicable"],
+            "undetermined": counts["undetermined"],
             "sunat_category": _sunat_category(ruc),
             "last_evaluated_at": last_evaluated,
         },

@@ -205,8 +205,12 @@ class ApiTests(TenantAPITestCase):
         response = self.client.patch(url, {"status": "otro"}, format="json")
         self.assertEqual(response.status_code, 400)
 
-    @patch("sunat_intel.services.ask.llm.structured_messages")
-    def test_ask_returns_answer_with_sources_and_persists_history(self, mock_llm):
+    @patch("sunat_intel.services.ask.analyzer.analyze_pending",
+           return_value={"analyzed": 0, "failed": 0})
+    @patch("sunat_intel.services.ask.llm.structured_with_tools")
+    def test_ask_returns_answer_with_sources_and_persists_history(
+        self, mock_llm, _mock_analyze,
+    ):
         mock_llm.return_value = {
             "answer": "Tienes una multa activa.",
             "sources": [{"kind": "case", "id": str(self.case.id), "label": "Multa"}],
@@ -234,8 +238,10 @@ class ApiTests(TenantAPITestCase):
         self.assertEqual(replayed[1]["content"], "¿Qué multas hay?")
         self.assertEqual(replayed[2]["role"], "assistant")
 
-    @patch("sunat_intel.services.ask.llm.structured_messages")
-    def test_failed_ask_does_not_pollute_history(self, mock_llm):
+    @patch("sunat_intel.services.ask.analyzer.analyze_pending",
+           return_value={"analyzed": 0, "failed": 0})
+    @patch("sunat_intel.services.ask.llm.structured_with_tools")
+    def test_failed_ask_does_not_pollute_history(self, mock_llm, _mock_analyze):
         mock_llm.side_effect = RuntimeError("boom")
         response = self.client.post(
             reverse("sunat_intel:ask"), {"question": "hola"}, format="json"
@@ -258,3 +264,76 @@ class ApiTests(TenantAPITestCase):
     def test_ask_requires_question(self):
         response = self.client.post(reverse("sunat_intel:ask"), {}, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class ConsultasTests(TenantAPITestCase):
+    """Las consultas que el asistente ejecuta según la pregunta."""
+
+    def _doc(self, **overrides):
+        from decimal import Decimal as D
+
+        from sunat_cpe.models import Direction, DocumentClass, ElectronicInvoice
+
+        defaults = {
+            "account_ruc": TAXPAYER_ID,
+            "direction": Direction.ISSUED,
+            "document_class": DocumentClass.INVOICE,
+            "document_type": "10",
+            "issuer_ruc": TAXPAYER_ID,
+            "series": "E001",
+            "number": str(ConsultasTests._n),
+            "full_number": f"E001-{ConsultasTests._n}",
+            "period": "202601",
+            "currency": "PEN",
+            "total_amount": D("1000.00"),
+            "receiver_ruc": "20100000001",
+            "receiver_name": "CLIENTE UNO S.A.C.",
+        }
+        ConsultasTests._n += 1
+        return ElectronicInvoice.objects.create(**{**defaults, **overrides})
+
+    _n = 1
+
+    def test_ventas_por_mes_resta_notas_y_separa_monedas(self):
+        from decimal import Decimal as D
+
+        from sunat_cpe.models import DocumentClass
+        from sunat_intel.services import consultas
+
+        self._doc(period="202601", total_amount=D("1000.00"))
+        self._doc(period="202601", total_amount=D("200.00"),
+                  document_class=DocumentClass.CREDIT_NOTE)
+        self._doc(period="202601", total_amount=D("50.00"), currency="USD")
+        # Otra empresa: jamás debe aparecer.
+        self._doc(period="202601", account_ruc="20999999999",
+                  total_amount=D("7777.00"))
+
+        data = consultas.ventas_por_mes(TAXPAYER_ID, "202601", "202601")
+        por_moneda = {m["moneda"]: m for m in data["meses"]}
+        self.assertEqual(por_moneda["PEN"]["neto"], "800.00")
+        self.assertEqual(por_moneda["USD"]["neto"], "50.00")
+        self.assertNotIn("7777.00", str(data))
+
+    def test_rango_invalido_y_tope(self):
+        from sunat_intel.services import consultas
+
+        with self.assertRaises(ValueError):
+            consultas.ventas_por_mes(TAXPAYER_ID, "2026", "202601")
+        with self.assertRaises(ValueError):
+            consultas.ventas_por_mes(TAXPAYER_ID, "202001", "202612")  # > 36 meses
+
+    def test_top_contrapartes(self):
+        from decimal import Decimal as D
+
+        from sunat_intel.services import consultas
+
+        self._doc(period="202602", total_amount=D("300.00"),
+                  receiver_name="CLIENTE A")
+        self._doc(period="202602", total_amount=D("900.00"),
+                  receiver_name="CLIENTE B")
+
+        data = consultas.top_contrapartes(
+            TAXPAYER_ID, "ventas", "202602", "202602", limite=1
+        )
+        self.assertEqual(data["contrapartes"][0]["nombre"], "CLIENTE B")
+        self.assertEqual(data["contrapartes"][0]["neto"], "900.00")

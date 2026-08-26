@@ -1,22 +1,20 @@
 """Crea (o actualiza) una cuenta con su empresa y sus credenciales SUNAT.
 
 Pensado para dar de alta la cuenta propia y para soporte, no para el alta
-normal de clientes —esa pasa por el registro de la aplicación—. Las
-credenciales SOL pueden venir del ``.env``, que es de donde salían cuando el
-proyecto servía a una sola empresa.
+normal de clientes —esa pasa por el registro de la aplicación—.
 
-    python manage.py crear_cuenta --email juancarlos@pattern.pe --desde-env
+    python manage.py crear_cuenta --email juancarlos@pattern.pe --ruc 20...
 
 La clave SOL se guarda cifrada, igual que si la hubiera escrito el usuario en
-la pantalla de conexión.
+la pantalla de conexión. No hay credenciales en el entorno de donde tomarlas:
+cada empresa tiene las suyas.
 """
 
 from __future__ import annotations
 
 import secrets
 
-from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
@@ -33,12 +31,8 @@ class Command(BaseCommand):
         parser.add_argument("--password", help="Si se omite, se genera una.")
         parser.add_argument("--nombres", default="")
         parser.add_argument("--apellidos", default="")
-        parser.add_argument("--ruc", help="Por defecto, SUNAT_RUC del entorno.")
+        parser.add_argument("--ruc", required=True)
         parser.add_argument("--razon-social", default="")
-        parser.add_argument(
-            "--desde-env", action="store_true",
-            help="Toma usuario y clave SOL de SUNAT_USER / SUNAT_PASS.",
-        )
         parser.add_argument("--sol-usuario")
         parser.add_argument("--sol-clave")
         parser.add_argument(
@@ -49,9 +43,7 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         email = options["email"].strip().lower()
-        ruc = (options["ruc"] or settings.SUNAT_RUC or "").strip()
-        if not ruc:
-            raise CommandError("Indica --ruc o define SUNAT_RUC en el entorno.")
+        ruc = options["ruc"].strip()
 
         password = options["password"] or secrets.token_urlsafe(12)
         user, created = User.objects.get_or_create(
@@ -79,10 +71,6 @@ class Command(BaseCommand):
 
         sol_user = options["sol_usuario"]
         sol_pass = options["sol_clave"]
-        if options["desde_env"]:
-            sol_user = sol_user or settings.SUNAT_USER
-            sol_pass = sol_pass or settings.SUNAT_PASS
-
         if sol_user and sol_pass:
             credential, _ = SunatCredential.objects.get_or_create(
                 organization=organization, defaults={"sol_username": sol_user}

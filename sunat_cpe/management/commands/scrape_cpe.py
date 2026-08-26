@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from sunat_cpe.models import ElectronicInvoice
 from sunat_cpe.services import CpePortalClient, CpePortalError, CpeSynchronizer
 from sunat_cpe.services.constants import ALL_TIPOS
 from sunat_cpe.services.parsing import current_period, recent_periods
+from sync.cli import add_sol_arguments, sol_credentials
 
 
 class Command(BaseCommand):
@@ -20,9 +20,7 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser) -> None:
-        parser.add_argument("--taxpayer-id", default=settings.SUNAT_RUC, help="RUC")
-        parser.add_argument("--username", default=settings.SUNAT_USER)
-        parser.add_argument("--password", default=settings.SUNAT_PASS)
+        add_sol_arguments(parser)
         parser.add_argument(
             "--window", type=int, default=2,
             help="Daily mode: current month plus N earlier months (default 2).",
@@ -46,21 +44,16 @@ class Command(BaseCommand):
         parser.add_argument("--headful", action="store_true")
 
     def handle(self, *args: Any, **options: Any) -> None:
-        creds = (options["taxpayer_id"], options["username"], options["password"])
-        if not all(creds):
-            raise CommandError(
-                "Missing credentials. Set SUNAT_RUC, SUNAT_USER and SUNAT_PASS in .env "
-                "or pass --taxpayer-id/--username/--password."
-            )
+        creds = sol_credentials(options)
         tipos = tuple(t.strip() for t in options["types"].split(",") if t.strip())
 
         client = CpePortalClient(
-            taxpayer_id=options["taxpayer_id"],
-            username=options["username"],
-            password=options["password"],
+            taxpayer_id=creds.ruc,
+            username=creds.username,
+            password=creds.password,
             headless=not options["headful"],
         )
-        self.stdout.write(f"Authenticating {options['taxpayer_id']}/{options['username']} ...")
+        self.stdout.write(f"Authenticating {creds.ruc}/{creds.username} ...")
         try:
             client.login()
             self.stdout.write(self.style.SUCCESS("Login OK, CPE consulta reached"))
@@ -79,5 +72,5 @@ class Command(BaseCommand):
         except CpePortalError as exc:
             raise CommandError(str(exc)) from exc
 
-        stored = ElectronicInvoice.objects.for_account(options["taxpayer_id"]).count()
+        stored = ElectronicInvoice.objects.for_account(creds.ruc).count()
         self.stdout.write(self.style.SUCCESS(f"Done: {result} ({stored} stored in total)"))

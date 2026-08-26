@@ -17,7 +17,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
-    Membership, Organization, Role, SunatCredential, User, validate_ruc,
+    Membership, Organization, Role, SunatCredential, TaxRegime, User, validate_ruc,
 )
 
 
@@ -39,9 +39,20 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "email", "created_at")
 
 
+def _password_field() -> serializers.CharField:
+    """Contraseña nueva, con el mensaje en el tono del producto: el genérico
+    de DRF («Asegúrese de que este campo…») ni tutea ni dice qué campo es."""
+    return serializers.CharField(
+        write_only=True, min_length=8,
+        error_messages={
+            "min_length": "La contraseña debe tener al menos 8 caracteres.",
+        },
+    )
+
+
 class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = _password_field()
     first_name = serializers.CharField(max_length=80, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=80, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
@@ -104,7 +115,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
     token = serializers.CharField()
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = _password_field()
 
     def validate_password(self, value: str) -> str:
         validate_password(value)
@@ -113,7 +124,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class PasswordChangeSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = _password_field()
 
     def validate_current_password(self, value: str) -> str:
         if not self.context["request"].user.check_password(value):
@@ -162,6 +173,12 @@ class OrganizationCreateSerializer(serializers.Serializer):
     ruc = serializers.CharField(max_length=11, validators=[validate_ruc])
     name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     trade_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    # Régimen declarado al registrar. Opcional: si el usuario aún no lo sabe se
+    # deja en blanco y lo lee la sincronización de la Ficha RUC. Cuando lo
+    # declara, SUNAT sigue mandando y lo corrige al sincronizar.
+    tax_regime = serializers.ChoiceField(
+        choices=TaxRegime.choices, required=False, allow_blank=True,
+    )
 
     def validate_ruc(self, value: str) -> str:
         ruc = value.strip()
@@ -176,7 +193,17 @@ class OrganizationCreateSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated):
+        from django.utils import timezone
+
+        regime = (validated.pop("tax_regime", "") or "").strip()
         organization = Organization.objects.create(**validated)
+        if regime:
+            organization.tax_regime = regime
+            organization.tax_regime_source = Organization.RegimeSource.USUARIO
+            organization.tax_regime_checked_at = timezone.now()
+            organization.save(update_fields=[
+                "tax_regime", "tax_regime_source", "tax_regime_checked_at", "updated_at",
+            ])
         Membership.objects.create(
             user=self.context["request"].user,
             organization=organization,
@@ -268,7 +295,8 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
 
         model = BusinessProfile
         fields = ("offering", "sector", "primary_goal", "business_age",
-                  "people_count", "is_complete", "completed_at")
+                  "people_count", "sells_to_consumers", "has_premises",
+                  "sells_online", "is_complete", "completed_at")
         read_only_fields = ("is_complete", "completed_at")
 
     def validate_people_count(self, value: int) -> int:

@@ -23,13 +23,16 @@ class CompanyContext:
     flat: dict[str, Any]
     # Punteros de conveniencia que los evaluadores usan sin pasar por `flat`.
     tax_regime: str = ""
-    has_payroll: bool = False
+    has_payroll: bool | None = False
     active_employee_count: int = 0
     declared_periods: list[str] = dataclasses.field(default_factory=list)
     latest_declared_period: str | None = None
     consistency_score: int | None = None
     compliance_category: str = ""
     risk_signals: bool = False
+    # Sin ficha RUC sincronizada no sabemos nada de señales de riesgo: los
+    # evaluadores deben decir «sin determinar», nunca «cumple».
+    has_snapshot: bool = False
 
     def get(self, path: str) -> Any:
         """Resolve a dotted field path used in a rule's applicability JSON."""
@@ -85,22 +88,41 @@ def _compliance_category(ruc: str) -> str:
     return row.rating if row else ""
 
 
+def _worker_count(*, active_employees: int, declared_workers: int,
+                  people_count: int, headcount_known: bool) -> int | None:
+    """Headcount: la planilla propia manda; si no hay, la cifra declarada en la
+    ficha RUC (PLAME); y como última señal, lo que la empresa declaró en su
+    perfil (personas que trabajan con ella, más allá del titular). Si ninguna
+    fuente existe todavía, el conteo se desconoce: 0 significaría «sé que no
+    tienes trabajadores» y eso nadie lo ha afirmado."""
+    if not headcount_known:
+        return None
+    return active_employees or declared_workers or max(0, people_count - 1)
+
+
 def build_context(organization) -> CompanyContext:
-    """Assemble the context for one organization from the existing models."""
+    """Assemble the context for one organization from the existing models.
+
+    Un hecho que la plataforma no conoce entra como ``None``, nunca como "" o 0:
+    la aplicabilidad es ternaria y la ausencia de dato debe producir «por
+    determinar», no un falso «no te aplica» (regla central de la matriz de
+    responsabilidades)."""
     ruc = organization.ruc
     today = timezone.localdate()
 
     snapshot = _latest_snapshot(ruc)
     profile = getattr(organization, "business_profile", None)
+    profile_answered = profile is not None and profile.completed_at is not None
     active_employees = _active_employee_count(ruc)
-    # Headcount: la planilla propia manda; si no hay, la cifra declarada en la
-    # ficha RUC (PLAME); y como última señal, lo que la empresa declaró en su
-    # perfil (personas que trabajan con ella, más allá del titular).
-    declared_workers = getattr(snapshot, "worker_count", 0) or 0
     people_count = getattr(profile, "people_count", 0) or 0
-    people_beyond_owner = max(0, people_count - 1)
-    worker_count = active_employees or declared_workers or people_beyond_owner
-    has_payroll = worker_count > 0
+    declared_workers = getattr(snapshot, "worker_count", 0) or 0
+    worker_count = _worker_count(
+        active_employees=active_employees,
+        declared_workers=declared_workers,
+        people_count=people_count,
+        headcount_known=active_employees > 0 or snapshot is not None or profile_answered,
+    )
+    has_payroll: bool | None = None if worker_count is None else worker_count > 0
 
     declared_periods = _declared_periods(ruc)
     consistency_score = _consistency_score(ruc)
@@ -109,15 +131,20 @@ def build_context(organization) -> CompanyContext:
 
     flat: dict[str, Any] = {
         "company.ruc": ruc,
-        "company.tax_regime": organization.tax_regime or "",
+        # El prefijo del RUC sí es un hecho cierto: 20 = persona jurídica.
+        "company.is_juridical": ruc.startswith("20"),
+        "company.tax_regime": organization.tax_regime or None,
         "company.tax_regime_source": organization.tax_regime_source or "",
         "company.has_payroll": has_payroll,
         "company.worker_count": worker_count,
         "company.active_employee_count": active_employees,
-        # Perfil declarado del negocio (opcional): rubro y giro para reglas que
-        # dependen de qué hace la empresa, no solo de su régimen.
-        "company.sector": getattr(profile, "sector", "") or "",
-        "company.offering": getattr(profile, "offering", "") or "",
+        # Perfil declarado del negocio (opcional): rubro, giro y tres hechos
+        # tri-estado que abren o cierran ramas enteras del catálogo.
+        "company.sector": getattr(profile, "sector", "") or None,
+        "company.offering": getattr(profile, "offering", "") or None,
+        "company.sells_to_consumers": getattr(profile, "sells_to_consumers", None),
+        "company.has_premises": getattr(profile, "has_premises", None),
+        "company.sells_online": getattr(profile, "sells_online", None),
         "company.people_count": people_count,
         "company.business_age": getattr(profile, "business_age", "") or "",
         "company.declared_workers": declared_workers,
@@ -125,9 +152,16 @@ def build_context(organization) -> CompanyContext:
         "company.latest_declared_period": declared_periods[0] if declared_periods else None,
         "company.consistency_score": consistency_score,
         "company.compliance_category": compliance_category,
-        "company.has_risk_signals": risk_signals,
-        "company.has_coactive_debt": bool(getattr(snapshot, "has_coactive_debt", False)),
-        "company.has_tax_omissions": bool(getattr(snapshot, "has_tax_omissions", False)),
+        # Señales de la ficha RUC: sin snapshot son None (desconocidas), no
+        # False. «No hay dato» y «no hay deuda» son cosas distintas.
+        "company.has_ficha_ruc": snapshot is not None,
+        "company.has_risk_signals": risk_signals if snapshot is not None else None,
+        "company.has_coactive_debt": (
+            bool(snapshot.has_coactive_debt) if snapshot is not None else None
+        ),
+        "company.has_tax_omissions": (
+            bool(snapshot.has_tax_omissions) if snapshot is not None else None
+        ),
         # Puede venir como date desde la Ficha RUC; a texto para que el
         # input_snapshot sea JSON puro y portable.
         "company.started_activities_on": (
@@ -147,4 +181,5 @@ def build_context(organization) -> CompanyContext:
         consistency_score=consistency_score,
         compliance_category=compliance_category,
         risk_signals=risk_signals,
+        has_snapshot=snapshot is not None,
     )

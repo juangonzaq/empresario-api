@@ -157,7 +157,10 @@ class ExecuteStepTests(TestCase):
 
         job.refresh_from_db()
         self.assertEqual(job.steps[0]["status"], StepStatus.FAILED)
-        self.assertIn("no respondió", job.steps[0]["detail"])
+        # El texto crudo del error va al log; la persona ve una frase que
+        # explica y orienta.
+        self.assertIn("Vuelve a intentarlo", job.steps[0]["detail"])
+        self.assertNotIn("RuntimeError", job.steps[0]["detail"])
         self.assertEqual(job.status, JobStatus.PARTIAL)
 
     def test_sin_credenciales_el_paso_queda_omitido(self):

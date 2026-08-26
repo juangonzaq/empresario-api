@@ -11,8 +11,8 @@ from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
 from .models import JobKind, SyncJob
 from .serializers import SyncJobHistorySerializer, SyncJobSerializer
 from .services import (
-    CannotRetry, NotConnected, SyncLimitReached, manual_quota, retry_step,
-    run_source, start_manual_sync,
+    CannotRetry, NotConnected, SyncLimitReached, cancel_sync, manual_quota,
+    reclaim_stale, retry_step, run_source, start_manual_sync,
 )
 from .sources import SOURCES
 
@@ -22,6 +22,10 @@ class SyncStatusView(OrganizationAPIView):
     dura el onboarding para mostrar el avance."""
 
     def get(self, request: Request) -> Response:
+        # Un trabajo abandonado (worker caído) se cierra aquí mismo, al
+        # consultarlo: si no, el front sondea para siempre esperando a un beat
+        # que en local puede no estar corriendo.
+        reclaim_stale(request.organization)
         job = SyncJob.objects.filter(organization=request.organization).first()
         if job is None:
             return Response({"status": "sin_sincronizar", "steps": []})
@@ -63,20 +67,54 @@ class SyncStartView(ManagedOrganizationAPIView):
         )
 
 
+class SyncCancelView(ManagedOrganizationAPIView):
+    """Cancela la sincronización en curso de la empresa.
+
+    Cooperativa: el paso que esté corriendo termina lo suyo, los pendientes se
+    omiten y no arranca ninguno más. Sin trabajo en curso responde 409 — el
+    botón desapareció, pero una pestaña vieja puede seguir mostrándolo."""
+
+    def post(self, request: Request) -> Response:
+        try:
+            job = cancel_sync(request.organization)
+        except CannotRetry as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(SyncJobSerializer(job).data)
+
+
+# Fuentes que existen pero no se ofrecen en el checklist manual. Hoy ninguna:
+# el «Análisis con IA» ya no es un paso de la sincronización.
+HIDDEN_MANUAL_SOURCES: set[str] = set()
+HISTORY_PAGE_SIZE = 10
+
+
 class SyncHistoryView(OrganizationAPIView):
     """Lo que alimenta el panel de «Traer comprobantes»: la cuota manual de hoy,
     el catálogo de fuentes (checklist) y las últimas sincronizaciones —manuales
-    y automáticas— con sus fallas."""
+    y automáticas— con sus fallas. El historial va paginado (``?page=``)."""
 
     def get(self, request: Request) -> Response:
-        jobs = list(SyncJob.objects.filter(organization=request.organization)[:15])
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+        base = SyncJob.objects.filter(organization=request.organization)
+        count = base.count()
+        start = (page - 1) * HISTORY_PAGE_SIZE
+        rows = list(base[start:start + HISTORY_PAGE_SIZE])
         return Response({
             "quota": manual_quota(request.organization),
             "sources": [
                 {"key": s.key, "label": s.label, "needs_sol": s.needs_sol}
-                for s in SOURCES
+                for s in SOURCES if s.key not in HIDDEN_MANUAL_SOURCES
             ],
-            "jobs": SyncJobHistorySerializer(jobs, many=True).data,
+            "jobs": {
+                "results": SyncJobHistorySerializer(rows, many=True).data,
+                "count": count,
+                "page": page,
+                "page_size": HISTORY_PAGE_SIZE,
+                "has_next": start + HISTORY_PAGE_SIZE < count,
+            },
         })
 
 

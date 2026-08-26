@@ -4,21 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from sunafil.models import ItemKind, SunafilItem
-from sunafil.services import SunafilClient, SunafilLoginError, SunafilSynchronizer
+from sunafil.services import SunafilClient, SunafilError, SunafilSynchronizer
 from sunafil.services.constants import LISTINGS, LISTINGS_BY_KIND
+from sync.cli import add_sol_arguments, sol_credentials
 
 
 class Command(BaseCommand):
     help = "Scrape SUNAFIL's casilla electrónica (orientations, requirements, notices)."
 
     def add_arguments(self, parser) -> None:
-        parser.add_argument("--taxpayer-id", default=settings.SUNAT_RUC, help="RUC")
-        parser.add_argument("--username", default=settings.SUNAT_USER)
-        parser.add_argument("--password", default=settings.SUNAT_PASS)
+        add_sol_arguments(parser)
         parser.add_argument(
             "--kind", action="append", dest="kinds",
             choices=[spec.kind for spec in LISTINGS],
@@ -30,24 +28,17 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        credentials = (
-            options["taxpayer_id"], options["username"], options["password"]
-        )
-        if not all(credentials):
-            raise CommandError(
-                "Missing credentials. SUNAFIL employer access uses Clave SOL: set "
-                "SUNAT_RUC, SUNAT_USER and SUNAT_PASS in .env."
-            )
+        creds = sol_credentials(options)
 
         client = SunafilClient(
-            taxpayer_id=options["taxpayer_id"],
-            username=options["username"],
-            password=options["password"],
+            taxpayer_id=creds.ruc,
+            username=creds.username,
+            password=creds.password,
         )
-        self.stdout.write(f"Authenticating {options['taxpayer_id']} on SUNAFIL ...")
+        self.stdout.write(f"Authenticating {creds.ruc} on SUNAFIL ...")
         try:
             client.login()
-        except SunafilLoginError as exc:
+        except SunafilError as exc:
             raise CommandError(str(exc)) from exc
         self.stdout.write(self.style.SUCCESS("Login OK"))
 
@@ -63,7 +54,7 @@ class Command(BaseCommand):
         style = self.style.WARNING if result.failed else self.style.SUCCESS
         self.stdout.write(style(f"Done: {result}"))
 
-        stored = SunafilItem.objects.filter(taxpayer_id=options["taxpayer_id"])
+        stored = SunafilItem.objects.filter(taxpayer_id=creds.ruc)
         for kind, label in ItemKind.choices:
             count = stored.filter(kind=kind).count()
             unread = stored.filter(kind=kind, is_read=False).count()

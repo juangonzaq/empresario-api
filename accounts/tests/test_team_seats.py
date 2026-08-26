@@ -45,6 +45,16 @@ class CompanySeatTests(APITestCase):
         self.assertEqual(self._create("20100000009").status_code, 201)
         self.assertEqual(self.ana.owned_organizations_count, 4)
 
+    def test_registration_captures_declared_regime(self):
+        from accounts.models import Organization
+
+        res = self.client.post(self.url, {"ruc": "20100000005", "tax_regime": "RMT"})
+        self.assertEqual(res.status_code, 201)
+        org = Organization.objects.get(ruc="20100000005")
+        self.assertEqual(org.tax_regime, "RMT")
+        self.assertEqual(org.tax_regime_source, "usuario")
+        self.assertIsNotNone(org.tax_regime_checked_at)
+
     def test_seat_summary_reflects_use_and_limit(self):
         self._create("20100000001")
         from billing.services import seat_summary
