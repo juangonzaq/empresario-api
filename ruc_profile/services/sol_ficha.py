@@ -87,6 +87,59 @@ def detect_regime(tributos: list[Tributo]) -> str | None:
     return None
 
 
+class SolLoginRejected(RuntimeError):
+    """SOL no aceptó el usuario o la clave: no hay menú al que entrar."""
+
+
+# Lo que SOL escribe cuando rechaza; se mira solo para explicar, no para decidir.
+_SELECTORES_ERROR = ("#spanMensaje", ".msgError", ".alert-danger", "#divMsjError")
+
+
+def _mensaje_de_login(page) -> str:
+    for selector in _SELECTORES_ERROR:
+        try:
+            elemento = page.locator(selector).first
+            if elemento.is_visible():
+                texto = (elemento.inner_text() or "").strip()
+                if texto:
+                    return texto[:300]
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
+def asegurar_menu_sol(page, timeout_ms: int) -> None:
+    """Confirma que el login dejó al navegador dentro del menú SOL.
+
+    Antes se daba por entrado en cuanto la URL dejaba de ser la del login, y
+    con una clave mala SOL redirige igual —a una pantalla sin menú— así que el
+    primer `ejecuta(...)` reventaba con un `ReferenceError` que nadie entendía.
+    Aquí se decide con dos hechos: si el formulario de clave sigue a la vista
+    o SOL escribió un mensaje, es rechazo; si no hay menú y tampoco hay
+    formulario, es el portal el que falla.
+    """
+    try:
+        page.wait_for_url(lambda u: "loginMenuSol" not in u, timeout=timeout_ms)
+    except Exception as exc:  # noqa: BLE001 — Playwright: seguimos en el login
+        raise SolLoginRejected(
+            _mensaje_de_login(page) or "SUNAT no aceptó el usuario o la clave SOL."
+        ) from exc
+    page.wait_for_load_state("networkidle", timeout=timeout_ms)
+    page.wait_for_timeout(2000)
+    if page.evaluate("typeof ejecuta === 'function'"):
+        return
+    mensaje = _mensaje_de_login(page)
+    try:
+        formulario = page.locator("#txtContrasena").first.is_visible()
+    except Exception:  # noqa: BLE001
+        formulario = False
+    if mensaje or formulario:
+        raise SolLoginRejected(mensaje or "SUNAT no aceptó el usuario o la clave SOL.")
+    raise RuntimeError(
+        f"SOL no mostró el menú tras entrar (página: {page.title()[:80] or page.url[:80]})."
+    )
+
+
 def fetch_tributos(ruc: str, username: str, password: str, *, headless: bool = True, timeout_ms: int = 90_000) -> list[Tributo]:
     """Entra a SOL, abre la Ficha RUC, despliega los tributos y los devuelve."""
     from playwright.sync_api import sync_playwright
@@ -105,9 +158,7 @@ def fetch_tributos(ruc: str, username: str, password: str, *, headless: bool = T
             page.click("#btnPorRuc")
             page.fill("#txtRuc", ruc); page.fill("#txtUsuario", username); page.fill("#txtContrasena", password)
             page.click("#btnAceptar")
-            page.wait_for_url(lambda u: "loginMenuSol" not in u, timeout=timeout_ms)
-            page.wait_for_load_state("networkidle", timeout=timeout_ms)
-            page.wait_for_timeout(2000)
+            asegurar_menu_sol(page, timeout_ms)
             page.evaluate(
                 f"ejecuta('MenuInternet.htm?action=iconExecute&code={FICHA_CODE}',false,'Ficha RUC','#nivel1_10','{FICHA_CODE}')"
             )

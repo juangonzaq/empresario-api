@@ -185,8 +185,9 @@ def _motivo_amigable(exc: Exception) -> str:
     from requests import exceptions as rq
 
     if isinstance(exc, SourceFailed):
-        # Ya viene redactada por la fuente.
-        return str(exc)
+        # Viene redactada por la fuente, pero a veces arrastra el error crudo
+        # del navegador detrás de los dos puntos.
+        return _sin_ruido_tecnico(str(exc))
     # Playwright (ITF, perfil de cumplimiento) tiene su propio TimeoutError;
     # se detecta por nombre para no importar la librería aquí.
     if isinstance(exc, (rq.Timeout, TimeoutError)) \
@@ -210,6 +211,35 @@ def _motivo_amigable(exc: Exception) -> str:
             "Vuelve a intentarlo; si persiste, avísanos.")
 
 
+# Huellas de un error de Playwright/JS que no le dicen nada a nadie.
+_RUIDO_TECNICO = (
+    "Page.", "Frame.", "Locator.", "wait_for_", "Timeout ", "ms exceeded",
+    "ReferenceError", "TypeError", "at eval", "UtilityScript", "--headful",
+    "Traceback", "playwright",
+)
+
+
+def _sin_ruido_tecnico(texto: str) -> str:
+    """Deja la frase humana y sustituye la parte técnica por qué hacer.
+
+    «No se pudo leer la Ficha RUC en SOL: Page.evaluate: ReferenceError…»
+    pasa a «No se pudo leer la Ficha RUC en SOL. SUNAT no respondió como se
+    esperaba; suele ser temporal, vuelve a intentarlo en unos minutos.» El
+    detalle crudo ya está en el log, que es donde sirve.
+    """
+    if not any(huella in texto for huella in _RUIDO_TECNICO):
+        return texto
+    cabeza, _, _ = texto.partition(":")
+    cabeza = cabeza.strip().rstrip(".")
+    if any(huella in cabeza for huella in _RUIDO_TECNICO) or len(cabeza) < 12:
+        cabeza = "No se pudo completar esta fuente"
+    if "exceeded" in texto or "Timeout" in texto:
+        cola = "SUNAT tardó demasiado en responder. Suele ser temporal: vuelve a intentarlo en unos minutos."
+    else:
+        cola = "SUNAT no respondió como se esperaba. Suele ser temporal: vuelve a intentarlo en unos minutos."
+    return f"{cabeza}. {cola}"
+
+
 def _run_source(
     job: SyncJob,
     source: Source,
@@ -225,10 +255,6 @@ def _run_source(
     resto que cortar.
     """
     organization = job.organization
-    # Puede no existir: las fuentes que no usan la clave SOL corren igual, y
-    # leerla sin más levantaba `RelatedObjectDoesNotExist` antes siquiera de
-    # empezar. Donde se toca, el paso ya venía obligando a que hubiera clave.
-    credential = getattr(organization, "sunat_credential", None)
 
     job.mark_step(source.key, StepStatus.RUNNING)
     try:
@@ -251,11 +277,16 @@ def _run_source(
             job.mark_step(source.key, StepStatus.FAILED, str(exc)[:300])
             return ""
 
-        # Credenciales malas: el usuario debe volver a conectarse. Si la
-        # fuente llegó a intentar un login, la credencial existe.
-        credential.status = SunatConnectionStatus.INVALID
-        credential.last_error = str(exc)[:500]
-        credential.save(update_fields=["status", "last_error", "updated_at"])
+        # Credenciales malas: el usuario debe volver a conectarse. Se escribe
+        # con un UPDATE sobre la fila que exista *ahora*, no sobre el objeto
+        # que se cargó al arrancar: el usuario puede haber desconectado o
+        # cambiado la clave mientras el paso corría, y guardar una fila que
+        # ya no está tumbaba el trabajo entero con `NotUpdated`.
+        _actualizar_credencial(
+            organization,
+            status=SunatConnectionStatus.INVALID,
+            last_error=str(exc)[:500],
+        )
         job.mark_step(source.key, StepStatus.FAILED, "Credenciales rechazadas")
         logger.warning("Login SUNAT rechazado para %s", organization.ruc)
         return str(exc)
@@ -267,18 +298,30 @@ def _run_source(
     detail = ", ".join(f"{k}: {v}" for k, v in (result or {}).items())
     job.mark_step(source.key, StepStatus.DONE, detail)
     # El primer portal que responde confirma que la clave sirve.
-    if (
-        source.needs_sol
-        and credential is not None
-        and credential.status != SunatConnectionStatus.CONNECTED
-    ):
-        credential.status = SunatConnectionStatus.CONNECTED
-        credential.last_verified_at = timezone.now()
-        credential.last_error = ""
-        credential.save(update_fields=[
-            "status", "last_verified_at", "last_error", "updated_at",
-        ])
+    if source.needs_sol:
+        _actualizar_credencial(
+            organization,
+            status=SunatConnectionStatus.CONNECTED,
+            last_verified_at=timezone.now(),
+            last_error="",
+            solo_si_no=SunatConnectionStatus.CONNECTED,
+        )
     return ""
+
+
+def _actualizar_credencial(organization, *, solo_si_no: str = "", **campos) -> None:
+    """Escribe sobre la credencial SOL vigente de la empresa, si la hay.
+
+    UPDATE por consulta y no ``save()``: la credencial puede haber sido borrada
+    o sustituida por el usuario mientras el trabajo corría, y en ese caso no
+    hay nada que anotar —la nueva ya trae su propio estado «pendiente»—.
+    """
+    from accounts.models import SunatCredential
+
+    filas = SunatCredential.objects.filter(organization=organization)
+    if solo_si_no:
+        filas = filas.exclude(status=solo_si_no)
+    filas.update(**campos, updated_at=timezone.now())
 
 
 def _wrap_up(job: SyncJob, error: str) -> SyncJob:
@@ -334,7 +377,10 @@ def execute(job: SyncJob) -> SyncJob:
     Corre las fuentes que el trabajo tiene en ``steps`` —que normalmente son las
     de su cadencia, pero pueden ser un subconjunto elegido por el usuario—."""
     with _latido(job):
-        return _execute(job)
+        try:
+            return _execute(job)
+        except Exception as exc:  # noqa: BLE001 — el trabajo se cierra sí o sí
+            return _cerrar_por_error(job, exc)
 
 
 def _execute(job: SyncJob) -> SyncJob:
@@ -398,7 +444,33 @@ def execute_step(job: SyncJob, key: str, cadence: str | None = None) -> SyncJob:
         raise CannotRetry(f"El paso «{key}» no existe.")
 
     with _latido(job):
-        return _execute_step(job, source, key, cadence)
+        try:
+            return _execute_step(job, source, key, cadence)
+        except Exception as exc:  # noqa: BLE001
+            return _cerrar_por_error(job, exc)
+
+
+def _cerrar_por_error(job: SyncJob, exc: Exception) -> SyncJob:
+    """Un error fuera de los pasos no debe dejar el trabajo «ejecutando».
+
+    Cada paso ya atrapa lo suyo; esto recoge lo que se cuela entre pasos (una
+    fila borrada, la base caída un instante). Sin esto el trabajo quedaba
+    girando hasta que el plazo de abandono lo cerraba, y mientras tanto el
+    usuario no podía relanzar nada.
+    """
+    logger.exception("La sincronización de %s cayó fuera de un paso", job.organization.ruc)
+    job.refresh_from_db()
+    for step in job.steps:
+        if step.get("status") == StepStatus.RUNNING:
+            step["status"] = StepStatus.FAILED
+            step["detail"] = "Se interrumpió por un error interno"
+            step["finished_at"] = timezone.now().isoformat()
+        elif step.get("status") == StepStatus.PENDING:
+            step["status"] = StepStatus.SKIPPED
+            step["detail"] = "No llegó a correr"
+    job.save(update_fields=["steps", "updated_at"])
+    job.finish(error=f"La sincronización se interrumpió: {str(exc)[:200]}")
+    return job
 
 
 def _execute_step(job: SyncJob, source: Source, key: str, cadence: str | None) -> SyncJob:

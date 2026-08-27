@@ -17,6 +17,8 @@ from .filters import SupplierCheckFilter, SupplierFilter
 from .models import Supplier, SupplierCheck
 from .serializers import (
     AltaMasivaSerializer,
+    AnalisisProveedorSerializer,
+    FiscalizacionSerializer,
     CompraPorProveedorSerializer,
     FacturaEnRiesgoSerializer,
     ResumenRiesgoSerializer,
@@ -28,11 +30,15 @@ from .services import (
     RucLookupClient,
     RucLookupError,
     SupplierMonitor,
+    analizar_proveedor,
     compras_por_proveedor,
     comprobantes_en_riesgo,
     describir_comprobantes,
+    incorporar_desde_compras,
     proveedores_por_descubrir,
     resumen_riesgo,
+    rucs_en_padron,
+    simular_fiscalizacion,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +55,8 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     * ``GET /api/suppliers/discover/`` — emisores a los que compras, sin registrar
     * ``POST /api/suppliers/discover/`` — incorpora varios de una vez
     * ``GET /api/suppliers/tax-credit-risk/`` — el IGV que pones en juego
+    * ``GET /api/suppliers/{uuid}/senales/`` — patrones sospechosos de un proveedor
+    * ``GET /api/suppliers/fiscalizacion/`` — simulación de una fiscalización
     """
 
     tenant_field = "account_ruc"
@@ -144,15 +152,54 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         subquery correlacionado por fila.
         """
         compras = compras_por_proveedor(self.request.ruc)
+        padron = rucs_en_padron(s.ruc for s in suppliers)
+        observados = self._observados()
         for supplier in suppliers:
+            supplier.en_ssco = supplier.ruc in padron
+            analisis = observados.get(supplier.ruc)
+            supplier.nivel_riesgo = analisis.nivel if analisis else "sin_senales"
+            supplier.puntaje_riesgo = analisis.puntaje if analisis else 0
+            supplier.senales = len(analisis.senales) if analisis else 0
             compra = compras.get(supplier.ruc)
             supplier.purchases_total = compra.total if compra else None
             supplier.purchases_count = compra.comprobantes if compra else 0
             supplier.last_purchase_on = compra.ultima_compra if compra else None
         return suppliers
 
+    def _observados(self) -> dict:
+        """Los emisores con señales de fiscalización, por RUC, una vez por request."""
+        if not hasattr(self, "_observados_cache"):
+            self._observados_cache = {
+                a.ruc: a for a in simular_fiscalizacion(self.request.ruc).proveedores
+            }
+        return self._observados_cache
+
+    def _cartera_al_dia(self, queryset):
+        """Todo emisor que te factura tiene ficha, y la lista enseña los vigilados.
+
+        La alta es solo un INSERT (SUNAT se consulta en la sincronización),
+        así que hacerla al listar es barato y evita el concepto «por
+        incorporar», que nadie entendía. Los que el usuario dejó de vigilar
+        siguen existiendo —no se vuelven a dar de alta— pero salen de la
+        lista salvo que se pidan con ``?is_tracked=false``.
+        """
+        incorporar_desde_compras(self.request.ruc)
+        if "is_tracked" not in self.request.query_params:
+            queryset = queryset.filter(is_tracked=True)
+        return queryset
+
+    def perform_destroy(self, instance: Supplier) -> None:
+        """Dejar de vigilar, no borrar: si se borrara, el alta automática lo
+        volvería a meter en la siguiente carga y su historial se perdería."""
+        instance.is_tracked = False
+        instance.save(update_fields=["is_tracked", "updated_at"])
+
     def list(self, request: Request, *args, **kwargs) -> Response:
-        queryset = self.filter_queryset(self.get_queryset())
+        queryset = self._cartera_al_dia(self.filter_queryset(self.get_queryset()))
+        # «Con señales» no es una columna: sale del cruce con los comprobantes.
+        # Se filtra sobre el total, no sobre la página, como los demás filtros.
+        if request.query_params.get("con_senales") in ("true", "1"):
+            queryset = queryset.filter(ruc__in=self._observados().keys())
         page = self.paginate_queryset(queryset)
         registros = self._con_exposicion(list(page if page is not None else queryset))
 
@@ -160,7 +207,8 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         # tabla; si el cliente pidió otro criterio, se respeta el suyo.
         if not request.query_params.get("ordering"):
             registros.sort(
-                key=lambda s: (s.has_issue, s.purchases_total or 0), reverse=True
+                key=lambda s: (s.has_issue, s.puntaje_riesgo, s.purchases_total or 0),
+                reverse=True,
             )
 
         serializer = self.get_serializer(registros, many=True)
@@ -201,7 +249,7 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def summary(self, request: Request) -> Response:
-        queryset = self.filter_queryset(self.get_queryset())
+        queryset = self._cartera_al_dia(self.filter_queryset(self.get_queryset()))
         totals = queryset.aggregate(
             total=Count("id"),
             tracked=Count("id", filter=Q(is_tracked=True)),
@@ -304,6 +352,22 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
                       "previous": None, "results": listado}
             ),
         })
+
+    @action(detail=True, methods=["get"])
+    def senales(self, request: Request, pk=None) -> Response:
+        """Los patrones de facturación de este proveedor que un auditor miraría."""
+        return Response(AnalisisProveedorSerializer(analizar_proveedor(self.get_object())).data)
+
+    @action(detail=False, methods=["get"])
+    def fiscalizacion(self, request: Request) -> Response:
+        """Simula una fiscalización por operaciones no reales.
+
+        Cruza todas tus compras —de proveedores vigilados o no— con lo que se
+        sabe de cada emisor y devuelve la contingencia: IGV y renta que se
+        discutirían, más la multa. Es una estimación para dimensionar, y así
+        se llama en pantalla.
+        """
+        return Response(FiscalizacionSerializer(simular_fiscalizacion(request.ruc)).data)
 
 
 class SupplierCheckViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):

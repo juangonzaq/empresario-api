@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html
 
-from .models import Supplier, SupplierCheck
+from .models import Supplier, SupplierCheck, SujetoSinCapacidadOperativa
 from .services import SupplierMonitor
 
 STATUS_COLOURS = {True: "#b3261e", False: "#146c2e"}
@@ -96,3 +96,11 @@ class SupplierCheckAdmin(admin.ModelAdmin):
     def has_add_permission(self, request) -> bool:
         # Checks are produced by the monitor, never by hand.
         return False
+
+
+@admin.register(SujetoSinCapacidadOperativa)
+class SscoAdmin(admin.ModelAdmin):
+    list_display = ("ruc", "razon_social", "fecha_publicacion", "fecha_firme", "vigente", "visto_el")
+    list_filter = ("vigente", "fecha_publicacion")
+    search_fields = ("ruc", "razon_social", "representante_nombre", "representante_documento")
+    readonly_fields = [f.name for f in SujetoSinCapacidadOperativa._meta.fields]

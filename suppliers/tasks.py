@@ -83,3 +83,22 @@ def check_supplier(ruc: str, account_ruc: str | None = None) -> dict[str, Any]:
         "changed": any(c.changed for c in checks),
         "succeeded": all(c.succeeded for c in checks),
     }
+
+
+@shared_task(name="suppliers.sync_ssco")
+def sync_ssco() -> dict[str, int]:
+    """Baja el padrón de Sujetos Sin Capacidad Operativa de SUNAT.
+
+    Corre a fin de mes, que es cuando SUNAT lo republica. Es global: una sola
+    descarga sirve para todas las empresas, y el cruce con cada cartera se hace
+    al consultar (ficha, lista y fiscalización), no aquí.
+    """
+    from .services.ssco import sincronizar_padron
+
+    resultado = sincronizar_padron()
+    return {
+        "total": resultado.total,
+        "nuevos": resultado.nuevos,
+        "actualizados": resultado.actualizados,
+        "retirados": resultado.retirados,
+    }

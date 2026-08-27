@@ -140,18 +140,18 @@ class CompliancePortalClient:
         page.fill("#txtUsuario", self.username)
         page.fill("#txtContrasena", self.password)
         page.click("#btnAceptar")
+        # La comprobación es la misma que en la Ficha RUC de SOL: no basta con
+        # salir de la URL del login, hay que ver el menú. Con una clave mala
+        # SOL redirige a una pantalla sin menú y el recorrido moría después
+        # con un «Menu option was never shown» que culpaba a SUNAT.
+        from ruc_profile.services.sol_ficha import SolLoginRejected, asegurar_menu_sol
+
         try:
-            page.wait_for_url(
-                lambda url: "loginMenuSol" not in url, timeout=self.timeout_ms
-            )
-        except PlaywrightError as exc:
-            # Seguimos en la pantalla de login: SOL no nos dejó pasar. No se
-            # mira el texto del mensaje para decidirlo —cambia y se traduce—,
-            # sino el hecho de no haber salido de ahí.
-            raise ComplianceLoginRejected(
-                self._login_error(page)
-                or "SUNAT no aceptó el usuario o la clave SOL."
-            ) from exc
+            asegurar_menu_sol(page, self.timeout_ms)
+        except SolLoginRejected as exc:
+            raise ComplianceLoginRejected(str(exc)) from exc
+        except (PlaywrightError, RuntimeError) as exc:
+            raise CompliancePortalError(str(exc)) from exc
 
     @staticmethod
     def _login_error(page: Any) -> str:

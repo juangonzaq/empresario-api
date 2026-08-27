@@ -122,3 +122,48 @@ class SupplierCheck(BaseModel):
     def __str__(self) -> str:
         outcome = f"{self.status}/{self.condition}" if self.succeeded else "failed"
         return f"{self.supplier.ruc} {self.checked_on} {outcome}"
+
+
+class SscoQuerySet(models.QuerySet):
+    def vigentes(self) -> "SscoQuerySet":
+        return self.filter(vigente=True)
+
+
+class SujetoSinCapacidadOperativa(BaseModel):
+    """Un RUC del padrón de Sujetos Sin Capacidad Operativa (SSCO) de SUNAT.
+
+    Es la lista más dura que publica SUNAT: contribuyentes a los que, por
+    resolución firme, se les ha atribuido que no tienen recursos para haber
+    hecho las operaciones que facturaron (D. Leg. 1532). Las facturas de un
+    SSCO no dan crédito fiscal ni gasto, y punto: no hay «prueba en contrario».
+
+    El padrón es **global**, no de una empresa: se descarga una vez al mes del
+    Excel público y cualquier cartera lo cruza. Un RUC que deja de aparecer no
+    se borra —importa saber que estuvo— sino que pasa a ``vigente=False``.
+    """
+
+    ruc = models.CharField("RUC", max_length=11, unique=True)
+    razon_social = models.CharField(max_length=255, blank=True)
+    domicilio_fiscal = models.TextField(blank=True)
+    resolucion = models.CharField(max_length=160, blank=True)
+    fecha_resolucion = models.DateField(null=True, blank=True)
+    fecha_firme = models.DateField(
+        null=True, blank=True, help_text="Cuándo la resolución quedó firme.",
+    )
+    # Puede traer varios documentos separados por comas, de ahí texto libre.
+    representante_documento = models.TextField(blank=True)
+    representante_nombre = models.CharField(max_length=255, blank=True)
+    fecha_publicacion = models.DateField(null=True, blank=True)
+
+    vigente = models.BooleanField(default=True, db_index=True)
+    visto_el = models.DateField(help_text="Última descarga del padrón en la que apareció.")
+
+    objects = SscoQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "sujeto sin capacidad operativa"
+        verbose_name_plural = "sujetos sin capacidad operativa"
+        ordering = ["-fecha_publicacion", "ruc"]
+
+    def __str__(self) -> str:
+        return f"{self.ruc} — {self.razon_social}"

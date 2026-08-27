@@ -245,3 +245,35 @@ class MotivoAmigableTests(TenantAPITestCase):
         self.assertIn("inesperado", _motivo_amigable(KeyError("x")))
         # Lo que la fuente ya redactó se respeta tal cual.
         self.assertEqual(_motivo_amigable(SourceFailed("Sin filas hoy.")), "Sin filas hoy.")
+
+
+class RuidoTecnicoTests(TestCase):
+    """Un `ReferenceError` de Playwright no es un mensaje para nadie."""
+
+    def test_recorta_el_error_crudo_y_deja_la_frase_humana(self):
+        texto = _motivo_amigable(SourceFailed(
+            "No se pudo leer la Ficha RUC en SOL: Page.evaluate: ReferenceError: "
+            "ejecuta is not defined at eval (eval at evaluate (:311:30))"
+        ))
+        self.assertTrue(texto.startswith("No se pudo leer la Ficha RUC en SOL. "))
+        self.assertNotIn("ReferenceError", texto)
+        self.assertIn("vuelve a intentarlo", texto)
+
+    def test_un_timeout_del_navegador_se_explica_como_tal(self):
+        texto = _motivo_amigable(SourceFailed(
+            "Could not open the REMYPE page: Page.wait_for_function: Timeout 90000ms exceeded."
+        ))
+        self.assertIn("tardó demasiado", texto)
+        self.assertNotIn("90000", texto)
+
+    def test_una_frase_limpia_pasa_intacta(self):
+        self.assertEqual(
+            _motivo_amigable(SourceFailed("La ficha no muestra un tributo de renta.")),
+            "La ficha no muestra un tributo de renta.",
+        )
+
+    def test_sin_frase_humana_cae_al_generico(self):
+        texto = _motivo_amigable(SourceFailed(
+            "Menu option 'Perfil de Cumplimiento' was never shown. run with --headful to check."
+        ))
+        self.assertTrue(texto.startswith("No se pudo completar esta fuente."))

@@ -29,6 +29,13 @@ class SupplierSerializer(serializers.ModelSerializer):
     )
     purchases_count = serializers.IntegerField(read_only=True, default=0)
     last_purchase_on = serializers.DateField(read_only=True, default=None)
+    # Está en el padrón de Sujetos Sin Capacidad Operativa de SUNAT. Es
+    # independiente de estado/condición: un SSCO puede figurar ACTIVO y HABIDO.
+    en_ssco = serializers.BooleanField(read_only=True, default=False)
+    # Lo que un auditor vería en sus facturas: nivel y cuántas señales. El
+    # detalle de cada señal va en ``/senales/``; aquí solo lo que la lista pinta.
+    nivel_riesgo = serializers.CharField(read_only=True, default="sin_senales")
+    senales = serializers.IntegerField(read_only=True, default=0)
 
     # Registrar a sabiendas un proveedor que SUNAT marca. Sin esto la alta se
     # rechaza con el motivo, que es justo el aviso que evita el problema.
@@ -62,6 +69,7 @@ class SupplierSerializer(serializers.ModelSerializer):
             "status", "condition", "has_issue",
             "last_checked_at", "last_changed_at", "last_error",
             "purchases_total", "purchases_count", "last_purchase_on",
+            "en_ssco", "nivel_riesgo", "senales",
             "accept_risk",
             "created_at", "updated_at",
         )
@@ -141,3 +149,47 @@ class AltaMasivaSerializer(serializers.Serializer):
                 f"RUC con formato inválido: {', '.join(invalidos)}."
             )
         return limpios
+
+
+class SenalSerializer(serializers.Serializer):
+    clave = serializers.CharField()
+    gravedad = serializers.CharField()
+    titulo = serializers.CharField()
+    detalle = serializers.CharField()
+    comprobantes = serializers.IntegerField()
+    importe = serializers.DecimalField(max_digits=16, decimal_places=2)
+
+
+class AnalisisProveedorSerializer(serializers.Serializer):
+    """Lo que un auditor observaría de un proveedor, con sus señales."""
+
+    ruc = serializers.CharField()
+    proveedor = serializers.CharField()
+    supplier_id = serializers.CharField(allow_null=True)
+    estado = serializers.CharField()
+    condicion = serializers.CharField()
+    registrado_el = serializers.DateField(allow_null=True)
+    inicio_actividades = serializers.DateField(allow_null=True)
+    actividad_principal = serializers.CharField(allow_blank=True)
+    comprobantes = serializers.IntegerField()
+    total = serializers.DecimalField(max_digits=16, decimal_places=2)
+    igv_estimado = serializers.DecimalField(max_digits=16, decimal_places=2)
+    renta_estimada = serializers.DecimalField(max_digits=16, decimal_places=2)
+    primera_compra = serializers.DateField(allow_null=True)
+    ultima_compra = serializers.DateField(allow_null=True)
+    puntaje = serializers.IntegerField()
+    nivel = serializers.CharField()
+    senales = SenalSerializer(many=True)
+
+
+class FiscalizacionSerializer(serializers.Serializer):
+    proveedores_analizados = serializers.IntegerField()
+    proveedores_observados = serializers.IntegerField()
+    comprobantes_observados = serializers.IntegerField()
+    total_observado = serializers.DecimalField(max_digits=16, decimal_places=2)
+    igv_en_riesgo = serializers.DecimalField(max_digits=16, decimal_places=2)
+    renta_en_riesgo = serializers.DecimalField(max_digits=16, decimal_places=2)
+    multa_estimada = serializers.DecimalField(max_digits=16, decimal_places=2)
+    contingencia_total = serializers.DecimalField(max_digits=16, decimal_places=2)
+    por_senal = serializers.DictField(child=serializers.IntegerField())
+    proveedores = AnalisisProveedorSerializer(many=True)

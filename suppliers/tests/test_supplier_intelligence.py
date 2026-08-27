@@ -279,20 +279,22 @@ class PrimeraSincronizacionTests(TenantAPITestCase):
             ).exists()
         )
 
-    def test_las_sincronizaciones_siguientes_no_incorporan_solas(self):
-        """Volver a añadir lo que el usuario dio de baja sería pelearse con él;
-        se avisa de cuántos hay pendientes y decide."""
+    def test_las_sincronizaciones_siguientes_tambien_incorporan(self):
+        """Quien te factura es tu proveedor: entra en cualquier cadencia. Lo
+        que el usuario dejó de vigilar conserva su ficha y no se rehace."""
         from sync.sources import Cadence, _suppliers
 
         comprobante(RUC_ACTIVE, "1000.00")
+        comprobante(PROVEEDOR_CARO, "9000.00")
+        create_supplier(ruc=PROVEEDOR_CARO, is_tracked=False)  # dado de baja
 
         with patch("suppliers.services.monitor.RucLookupClient") as cliente:
             cliente.return_value.fetch.return_value = profile()
             detalle = _suppliers(self.creds, Cadence.DAILY)
 
-        self.assertNotIn("incorporados", detalle)
-        self.assertEqual(detalle["por_incorporar"], 1)
-        self.assertEqual(Supplier.objects.count(), 0)
+        self.assertEqual(detalle["incorporados"], 1)
+        self.assertTrue(Supplier.objects.get(ruc=RUC_ACTIVE).is_tracked)
+        self.assertFalse(Supplier.objects.get(ruc=PROVEEDOR_CARO).is_tracked)
 
     def test_la_carga_inicial_respeta_el_tope(self):
         from suppliers.services import incorporar_desde_compras

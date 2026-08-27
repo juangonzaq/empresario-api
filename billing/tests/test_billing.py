@@ -620,8 +620,19 @@ class CambioDePlanTests(APITestCase):
         self._checkout("mensual", "pre-mensual")
         self._autorizar("pre-mensual")
         self._checkout("anual", "pre-anual")  # nunca se autoriza
-        from billing.models import Payment
-        self.assertEqual(Payment.objects.filter(raw__replaces_preapproval="pre-mensual").count(), 1)
+        sub = Subscription.objects.get(organization=self.org)
+        self.assertEqual(sub.gateway_subscription_id, "pre-mensual")
+        self.assertEqual(sub.gateway_status, "authorized")
+        # Y si MP avisa que esa pendiente se canceló, la vigente sigue igual.
+        class Pre:
+            status_code = 200
+            def json(self_inner): return {"id": "pre-anual", "status": "cancelled", "external_reference": str(sub.pk)}
+        self.client.force_authenticate(None)
+        with patch("billing.gateways.requests.get", return_value=Pre()):
+            self.client.post(reverse("billing:mp-webhook") + "?type=subscription_preapproval&data.id=pre-anual", {}, format="json")
+        sub.refresh_from_db()
+        self.assertEqual(sub.gateway_subscription_id, "pre-mensual")
+        self.assertTrue(sub.auto_renew)
 
 
 @override_settings(BILLING_GATEWAY="manual", DEBUG=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")

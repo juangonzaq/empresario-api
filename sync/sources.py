@@ -109,12 +109,14 @@ def _ruc_profile(creds, cadence: str) -> dict[str, Any]:
 def _tributos(creds, cadence: str) -> dict[str, Any]:
     """Régimen de renta desde la Ficha RUC de SOL (tributos afectos)."""
     from accounts.models import Organization, SunatCredential
-    from ruc_profile.services.sol_ficha import sync_regime
+    from ruc_profile.services.sol_ficha import SolLoginRejected, sync_regime
 
     organization = Organization.objects.get(ruc=creds.ruc)
     credential = SunatCredential.objects.get(organization=organization)
     try:
         result = sync_regime(organization, credential)
+    except SolLoginRejected as exc:
+        raise LoginFailed(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise SourceFailed(f"No se pudo leer la Ficha RUC en SOL: {exc}") from exc
     if not result["regimen"]:
@@ -336,13 +338,15 @@ def _suppliers(creds, cadence: str) -> dict[str, Any]:
     pendientes.
     """
     from suppliers.models import Supplier
-    from suppliers.services import (
-        SupplierMonitor, incorporar_desde_compras, proveedores_por_descubrir,
-    )
+    from suppliers.services import SupplierMonitor, incorporar_desde_compras
 
     detalle: dict[str, Any] = {}
-    if cadence == Cadence.INITIAL:
-        detalle["incorporados"] = incorporar_desde_compras(creds.ruc)
+    # Todo emisor con comprobantes entra a la cartera, en cualquier cadencia:
+    # es un INSERT, y los que el usuario dejó de vigilar no se rehacen porque
+    # su ficha sigue existiendo con ``is_tracked=False``.
+    incorporados = incorporar_desde_compras(creds.ruc)
+    if incorporados:
+        detalle["incorporados"] = incorporados
 
     cartera = Supplier.objects.tracked().filter(account_ruc=creds.ruc)
     result = SupplierMonitor().run(suppliers=cartera, skip_checked_today=True)
@@ -351,11 +355,6 @@ def _suppliers(creds, cadence: str) -> dict[str, Any]:
         "con_observaciones": result.with_issues,
         "fallidos": result.failed,
     })
-
-    if cadence != Cadence.INITIAL:
-        pendientes = len(proveedores_por_descubrir(creds.ruc))
-        if pendientes:
-            detalle["por_incorporar"] = pendientes
     return detalle
 
 

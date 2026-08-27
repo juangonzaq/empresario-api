@@ -125,18 +125,21 @@ def proveedores_por_descubrir(account_ruc: str) -> list[CompraPorProveedor]:
 TOPE_ALTA_INICIAL = 50
 
 
-def incorporar_desde_compras(account_ruc: str, tope: int = TOPE_ALTA_INICIAL) -> int:
-    """Da de alta a los proveedores con más peso que aún no están vigilados.
+def incorporar_desde_compras(account_ruc: str, tope: int | None = None) -> int:
+    """Da de alta a todo el que te factura y aún no está en la cartera.
 
-    Sirve para que la primera sincronización deje algo utilizable: un registro
-    vacío no avisa de nada, y pedirle a quien acaba de entrar que teclee sus
-    proveedores uno a uno es pedirle que no lo use. Se empieza por los que más
-    facturan, que son los que más crédito fiscal ponen en juego.
+    Quien te emite una factura es tu proveedor, haya o no una ficha: hacer
+    que el usuario lo «incorpore» a mano era un paso que nadie entendía y que
+    dejaba emisores sin ficha en los que no se podía ni hacer clic. Es solo
+    un INSERT —no se consulta a SUNAT aquí—: el estado lo trae la
+    sincronización, que revisa la cartera con tope diario propio.
 
-    Quedan sin consultar a propósito: el paso de sincronización los revisa a
-    continuación, en la misma corrida.
+    ``tope`` limita cuántos entran (los que más facturan primero); sin él,
+    entran todos.
     """
-    pendientes = proveedores_por_descubrir(account_ruc)[:tope]
+    pendientes = proveedores_por_descubrir(account_ruc)
+    if tope is not None:
+        pendientes = pendientes[:tope]
     if not pendientes:
         return 0
 

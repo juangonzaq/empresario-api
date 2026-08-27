@@ -454,6 +454,17 @@ PRIMARY_USER_WARNING = (
 )
 
 
+def _cancelar_sincronizacion_en_curso(organization) -> None:
+    """Corta la sincronización activa, si la hay. Cooperativa: el paso en
+    curso termina lo suyo, pero no arranca ninguno más con la clave vieja."""
+    from sync.services import CannotRetry, cancel_sync
+
+    try:
+        cancel_sync(organization)
+    except CannotRetry:
+        pass
+
+
 class SunatConnectionView(ManagedOrganizationAPIView):
     throttle_classes = [SunatConexionThrottle]
 
@@ -488,6 +499,11 @@ class SunatConnectionView(ManagedOrganizationAPIView):
         serializer = SunatConnectSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        # Si hay una sincronización corriendo con la clave anterior, se
+        # cancela: seguiría probando una clave que el usuario acaba de decir
+        # que estaba mal, y mientras tanto nada dejaba lanzar la nueva.
+        _cancelar_sincronizacion_en_curso(request.organization)
 
         credential, _ = SunatCredential.objects.get_or_create(
             organization=request.organization,
@@ -538,6 +554,7 @@ class SunatConnectionView(ManagedOrganizationAPIView):
         # Se borra la credencial pero no los datos ya sincronizados: siguen
         # siendo de la empresa, y volver a conectar no debería costar una
         # resincronización completa.
+        _cancelar_sincronizacion_en_curso(request.organization)
         credential.delete()
         SunatAuthorization.objects.filter(
             organization=request.organization, revoked_at__isnull=True,

@@ -343,44 +343,31 @@ class MercadoPagoGateway(Gateway):
         }
         response = requests.post(f"{MP_API}/preapproval", json=body, headers=self._headers(), timeout=15)
         data = _mp_ok(response)
-        # Cambio de plan: la suscripción anterior en MP sigue viva y cobraría
-        # en paralelo. Se apunta aquí y se cancela cuando la nueva quede
-        # autorizada (no antes: si la persona abandona el checkout, conserva
-        # la que tenía).
-        anterior = sub.gateway_subscription_id
-        if anterior and anterior != str(data.get("id", "")):
-            payment.raw = {**(payment.raw or {}), "replaces_preapproval": anterior}
-        sub.gateway = self.name
-        sub.gateway_subscription_id = str(data.get("id", ""))
-        sub.gateway_status = data.get("status", "pending")
-        sub.save(update_fields=["gateway", "gateway_subscription_id", "gateway_status", "updated_at"])
-        payment.gateway_reference = sub.gateway_subscription_id
+        nueva = str(data.get("id", ""))
+        # La suscripción vigente NO se reemplaza aquí: la nueva preapproval
+        # solo existe en el pago (gateway_reference) hasta que MP la autorice
+        # (webhook → `_sync_preapproval`), que es cuando se adopta y se
+        # cancela la anterior. Si la persona abandona el checkout, la que
+        # tenía sigue intacta y los asientos/pausas siguen apuntando a ella.
+        if not sub.gateway_subscription_id:
+            sub.gateway = self.name
+            sub.gateway_subscription_id = nueva
+            sub.gateway_status = data.get("status", "pending")
+            sub.save(update_fields=["gateway", "gateway_subscription_id", "gateway_status", "updated_at"])
+        payment.gateway_reference = nueva
         payment.checkout_url = data.get("init_point") or data.get("sandbox_init_point") or ""
-        payment.save(update_fields=["gateway_reference", "checkout_url", "raw", "updated_at"])
+        payment.save(update_fields=["gateway_reference", "checkout_url", "updated_at"])
 
-    def _cancelar_preapproval_reemplazada(self, sub: Subscription, actual: str) -> None:
+    def _cancelar_preapproval(self, preapproval_id: str, *, reemplazada_por: str) -> None:
         """Al autorizarse una suscripción nueva, cancela en MP la que reemplaza."""
-        setup = (
-            Payment.objects.filter(subscription=sub, kind=PaymentKind.RECURRING_SETUP)
-            .exclude(raw__replaces_preapproval__isnull=True)
-            .order_by("-created_at").first()
-        )
-        if setup is None:
-            return
-        vieja = str((setup.raw or {}).get("replaces_preapproval") or "")
-        if not vieja or vieja == actual:
-            return
         try:
             _mp_ok(requests.put(
-                f"{MP_API}/preapproval/{vieja}", json={"status": "cancelled"},
+                f"{MP_API}/preapproval/{preapproval_id}", json={"status": "cancelled"},
                 headers=self._headers(), timeout=15,
             ))
-            logger.info("Suscripción MP %s cancelada: la reemplaza %s", vieja, actual)
-        except Exception:  # noqa: BLE001 — ya cancelada o MP caído: se reintenta en el próximo aviso
-            logger.exception("No se pudo cancelar la suscripción MP reemplazada %s", vieja)
-            return
-        setup.raw = {k: v for k, v in setup.raw.items() if k != "replaces_preapproval"}
-        setup.save(update_fields=["raw", "updated_at"])
+            logger.info("Suscripción MP %s cancelada: la reemplaza %s", preapproval_id, reemplazada_por)
+        except Exception:  # noqa: BLE001 — ya cancelada o MP caído: queda en el log
+            logger.exception("No se pudo cancelar la suscripción MP reemplazada %s", preapproval_id)
 
     def cancel_subscription(self, sub: Subscription) -> None:
         response = requests.put(
@@ -431,8 +418,18 @@ class MercadoPagoGateway(Gateway):
         if sub is None:
             return None
         status = info.get("status", "")
+        llegada = str(info.get("id", ""))
+        vigente = sub.gateway_subscription_id
+        if llegada and vigente and llegada != vigente:
+            if status != "authorized":
+                # Un intento que nunca se completó (o uno viejo ya cancelado):
+                # no dice nada de la suscripción vigente.
+                return sub
+            # Cambio de plan autorizado: la nueva manda y la anterior se cancela
+            # para que nunca cobren dos a la vez.
+            self._cancelar_preapproval(vigente, reemplazada_por=llegada)
         sub.gateway = self.name
-        sub.gateway_subscription_id = str(info.get("id", sub.gateway_subscription_id))
+        sub.gateway_subscription_id = llegada or vigente
         sub.gateway_status = status
         # Pausada por un mes gratis sigue siendo una renovación viva: se
         # reanuda sola en `paused_until`. Pausada por otra vía, no.
@@ -442,8 +439,6 @@ class MercadoPagoGateway(Gateway):
         nxt = info.get("next_payment_date")
         sub.next_charge_at = parse_datetime(nxt) if nxt else None
         sub.save(update_fields=["gateway", "gateway_subscription_id", "gateway_status", "auto_renew", "next_charge_at", "updated_at"])
-        if status == "authorized":
-            self._cancelar_preapproval_reemplazada(sub, sub.gateway_subscription_id)
         return sub
 
     def fetch_payment(self, mp_payment_id: str) -> dict:
