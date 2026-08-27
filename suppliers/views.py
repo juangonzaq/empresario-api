@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
+from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from accounts.tenancy import TenantScopedViewSetMixin
 from rest_framework import filters, status, viewsets
@@ -57,6 +58,7 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     * ``GET /api/suppliers/tax-credit-risk/`` — el IGV que pones en juego
     * ``GET /api/suppliers/{uuid}/senales/`` — patrones sospechosos de un proveedor
     * ``GET /api/suppliers/fiscalizacion/`` — simulación de una fiscalización
+    * ``GET /api/suppliers/reporte/`` — el informe completo en PDF
     """
 
     tenant_field = "account_ruc"
@@ -255,6 +257,9 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
             tracked=Count("id", filter=Q(is_tracked=True)),
             with_issues=Count("id", filter=Q(has_issue=True)),
             never_checked=Count("id", filter=Q(last_checked_at__isnull=True)),
+            # Cuándo se validó la cartera por última vez: lo que el botón
+            # «Validar en SUNAT» muestra para que se sepa si vale la pena pulsar.
+            last_checked_at=Max("last_checked_at"),
         )
         by_status = {
             row["status"] or "unknown": row["count"]
@@ -357,6 +362,18 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     def senales(self, request: Request, pk=None) -> Response:
         """Los patrones de facturación de este proveedor que un auditor miraría."""
         return Response(AnalisisProveedorSerializer(analizar_proveedor(self.get_object())).data)
+
+    @action(detail=False, methods=["get"], url_path="reporte")
+    def reporte(self, request: Request) -> HttpResponse:
+        """El informe completo en PDF, para llevárselo al contador."""
+        from .services.reporte import nombre_reporte, render_reporte
+
+        pdf = render_reporte(request.organization)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{nombre_reporte(request.organization)}"'
+        )
+        return response
 
     @action(detail=False, methods=["get"])
     def fiscalizacion(self, request: Request) -> Response:

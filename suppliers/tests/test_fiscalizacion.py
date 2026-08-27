@@ -311,3 +311,61 @@ class CarteraAutomaticaTests(TenantAPITestCase):
 
         ignorados = self.client.get(reverse("suppliers:supplier-list"), {"is_tracked": "false"}).data
         self.assertEqual([r["ruc"] for r in ignorados["results"]], [PROVEEDOR_NUEVO])
+
+
+class ValidacionTests(TenantAPITestCase):
+    def test_el_resumen_dice_cuando_se_valido_por_ultima_vez(self):
+        from django.utils import timezone
+
+        cuando = timezone.now()
+        create_supplier(ruc=RUC_ACTIVE, last_checked_at=cuando)
+        create_supplier(ruc=PROVEEDOR_NUEVO)
+        data = self.client.get(reverse("suppliers:supplier-summary")).data
+        self.assertEqual(data["last_checked_at"], cuando)
+        self.assertEqual(data["never_checked"], 1)
+
+    def test_validar_a_pedido_vuelve_a_consultar_aunque_ya_se_mirara_hoy(self):
+        from unittest.mock import patch
+
+        from sync.sources import Cadence, _suppliers
+        from suppliers.tests.test_monitor import profile
+
+        class Creds:
+            ruc = self.RUC
+        create_supplier(ruc=RUC_ACTIVE)
+        with patch("suppliers.services.monitor.RucLookupClient") as cliente:
+            cliente.return_value.fetch.return_value = profile()
+            _suppliers(Creds(), Cadence.DAILY)
+            _suppliers(Creds(), Cadence.DAILY)   # hoy ya está: no repite
+            self.assertEqual(cliente.return_value.fetch.call_count, 1)
+            _suppliers(Creds(), Cadence.NEW)     # a pedido: sí
+            self.assertEqual(cliente.return_value.fetch.call_count, 2)
+
+
+class ReportePdfTests(TenantAPITestCase):
+    def test_genera_un_pdf_con_la_cartera_y_las_senales(self):
+        from pypdf import PdfReader
+        from io import BytesIO
+
+        create_supplier(
+            ruc=RUC_ACTIVE, alias="Ferretería Sospechosa", status="ACTIVO",
+            condition="NO HABIDO", has_issue=True,
+        )
+        for _ in range(5):
+            comprobante(RUC_ACTIVE, "1180.00", issue_date=date(2026, 3, 10))
+
+        response = self.client.get(reverse("suppliers:supplier-reporte"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("proveedores-20604442533-", response["Content-Disposition"])
+        texto = " ".join(p.extract_text() for p in PdfReader(BytesIO(response.content)).pages)
+        self.assertIn("Informe de proveedores", texto)
+        self.assertIn("Ferretería Sospechosa", texto)
+        self.assertIn("Varias facturas el mismo", texto)  # el extractor parte la línea
+        self.assertIn("Comprobantes de proveedores marcados", texto)
+
+    def test_una_cartera_vacia_tambien_genera(self):
+        response = self.client.get(reverse("suppliers:supplier-reporte"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content.startswith(b"%PDF"))

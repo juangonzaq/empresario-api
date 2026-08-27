@@ -349,7 +349,11 @@ def _suppliers(creds, cadence: str) -> dict[str, Any]:
         detalle["incorporados"] = incorporados
 
     cartera = Supplier.objects.tracked().filter(account_ruc=creds.ruc)
-    result = SupplierMonitor().run(suppliers=cartera, skip_checked_today=True)
+    # A pedido («Validar en SUNAT») se consulta todo aunque ya se hubiera
+    # mirado hoy: quien pulsa quiere el estado de ahora, no el de esta mañana.
+    result = SupplierMonitor().run(
+        suppliers=cartera, skip_checked_today=(cadence != Cadence.NEW),
+    )
     detalle.update({
         "revisados": result.checked,
         "con_observaciones": result.with_issues,
