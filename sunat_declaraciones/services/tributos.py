@@ -50,11 +50,14 @@ def tributos_de(constancia: dict[str, Any] | None) -> list[dict[str, Any]]:
     for t in (constancia or {}).get("tributos") or []:
         codigo = str(t.get("codTri") or "").strip()
         importe = t.get("mtoPagtot")
+        periodo = str(t.get("perTri") or "").strip()
         salida.append({
             "codigo": codigo,
             "descripcion": str(t.get("descCodTri") or "").strip(),
             "clase": clase_de(codigo),
             "importe": Decimal(str(importe)) if importe is not None else None,
+            # Periodo tributario que salda ese tributo (AAAAMM), si la constancia lo trae.
+            "periodo": periodo if len(periodo) == 6 else "",
         })
     return salida
 

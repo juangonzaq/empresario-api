@@ -49,6 +49,23 @@ class PanoramaTests(TenantAPITestCase):
         self.assertEqual(e["anterior"]["periodo"], "202501")
         self.assertTrue(e["anterior"]["igv_renta"]["presentado"])
 
+    def test_historico_planilla_pone_las_fuentes_lado_a_lado(self):
+        from afpnet.models import AfpnetPeriodSummary
+        from sunat_declaraciones.services.panorama import historico_planilla
+
+        AfpnetPeriodSummary.objects.create(taxpayer_id=RUC, period="202501", total_op=4)
+        h = historico_planilla(RUC, hoy=date(2025, 2, 20))
+        self.assertEqual(len(h["periodos"]), 12)
+        enero = next(f for f in h["periodos"] if f["periodo"] == "202501")
+        self.assertIsNotNone(enero["plame"]["trabajadores"])
+        self.assertEqual(enero["afpnet"], 4)          # AFPnet no pisa a la PLAME
+        self.assertIsNone(enero["planilla_propia"])    # sin planilla propia cerrada
+        self.assertEqual(h["colaboradores_activos"], 0)
+        self.assertEqual(h["ultima_plame"]["periodo"], "202501")
+        self.assertEqual(h["ultimo_afpnet"], {"periodo": "202501", "aportantes": 4})
+        r = self.client.get(reverse("sunat_declaraciones:planilla-historico"))
+        self.assertEqual(r.status_code, 200)
+
     def test_api_panorama(self):
         r = self.client.get(reverse("sunat_declaraciones:panorama"))
         self.assertEqual(r.status_code, 200)

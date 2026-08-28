@@ -142,6 +142,93 @@ def planilla_vs_plame(account_ruc: str, meses: int = 12) -> dict[str, Any]:
     }
 
 
+def historico_planilla(account_ruc: str, meses: int = 12, hoy: date | None = None) -> dict[str, Any]:
+    """Cuánta gente tuvo la empresa cada mes, según **cada** fuente a la vez.
+
+    Hay hasta cuatro que hablan de lo mismo y ninguna manda sobre las otras:
+    la PLAME declarada en SOL (trabajadores, 4.ª, pagado), la ficha RUC
+    pública (misma cifra, con retraso), AFPnet (aportantes a AFP: no cuenta a
+    los de ONP) y la planilla propia cerrada en la plataforma. Se ponen lado a
+    lado para que quien mira vea dónde coinciden y dónde no; el card del
+    Inicio elige la PLAME como titular cuando no hay planilla propia."""
+    from colaboradores.models import Colaborador
+    from payroll.models import PayrollEntry, PayrollPeriod, PayrollStatus
+
+    hoy = hoy or timezone.localdate()
+    periodos = [f"{hoy.year}{hoy.month:02d}"]
+    for _ in range(meses - 1):
+        periodos.append(periodo_anterior(periodos[-1]))
+    periodos.reverse()
+
+    plame = vigentes_plame(account_ruc)
+    ficha: dict[str, int | None] = {}
+    afp: dict[str, int] = {}
+    try:
+        from ruc_profile.models import RucSnapshot, WorkerHeadcount
+
+        snap = RucSnapshot.objects.filter(ruc=account_ruc, succeeded=True).order_by("-captured_on").first()
+        if snap is not None:
+            for h in WorkerHeadcount.objects.filter(snapshot=snap):
+                ficha[h.period.replace("-", "")] = h.workers
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from afpnet.models import AfpnetPeriodSummary
+
+        for r in AfpnetPeriodSummary.objects.filter(taxpayer_id=account_ruc, period__in=periodos):
+            afp[r.period] = r.total_op
+    except Exception:  # pragma: no cover
+        pass
+    propios: dict[str, dict[str, Any]] = {}
+    for p in PayrollPeriod.objects.filter(taxpayer_id=account_ruc, status=PayrollStatus.CLOSED):
+        entradas = PayrollEntry.objects.filter(period=p)
+        propios[f"{p.year}{p.month:02d}"] = {
+            "trabajadores": entradas.count(),
+            "costo": _num(sum((e.total_employer_cost for e in entradas), Decimal(0))),
+        }
+
+    filas = []
+    for periodo in periodos:
+        d = plame.get(periodo)
+        c = (d.constancia or {}) if d else {}
+        trabajadores = c.get("trabajadores")
+        trabajadores = int(str(trabajadores)) if str(trabajadores or "").isdigit() else None
+        cuarta = c.get("personalCuarta")
+        filas.append({
+            "periodo": periodo,
+            "plame": None if d is None else {
+                "trabajadores": trabajadores,
+                "prestadores_4ta": int(str(cuarta)) if str(cuarta or "").isdigit() else None,
+                "pagado": _num(d.importe_pagado),
+                "essalud": _num(numero(d.casillas, "C412")),
+                "onp": _num(numero(d.casillas, "C411")),
+                "fecha_presentacion": d.fecha_presentacion,
+            },
+            "ficha_ruc": ficha.get(periodo),
+            "afpnet": afp.get(periodo),
+            "planilla_propia": propios.get(periodo),
+        })
+
+    con_plame = [f for f in filas if f["plame"] and f["plame"]["trabajadores"] is not None]
+    ultima = con_plame[-1] if con_plame else None
+    anterior = con_plame[-2] if len(con_plame) > 1 else None
+    return {
+        "colaboradores_activos": Colaborador.objects.filter(taxpayer_id=account_ruc, is_active=True).count(),
+        "periodos": filas,
+        "pagado_plame_12m": _num(sum((Decimal(str(f["plame"]["pagado"] or 0)) for f in filas if f["plame"]), Decimal(0))),
+        "ultima_plame": None if ultima is None else {
+            "periodo": ultima["periodo"],
+            "trabajadores": ultima["plame"]["trabajadores"],
+            "prestadores_4ta": ultima["plame"]["prestadores_4ta"],
+            "variacion": (
+                None if anterior is None or anterior["plame"]["trabajadores"] is None
+                else ultima["plame"]["trabajadores"] - anterior["plame"]["trabajadores"]
+            ),
+        },
+        "ultimo_afpnet": next(({"periodo": f["periodo"], "aportantes": f["afpnet"]} for f in reversed(filas) if f["afpnet"] is not None), None),
+    }
+
+
 # ---------------------------------------------------------------- Balance
 
 BALANCE_MAPEO: list[tuple[str, list[tuple[str, int]]]] = [

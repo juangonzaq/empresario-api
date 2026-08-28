@@ -41,11 +41,31 @@ class CruceAnualView(OrganizationAPIView):
         return Response(data)
 
 
+class DeudaView(OrganizationAPIView):
+    """El card «Deuda y pagos SUNAT» del Inicio: boletas 1662 por mes, valores
+    del buzón y deuda coactiva publicada. No es el saldo de SOL."""
+
+    def get(self, request: Request) -> Response:
+        from .services.deuda import resumen_deuda
+
+        return Response(resumen_deuda(request.ruc))
+
+
 class PanoramaView(OrganizationAPIView):
     """El card del Inicio: lo del periodo que toca, presentado o no."""
 
     def get(self, request: Request) -> Response:
         return Response({"estado": estado_del_mes(request.ruc)})
+
+
+class PlanillaHistoricoView(OrganizationAPIView):
+    """El card «Equipo y planilla» del Inicio: gente por mes según PLAME,
+    ficha RUC, AFPnet y planilla propia, todas a la vez."""
+
+    def get(self, request: Request) -> Response:
+        from .services.panorama import historico_planilla
+
+        return Response(historico_planilla(request.ruc))
 
 
 class PlanillaDeclaradaView(OrganizationAPIView):
