@@ -408,9 +408,19 @@ def _intel(creds, cadence: str) -> dict[str, Any]:
     el buzón estuviera al día, porque nada más disparaba el análisis."""
     from sunat_intel.services import analyzer, cases
 
-    stats = analyzer.analyze_pending(taxpayer_id=creds.ruc)
+    from .progress import report_progress
+
+    # Solo los últimos meses: un aviso de hace dos años ya es historia y no
+    # vale una llamada al modelo. El comando de gestión sigue pudiendo leer
+    # todo el histórico a pedido.
+    stats = analyzer.analyze_pending(
+        taxpayer_id=creds.ruc, months=INTEL_MONTHS, on_progress=report_progress,
+    )
     casos = cases.rebuild_cases(creds.ruc)
     return {**stats, "casos": casos}
+
+
+INTEL_MONTHS = 6
 
 
 def _analytics(creds, cadence: str) -> dict[str, Any]:

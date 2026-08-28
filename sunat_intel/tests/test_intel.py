@@ -71,6 +71,32 @@ class AnalyzerTests(TenantAPITestCase):
         self.assertIsNone(analysis.legal_deadline)
 
     @patch("sunat_intel.services.analyzer.llm.structured_completion")
+    def test_months_limit_progress_and_cancel(self, mock_llm):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from sunat_mailbox.models import Message
+
+        mock_llm.return_value = llm_result()
+        for code in (21, 22, 23):
+            create_message(message_code=code, subject=f"Orden de Pago N° {code}")
+        viejo = Message.objects.order_by("message_code").first()
+        Message.objects.filter(pk=viejo.pk).update(published_at=timezone.now() - timedelta(days=400))
+        Message.objects.exclude(pk=viejo.pk).update(published_at=timezone.now())
+
+        # Fuera de los 6 meses no se lee; los demás reportan avance.
+        avance = []
+        stats = analyzer.analyze_pending(months=6, on_progress=lambda d, t, *_: avance.append((d, t)) or True)
+        self.assertEqual(stats["analyzed"], Message.objects.count() - 1)
+        self.assertEqual(avance[-1][0], avance[-1][1])
+
+        # Cancelar a mitad: se para y lo que queda se reporta como pendiente.
+        stats = analyzer.analyze_pending(force=True, on_progress=lambda d, t, *_: d < 1)
+        self.assertEqual(stats["analyzed"], 1)
+        self.assertEqual(stats["pending"], Message.objects.count() - 1)
+
+    @patch("sunat_intel.services.analyzer.llm.structured_completion")
     def test_failed_analysis_is_recorded(self, mock_llm):
         mock_llm.side_effect = RuntimeError("boom")
         create_message(message_code=12)

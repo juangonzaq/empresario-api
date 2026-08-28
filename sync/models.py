@@ -154,6 +154,18 @@ class SyncJob(BaseModel):
     # Alias interno histórico: el resto del modelo lo usa por todas partes.
     _step = step
 
+    def mark_step_progress(self, key: str, done: int, total: int, detail: str = "") -> bool:
+        """Anota «done de total» en el paso. Devuelve False si el trabajo ya
+        fue cancelado, para que el paso pare cuanto antes."""
+        step = self._step(key)
+        if step is None:
+            return True
+        step["progress"] = {"done": done, "total": total}
+        if detail:
+            step["detail"] = detail
+        self.save(update_fields=["steps", "updated_at"])
+        return not self.cancellation_requested()
+
     def mark_step(self, key: str, status: str, detail: str = "") -> None:
         step = self._step(key)
         if step is None:
@@ -164,6 +176,7 @@ class SyncJob(BaseModel):
         stamp = timezone.now().isoformat()
         if status == StepStatus.RUNNING:
             step["started_at"] = stamp
+            step.pop("progress", None)
         elif status in (StepStatus.DONE, StepStatus.FAILED, StepStatus.SKIPPED):
             step["finished_at"] = stamp
         self.save(update_fields=["steps", "updated_at"])

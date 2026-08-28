@@ -14,6 +14,7 @@ from accounts.models import Organization, SunatConnectionStatus
 from .models import (
     HEARTBEAT_EVERY, STALE_MESSAGE, JobKind, JobStatus, StepStatus, SyncJob,
 )
+from .progress import progress_scope
 from .sources import (
     Cadence, LoginFailed, SOURCES_BY_KEY, Source, SourceFailed, initial_steps,
     sources_for,
@@ -262,7 +263,10 @@ def _run_source(
         # porque el botón de una sección pide «lo nuevo» sobre un trabajo que
         # pudo ser el inicial: con `job.kind` heredaría su recorrido completo
         # del histórico, que es justo lo que ese botón no debe hacer.
-        result = source.run(credentials, cadence or job.kind)
+        with progress_scope(
+            lambda done, total, detail="": job.mark_step_progress(source.key, done, total, detail)
+        ):
+            result = source.run(credentials, cadence or job.kind)
     except LoginFailed as exc:
         # Si otra fuente ya entró con esta clave, el fallo es del portal y no
         # de la clave: se anota el paso y el trabajo sigue. Invalidar aquí le

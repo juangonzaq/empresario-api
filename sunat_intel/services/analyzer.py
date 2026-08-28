@@ -243,7 +243,9 @@ def analyze_message(message: Message) -> MessageAnalysis:
     return analysis
 
 
-def pending_messages(taxpayer_id: str | None = None, force: bool = False):
+def pending_messages(
+    taxpayer_id: str | None = None, force: bool = False, months: int | None = None,
+):
     """Messages that need (re)analysis: new, failed, or stale fingerprint.
 
     ``taxpayer_id`` acota a una empresa. Se deja opcional porque las
@@ -255,6 +257,13 @@ def pending_messages(taxpayer_id: str | None = None, force: bool = False):
     messages = Message.objects.prefetch_related("attachments").order_by("published_at")
     if taxpayer_id:
         messages = messages.for_taxpayer(taxpayer_id)
+    if months:
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        desde = timezone.now() - timedelta(days=months * 31)
+        messages = messages.filter(published_at__gte=desde)
     for message in messages:
         analysis = getattr(message, "analysis", None)
         needs_run = (
@@ -271,17 +280,27 @@ def analyze_pending(
     taxpayer_id: str | None = None,
     limit: int | None = None,
     force: bool = False,
+    months: int | None = None,
+    on_progress=None,
 ) -> dict[str, int]:
-    """Run the analysis over every message that needs it, for one empresa."""
+    """Run the analysis over every message that needs it, for one empresa.
+
+    ``months`` acota a los mensajes recientes. ``on_progress(done, total)``
+    se llama antes de cada mensaje; si devuelve False (cancelación), se para
+    ahí y lo que queda se reporta como ``pending``."""
+    pendientes = list(pending_messages(taxpayer_id=taxpayer_id, force=force, months=months))
+    if limit is not None:
+        pendientes = pendientes[:limit]
     done = failed = 0
-    for index, message in enumerate(
-        pending_messages(taxpayer_id=taxpayer_id, force=force)
-    ):
-        if limit is not None and index >= limit:
-            break
+    total = len(pendientes)
+    for index, message in enumerate(pendientes):
+        if on_progress is not None and not on_progress(index, total, f"{index} de {total} mensajes"):
+            return {"analyzed": done, "failed": failed, "pending": total - index}
         analysis = analyze_message(message)
         if analysis.status == AnalysisStatus.DONE:
             done += 1
         else:
             failed += 1
+    if on_progress is not None and total:
+        on_progress(total, total, f"{total} mensajes leídos")
     return {"analyzed": done, "failed": failed}
