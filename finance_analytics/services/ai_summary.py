@@ -253,6 +253,27 @@ def _metrics_payload(ruc: str, period: str) -> dict[str, Any]:
             "meses": _itf_lines(itf),
         },
         "cruce entre facturación y movimientos": _consistency_lines(consistency),
+        "declaraciones y pagos a SUNAT": _declaraciones_payload(ruc),
+    }
+
+
+def _declaraciones_payload(ruc: str) -> dict[str, Any]:
+    """Lo presentado y pagado según SUNAT; las cifras del 621 y la DJ anual
+    son las que el contribuyente firmó, no una estimación."""
+    try:
+        from sunat_declaraciones.services import resumen_para_asistente
+
+        r = resumen_para_asistente(ruc)
+    except Exception:  # noqa: BLE001
+        return {MEANING_KEY: "sin declaraciones sincronizadas"}
+    if not r["estado_del_mes"] and not r["dj_anuales"]:
+        return {MEANING_KEY: "sin declaraciones sincronizadas"}
+    return {
+        MEANING_KEY: "lo que la empresa declaró y pagó a SUNAT (621 mensual, PLAME, boletas, DJ anual)",
+        "periodo que toca": r["estado_del_mes"],
+        "últimos 621": r["ultimos_621"],
+        "pagado por tributo en el año": r["pagado_por_tributo_en_el_anio"],
+        "DJ anuales": r["dj_anuales"],
     }
 
 
@@ -347,8 +368,18 @@ def _shape(result: dict[str, Any], period: str, previous: list[dict[str, Any]]
 
 # ── Fuentes del briefing (deterministas, nunca redactadas por el modelo) ──
 
-def briefing_sources(docs, itf: dict[str, Any], open_alerts: int) -> list[dict[str, str]]:
+def briefing_sources(docs, itf: dict[str, Any], open_alerts: int, ruc: str | None = None) -> list[dict[str, str]]:
     """De dónde sale cada número, para la sección de fuentes."""
+    declaraciones = None
+    if ruc:
+        try:
+            from sunat_declaraciones.models import DeclaracionAnual, DeclaracionPresentada
+
+            n = DeclaracionPresentada.objects.de(ruc).count()
+            a = DeclaracionAnual.objects.filter(account_ruc=ruc).count()
+            declaraciones = f"{n:,} presentaciones y pagos · {a} DJ anual(es)" if n or a else "Sin declaraciones sincronizadas"
+        except Exception:  # noqa: BLE001
+            declaraciones = None
     issued = sum(1 for d in docs if d.direction == "emitida")
     periods = sorted({d.period for d in docs if d.period})
     itf_periods = [p["period"] for p in itf["periods"]]
@@ -373,6 +404,7 @@ def briefing_sources(docs, itf: dict[str, Any], open_alerts: int) -> list[dict[s
             "label": "Alertas financieras",
             "detail": f"{open_alerts} abierta(s) al momento de generar el briefing",
         },
+        *([{"label": "Declaraciones y pagos a SUNAT", "detail": declaraciones}] if declaraciones else []),
     ]
 
 

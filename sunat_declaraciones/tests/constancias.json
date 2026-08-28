@@ -1,0 +1,75 @@
+{
+ "1120850832": {
+  "banco": "Banco de la Nación",
+  "formaPago": "Cargo en cuenta",
+  "numeroOperacion": "00000000007562117034",
+  "fechaPago": "18/02/2025 09:13:47",
+  "tipoDeclaracion": "Original",
+  "tributos": [
+   {
+    "descCodTri": "IGV - OPER. INT. - CTA. PROPIA",
+    "descCodTriCorta": "IGV",
+    "perTri": 202501,
+    "codTri": "1011",
+    "mtoPagtot": 303.0,
+    "numOrd": 1120850832
+   }
+  ],
+  "form0601": false,
+  "trabajadores": "0",
+  "pensionistas": "0",
+  "personalCuarta": "0"
+ },
+ "1120850866": {
+  "banco": "Banco de la Nación",
+  "formaPago": "Cargo en cuenta",
+  "numeroOperacion": "00000000007562117035",
+  "fechaPago": "18/02/2025 09:13:47",
+  "tipoDeclaracion": "Original",
+  "tributos": [
+   {
+    "descCodTri": "RENTA - 3RA. CATEGOR. - CTA. PROPIA",
+    "descCodTriCorta": "RTA3",
+    "perTri": 202501,
+    "codTri": "3031",
+    "mtoPagtot": 281.0,
+    "numOrd": 1120850866
+   }
+  ],
+  "form0601": false,
+  "trabajadores": "0",
+  "pensionistas": "0",
+  "personalCuarta": "0"
+ },
+ "1123027089": {
+  "banco": "Banco de Crédito",
+  "formaPago": "Cargo en cuenta de detracciones - cuenta convencional",
+  "numeroOperacion": "00000000007750000001",
+  "fechaPago": "01/03/2025 15:18:25",
+  "tipoDeclaracion": "Original",
+  "tributos": [
+   {
+    "descCodTri": "TESORO - FRACC. ART. 36 - C.T.",
+    "descCodTriCorta": "FRAA36",
+    "perTri": 202503,
+    "codTri": "8021",
+    "mtoPagtot": 1356.0,
+    "numOrd": 1123027089
+   }
+  ],
+  "form0601": false,
+  "trabajadores": "0",
+  "pensionistas": "0",
+  "personalCuarta": "0"
+ },
+ "1120849853": {
+  "banco": "Banco de la Nación",
+  "formaPago": "",
+  "tipoDeclaracion": "Original",
+  "form0601": true,
+  "trabajadores": "6",
+  "pensionistas": "0",
+  "personalCuarta": "2",
+  "tributos": []
+ }
+}

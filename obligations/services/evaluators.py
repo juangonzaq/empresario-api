@@ -151,3 +151,78 @@ def risk_signals_clear(ctx: CompanyContext, rule) -> Verdict:
         verification_status=enums.VerificationStatus.INFERRED,
         reason="Tu ficha RUC no muestra señales de riesgo.",
     )
+
+
+@evaluator("plame_declaration")
+def plame_declaration(ctx: CompanyContext, rule) -> Verdict:
+    """¿Está presentada la PLAME del periodo que toca? Se lee de la consulta
+    de declaraciones de SUNAT, así que el veredicto es verificado."""
+    try:
+        from sunat_declaraciones.services import presentaciones_por_periodo
+        from sunat_declaraciones.services.plazos import vencimiento_de
+    except Exception:  # pragma: no cover
+        return Verdict(reason="Sin acceso a las declaraciones.")
+    presentadas = presentaciones_por_periodo(ctx.account_ruc)
+    if not presentadas:
+        return Verdict(reason="Aún no se han sincronizado las declaraciones de SUNAT.")
+    expected = _last_closed_period(ctx.today)
+    vence = vencimiento_de(ctx.account_ruc, expected)
+    p = presentadas.get(expected, {}).get("0601")
+    if p:
+        return Verdict(
+            compliance_status=enums.ComplianceStatus.COMPLIANT,
+            verification_status=enums.VerificationStatus.VERIFIED,
+            reason=f"PLAME del periodo {expected} presentada el {p['fecha']:%d/%m/%Y} (orden {p['nro_orden']}).",
+            due_date=vence,
+        )
+    if vence and vence >= ctx.today:
+        return Verdict(
+            compliance_status=enums.ComplianceStatus.UNKNOWN,
+            verification_status=enums.VerificationStatus.VERIFIED,
+            reason=f"La PLAME de {expected} todavía no figura; vence el {vence:%d/%m/%Y}.",
+            due_date=vence,
+        )
+    return Verdict(
+        compliance_status=enums.ComplianceStatus.NON_COMPLIANT,
+        verification_status=enums.VerificationStatus.VERIFIED,
+        reason=f"No aparece la PLAME del periodo {expected} en SUNAT" + (f" (venció el {vence:%d/%m/%Y})." if vence else "."),
+        due_date=vence,
+    )
+
+
+@evaluator("tax_payments_current")
+def tax_payments_current(ctx: CompanyContext, rule) -> Verdict:
+    """Sin omisiones ni deuda del 621 (alertas abiertas de declaraciones) y
+    sin multas pagadas en los últimos 12 meses."""
+    try:
+        from finance_analytics.models import FinanceAlert
+        from sunat_declaraciones.models import DeclaracionPresentada, Formulario
+        from sunat_declaraciones.services.tributos import tributos_de
+    except Exception:  # pragma: no cover
+        return Verdict(reason="Sin acceso a las declaraciones.")
+    if not DeclaracionPresentada.objects.de(ctx.account_ruc).exists():
+        return Verdict(reason="Aún no se han sincronizado las declaraciones de SUNAT.")
+    abiertas = list(
+        FinanceAlert.objects.filter(account_ruc=ctx.account_ruc, alert_type__startswith="declaracion_").open()
+    )
+    desde = f"{ctx.today.year - 1}{ctx.today.month:02d}"
+    multas = 0
+    for b in DeclaracionPresentada.objects.de(ctx.account_ruc).formulario(Formulario.BOLETA).filter(periodo__gte=desde):
+        multas += sum(1 for t in tributos_de(b.constancia) if t["clase"] == "multa")
+    if abiertas:
+        return Verdict(
+            compliance_status=enums.ComplianceStatus.NON_COMPLIANT,
+            verification_status=enums.VerificationStatus.INFERRED,
+            reason=abiertas[0].title + (f" (+{len(abiertas) - 1} más)" if len(abiertas) > 1 else ""),
+        )
+    if multas:
+        return Verdict(
+            compliance_status=enums.ComplianceStatus.COMPLIANT,
+            verification_status=enums.VerificationStatus.VERIFIED,
+            reason=f"Sin deuda ni omisiones detectadas, pero pagaste {multas} multa(s) en los últimos 12 meses.",
+        )
+    return Verdict(
+        compliance_status=enums.ComplianceStatus.COMPLIANT,
+        verification_status=enums.VerificationStatus.VERIFIED,
+        reason="Declaraciones presentadas y pagadas según la consulta de SUNAT; sin multas en 12 meses.",
+    )

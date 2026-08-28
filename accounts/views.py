@@ -34,7 +34,7 @@ from .serializers import (
     SunatConnectSerializer, SunatCredentialSerializer, UserSerializer,
     tokens_for,
 )
-from .services import consent, mail, sol_portal, team
+from .services import consent, mail, sol_portal, sunafil_portal, team
 from .throttles import (
     CorreoThrottle, LoginPorCuentaThrottle, LoginPorIpThrottle,
     RegistroThrottle, SunatConexionThrottle, SunatPortalThrottle,
@@ -563,12 +563,38 @@ class SunatConnectionView(ManagedOrganizationAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _sol_credential_or_409(request: Request):
+    """La credencial SOL con la que se abre un portal, o la respuesta 409 que
+    explica por qué no se puede."""
+    credential = getattr(request.organization, "sunat_credential", None)
+    if credential is None or not credential.encrypted_password:
+        return None, Response(
+            {"detail": "Conecta SUNAT primero para abrir el portal con tu sesión.",
+             "code": "sin_conectar"},
+            status=status.HTTP_409_CONFLICT,
+        )
+    if credential.status == SunatConnectionStatus.INVALID:
+        # Reenviar una clave que SUNAT ya rechazó solo acerca el bloqueo
+        # del usuario SOL.
+        return None, Response(
+            {"detail": "SUNAT rechazó la clave guardada. Vuelve a conectar SUNAT "
+                       "con la clave vigente.",
+             "code": "invalida"},
+            status=status.HTTP_409_CONFLICT,
+        )
+    return credential, None
+
+
 class SunatPortalView(ManagedOrganizationAPIView):
     """Abre SUNAT Operaciones en Línea con la sesión de la empresa iniciada.
 
     Devuelve el formulario de login SOL —acción y campos, clave incluida— para
     que el navegador lo envíe a SUNAT en una pestaña nueva y caiga dentro del
     menú sin teclear nada. Ver ``accounts.services.sol_portal``.
+
+    ``destino`` (cuerpo) elige adónde: ``tramites`` (menú clásico, por
+    defecto), ``declaraciones`` (mismo menú, grupo «Mis declaraciones y
+    pagos») o ``renta`` (e-renta, la declaración anual).
 
     Es POST y no GET a propósito: devuelve un secreto, y un GET se cachea, se
     prefetcha y queda en historiales. Solo titular y contador: quien mira en
@@ -578,30 +604,59 @@ class SunatPortalView(ManagedOrganizationAPIView):
     throttle_classes = [SunatPortalThrottle]
 
     def post(self, request: Request) -> Response:
-        credential = getattr(request.organization, "sunat_credential", None)
-        if credential is None or not credential.encrypted_password:
-            return Response(
-                {"detail": "Conecta SUNAT primero para abrir el portal con tu sesión.",
-                 "code": "sin_conectar"},
-                status=status.HTTP_409_CONFLICT,
+        destino = (request.data or {}).get("destino") or sol_portal.DESTINO_TRAMITES
+        if destino not in sol_portal.DESTINOS:
+            return Response({"detail": "Destino desconocido.", "code": "destino"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        credential, rechazo = _sol_credential_or_409(request)
+        if rechazo is not None:
+            return rechazo
+        try:
+            form = sol_portal.login_form(
+                ruc=request.ruc, username=credential.sol_username,
+                password=credential.password, destino=destino,
             )
-        if credential.status == SunatConnectionStatus.INVALID:
-            # Reenviar una clave que SUNAT ya rechazó solo acerca el bloqueo
-            # del usuario SOL.
+        except sol_portal.PortalUnavailable as exc:
+            logger.warning("Portal SUNAT (%s) no disponible: %s", destino, exc)
             return Response(
-                {"detail": "SUNAT rechazó la clave guardada. Vuelve a conectar SUNAT "
-                           "con la clave vigente.",
-                 "code": "invalida"},
-                status=status.HTTP_409_CONFLICT,
+                {"detail": "SUNAT no responde en este momento. Inténtalo en unos minutos.",
+                 "code": "portal"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         logger.info(
-            "Portal SOL abierto para %s por %s", request.ruc, request.user.email
+            "Portal SOL (%s) abierto para %s por %s", destino, request.ruc, request.user.email
         )
-        return Response(sol_portal.login_form(
-            ruc=request.ruc,
-            username=credential.sol_username,
-            password=credential.password,
-        ))
+        return Response(form)
+
+
+class SunafilPortalView(ManagedOrganizationAPIView):
+    """Abre la casilla electrónica de SUNAFIL con la Clave SOL de la empresa.
+
+    Mismas reglas que el portal SOL: POST, solo titular y contador, y la
+    misma cuota. SUNAFIL solo tiene sentido para quien tiene planilla; eso lo
+    decide la interfaz con ``has_payroll`` del perfil, aquí no se gatea.
+    """
+
+    throttle_classes = [SunatPortalThrottle]
+
+    def post(self, request: Request) -> Response:
+        credential, rechazo = _sol_credential_or_409(request)
+        if rechazo is not None:
+            return rechazo
+        try:
+            form = sunafil_portal.login_form(
+                ruc=request.ruc, username=credential.sol_username,
+                password=credential.password,
+            )
+        except sol_portal.PortalUnavailable as exc:
+            logger.warning("Portal SUNAFIL no disponible: %s", exc)
+            return Response(
+                {"detail": "SUNAFIL no responde en este momento. Inténtalo en unos minutos.",
+                 "code": "portal"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        logger.info("Casilla SUNAFIL abierta para %s por %s", request.ruc, request.user.email)
+        return Response(form)
 
 
 def _authorization_payload(auth: SunatAuthorization | None) -> dict | None:

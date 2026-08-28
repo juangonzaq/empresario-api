@@ -78,7 +78,12 @@ class InvoiceExtract(BaseModel):
 
     items = models.JSONField(
         default=list, blank=True,
-        help_text='Líneas: [{"description": …, "quantity": …, "amount": …}].',
+        help_text='Líneas: [{"code", "description", "quantity", "unit", "unit_value", '
+                  '"unit_price", "amount", "tax", "affectation"}].',
+    )
+    due_date = models.DateField(null=True, blank=True, help_text="cbc:DueDate.")
+    order_reference = models.CharField(
+        max_length=60, blank=True, help_text="Orden de compra (cac:OrderReference).",
     )
     supplier_address = models.CharField(max_length=255, blank=True)
     customer_address = models.CharField(max_length=255, blank=True)

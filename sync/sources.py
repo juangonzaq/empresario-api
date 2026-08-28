@@ -362,11 +362,68 @@ def _suppliers(creds, cadence: str) -> dict[str, Any]:
     return detalle
 
 
-def _analytics(creds, cadence: str) -> dict[str, Any]:
-    """No sale a internet: recalcula alertas sobre lo ya guardado."""
-    from finance_analytics.services.alerts import rebuild_alerts
+def _declaraciones(creds, cadence: str) -> dict[str, Any]:
+    """Lo presentado y pagado a SUNAT (Consulta de Declaraciones y Pagos de SOL).
 
-    return rebuild_alerts(creds.ruc)
+    La primera carga recorre tres años por ventanas de seis meses; las demás
+    solo repasan los últimos periodos, que es donde puede haber una
+    presentación nueva o una rectificatoria.
+    """
+    from sunat_declaraciones.services import DeclaracionesLoginRejected, sincronizar
+
+    try:
+        result = sincronizar(
+            creds.ruc, creds.username, creds.password,
+            inicial=cadence in (Cadence.INITIAL, Cadence.MANUAL),
+        )
+    except DeclaracionesLoginRejected as exc:
+        raise LoginFailed(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise SourceFailed(f"No se pudo leer la consulta de declaraciones en SOL: {exc}") from exc
+    return {
+        "filas": result.filas, "nuevas": result.nuevas,
+        "periodos_declarados": result.periodos_declarados,
+    }
+
+
+def _renta_anual(creds, cadence: str) -> dict[str, Any]:
+    """La DJ Anual de Renta (F.V. 710) desde e-renta, con sus casillas y el zip."""
+    from sunat_declaraciones.services import RentaAnualLoginRejected, sincronizar_renta_anual
+
+    try:
+        result = sincronizar_renta_anual(creds.ruc, creds.username, creds.password)
+    except RentaAnualLoginRejected as exc:
+        raise LoginFailed(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise SourceFailed(f"No se pudo leer la DJ anual en e-renta: {exc}") from exc
+    return {"presentaciones": result.presentaciones, "nuevas": result.nuevas}
+
+
+def _intel(creds, cadence: str) -> dict[str, Any]:
+    """Convierte los mensajes nuevos del buzón en resumen, casos y decisiones.
+
+    No sale a internet salvo al modelo: cada mensaje se analiza una sola vez
+    (caché por huella), así que la corrida diaria paga solo lo que llegó
+    hoy. Sin esto, «Resumen», «Casos» y «Decisiones» quedaban vacíos aunque
+    el buzón estuviera al día, porque nada más disparaba el análisis."""
+    from sunat_intel.services import analyzer, cases
+
+    stats = analyzer.analyze_pending(taxpayer_id=creds.ruc)
+    casos = cases.rebuild_cases(creds.ruc)
+    return {**stats, "casos": casos}
+
+
+def _analytics(creds, cadence: str) -> dict[str, Any]:
+    """No sale a internet: lee los XML nuevos y recalcula alertas.
+
+    La extracción iba solo en una tarea global aparte; si esa no corría, el
+    detalle de cada comprobante (ítems, IGV, forma de pago) quedaba en
+    guiones aunque el XML estuviera guardado."""
+    from finance_analytics.services.alerts import rebuild_alerts
+    from finance_analytics.services.xml_extract import extract_pending
+
+    extraccion = extract_pending(account_ruc=creds.ruc)
+    return {**rebuild_alerts(creds.ruc), "xml": extraccion}
 
 
 INITIAL = Cadence.INITIAL
@@ -407,10 +464,20 @@ SOURCES: list[Source] = [
     # La consulta de RUC es pública: no gasta la sesión SOL ni depende de ella.
     Source("suppliers", "Estado de proveedores", False, _suppliers,
            frozenset({INITIAL, DAILY})),
-    # La analítica no sale a los portales: va al final, sobre lo que los pasos
-    # anteriores acaban de guardar. El «Análisis con IA» del buzón dejó de ser
-    # un paso de la sincronización (se decidirá aparte); `sunat_intel` sigue
-    # existiendo para el asistente y para la tarea `analyze_mailbox`.
+    # Lo que se presentó y pagó a SUNAT. Las declaraciones son mensuales;
+    # va antes de la analítica porque de aquí salen alertas y el declarado
+    # que cruza la conciliación.
+    Source("declaraciones", "Declaraciones y pagos (SOL)", True, _declaraciones,
+           frozenset({INITIAL, MONTHLY})),
+    # La DJ anual se presenta una vez al año; una vez al mes basta para
+    # recoger rectificatorias y el ejercicio nuevo.
+    Source("renta_anual", "Declaración anual de renta (e-renta)", True, _renta_anual,
+           frozenset({INITIAL, MONTHLY})),
+    # Los dos últimos no salen a los portales: van sobre lo que los pasos
+    # anteriores acaban de guardar. El análisis del buzón corre tras el buzón
+    # (diario) y en la carga inicial; solo cuesta por mensaje nuevo.
+    Source("intel", "Lectura del buzón (IA)", False, _intel,
+           frozenset({INITIAL, DAILY})),
     Source("analytics", "Analítica financiera", False, _analytics,
            frozenset({INITIAL, DAILY, MONTHLY})),
 ]

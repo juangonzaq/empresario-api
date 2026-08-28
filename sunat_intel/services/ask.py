@@ -165,6 +165,17 @@ def _compliance_lines(taxpayer_id: str) -> list[str]:
     return lines
 
 
+def _declaraciones_lines(taxpayer_id: str) -> list[str]:
+    """Lo declarado y pagado a SUNAT, ya resumido; el asistente no recalcula."""
+    try:
+        from sunat_declaraciones.services import lineas_para_asistente
+
+        return lineas_para_asistente(taxpayer_id)
+    except Exception:  # noqa: BLE001 — sin esto el asistente responde igual
+        logger.warning("No se pudo armar el contexto de declaraciones de %s", taxpayer_id, exc_info=True)
+        return []
+
+
 def _finance_lines(taxpayer_id: str) -> list[str]:
     """Executive finance context: aggregates plus openable documents.
 
@@ -276,6 +287,8 @@ def build_context(taxpayer_id: str) -> str:
         *(_compliance_lines(taxpayer_id) or ["(sin perfil disponible)"]),
         "\n## Finanzas (CPE + ITF, métricas ya calculadas)",
         *(_finance_lines(taxpayer_id) or ["(sin datos financieros)"]),
+        "\n## Declaraciones y pagos a SUNAT (621, PLAME, boletas, DJ anual)",
+        *(_declaraciones_lines(taxpayer_id) or ["(sin declaraciones sincronizadas)"]),
     ]
     return "\n".join(sections)
 

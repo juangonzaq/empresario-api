@@ -26,12 +26,16 @@ def taxpayer(status: str = "ACTIVO", condition: str = "HABIDO") -> TaxpayerProfi
     )
 
 
-def full_profile(*, coactive: bool = False, reactiva: str = "NO", **kw) -> FullProfile:
+def full_profile(
+    *, coactive: bool = False, reactiva: str = "NO", branches: str | None = "",
+    **kw,
+) -> FullProfile:
     pages = {
         "historical": f.historical_page(),
         "coactive_debt": f.coactive_debt_page() if coactive else f.no_data_text_page(),
         "tax_omissions": f.no_data_text_page(),
         "workers": f.workers_page(),
+        "branches": f.branches_page() if branches == "" else branches,
         "probatory_acts": f.empty_table_page(),
         "physical_invoices": f.empty_table_page(),
         "reactiva_peru": f.boolean_page(reactiva),
@@ -40,7 +44,10 @@ def full_profile(*, coactive: bool = False, reactiva: str = "NO", **kw) -> FullP
     }
     return FullProfile(
         taxpayer=taxpayer(**kw),
-        sections={k: parse_section(SECTIONS_BY_KEY[k], v) for k, v in pages.items()},
+        sections={
+            k: parse_section(SECTIONS_BY_KEY[k], v)
+            for k, v in pages.items() if v is not None
+        },
     )
 
 
@@ -48,6 +55,21 @@ def client_yielding(*profiles) -> MagicMock:
     client = MagicMock()
     client.fetch_full_profile.side_effect = list(profiles)
     return client
+
+
+class BranchesTests(TestCase):
+    def capture(self, profile) -> RucSnapshot:
+        RucProfileSynchronizer(client_yielding(profile)).run([f.RUC], on_date=TODAY)
+        return RucSnapshot.objects.get()
+
+    def test_counts_declared_branches(self):
+        self.assertEqual(self.capture(full_profile()).branch_count, 2)
+
+    def test_no_branches_is_zero_not_unknown(self):
+        self.assertEqual(self.capture(full_profile(branches=f.no_branches_page())).branch_count, 0)
+
+    def test_missing_section_is_unknown(self):
+        self.assertIsNone(self.capture(full_profile(branches=None)).branch_count)
 
 
 class CaptureTests(TestCase):
@@ -60,7 +82,7 @@ class CaptureTests(TestCase):
         snapshot = RucSnapshot.objects.get()
         self.assertEqual(snapshot.business_name, f.NAME)
         self.assertEqual(snapshot.status, "ACTIVO")
-        self.assertEqual(snapshot.sections.count(), 9)
+        self.assertEqual(snapshot.sections.count(), 10)
 
     def test_extracts_headcounts_and_representatives(self):
         RucProfileSynchronizer(client_yielding(full_profile())).run(

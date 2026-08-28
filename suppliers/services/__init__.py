@@ -18,7 +18,10 @@ from .fiscalizacion import (
     simular_fiscalizacion,
 )
 from .monitor import MonitorResult, SupplierMonitor
-from .ssco import PadronSscoError, rucs_en_padron, sincronizar_padron
+from .ssco import (
+    PadronSscoError, detalle as detalle_ssco, fecha_padron, rucs_en_padron,
+    sincronizar_padron,
+)
 from .ruc_client import (
     RucLookupClient,
     RucLookupError,
@@ -50,6 +53,8 @@ __all__ = [
     "incorporar_desde_compras",
     "proveedores_por_descubrir",
     "resumen_riesgo",
+    "detalle_ssco",
+    "fecha_padron",
     "rucs_en_padron",
     "sincronizar_padron",
     "simular_fiscalizacion",

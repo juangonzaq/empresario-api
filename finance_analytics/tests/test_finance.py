@@ -43,9 +43,22 @@ UBL_INVOICE = """<?xml version="1.0" encoding="UTF-8"?>
       <cac:TaxCategory><cac:TaxScheme><cbc:ID>1000</cbc:ID><cbc:Name>IGV</cbc:Name></cac:TaxScheme></cac:TaxCategory>
     </cac:TaxSubtotal></cac:TaxTotal>
   <cac:LegalMonetaryTotal><cbc:PayableAmount currencyID="PEN">590.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
-  <cac:InvoiceLine><cbc:InvoicedQuantity>2.00</cbc:InvoicedQuantity>
+  <cbc:DueDate>2026-08-15</cbc:DueDate>
+  <cac:OrderReference><cbc:ID>OC-0042</cbc:ID></cac:OrderReference>
+  <cac:InvoiceLine><cbc:InvoicedQuantity unitCode="ZZ">2.00</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="PEN">500.00</cbc:LineExtensionAmount>
-    <cac:Item><cbc:Description>SERVICIO DE DISEÃ‘O</cbc:Description></cac:Item></cac:InvoiceLine>
+    <cac:PricingReference><cac:AlternativeConditionPrice>
+      <cbc:PriceAmount currencyID="PEN">295.00</cbc:PriceAmount><cbc:PriceTypeCode>01</cbc:PriceTypeCode>
+    </cac:AlternativeConditionPrice></cac:PricingReference>
+    <cac:TaxTotal><cbc:TaxAmount currencyID="PEN">90.00</cbc:TaxAmount>
+      <cac:TaxSubtotal><cbc:TaxableAmount currencyID="PEN">500.00</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="PEN">90.00</cbc:TaxAmount>
+        <cac:TaxCategory><cbc:TaxExemptionReasonCode>10</cbc:TaxExemptionReasonCode>
+          <cac:TaxScheme><cbc:ID>1000</cbc:ID></cac:TaxScheme></cac:TaxCategory>
+      </cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item><cbc:Description>SERVICIO DE DISEÃ‘O</cbc:Description>
+      <cac:SellersItemIdentification><cbc:ID>SRV-01</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="PEN">250.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </Invoice>"""
 
 
@@ -83,6 +96,32 @@ class XmlExtractTests(TenantAPITestCase):
         self.assertEqual(data["installments"][0]["due_date"], "2026-08-15")
         # Mojibake in item descriptions is repaired.
         self.assertEqual(data["items"][0]["description"], "SERVICIO DE DISEÑO")
+
+    def test_lines_carry_what_a_kardex_needs(self):
+        data = parse_invoice_xml(UBL_INVOICE)
+        item = data["items"][0]
+        self.assertEqual(item["code"], "SRV-01")
+        self.assertEqual(item["quantity"], "2.00")
+        self.assertEqual(item["unit"], "ZZ")
+        self.assertEqual(item["unit_value"], "250.00")   # sin IGV
+        self.assertEqual(item["unit_price"], "295.00")   # con IGV
+        self.assertEqual(item["amount"], "500.00")
+        self.assertEqual(item["tax"], "90.00")
+        self.assertEqual(item["affectation"], "10")
+        self.assertEqual(data["due_date"], "2026-08-15")
+        self.assertEqual(data["order_reference"], "OC-0042")
+
+    def test_extract_pending_can_be_scoped_to_one_company(self):
+        from finance_analytics.models import InvoiceExtract
+        from finance_analytics.services.xml_extract import extract_pending
+
+        mine = make_doc(xml_content=UBL_INVOICE, xml_sha256="a")
+        other = make_doc(account_ruc="20999999991", xml_content=UBL_INVOICE, xml_sha256="b")
+        stats = extract_pending(account_ruc=RUC)
+        self.assertEqual(stats["parsed"], 1)
+        self.assertTrue(InvoiceExtract.objects.filter(invoice=mine).exists())
+        self.assertFalse(InvoiceExtract.objects.filter(invoice=other).exists())
+        self.assertEqual(InvoiceExtract.objects.get(invoice=mine).order_reference, "OC-0042")
 
     def test_fix_mojibake(self):
         self.assertEqual(fix_mojibake("COMPAÃ\x91IA"), "COMPAÑIA")

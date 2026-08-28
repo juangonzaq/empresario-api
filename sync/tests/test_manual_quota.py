@@ -81,7 +81,8 @@ class SyncHistoryApiTests(APITestCase):
         self.assertEqual(res.data["quota"]["used"], 1)
         self.assertTrue(any(s["key"] == "cpe" for s in res.data["sources"]))
         # La analítica con IA no se ofrece en el checklist.
-        self.assertFalse(any(s["key"] == "intel" for s in res.data["sources"]))
+        # La lectura del buzón volvió a ser un paso visible de la sincronización.
+        self.assertTrue(any(s["key"] == "intel" for s in res.data["sources"]))
         self.assertEqual(res.data["jobs"]["count"], 1)
         self.assertEqual(len(res.data["jobs"]["results"]), 1)
         self.assertTrue(res.data["jobs"]["results"][0]["is_manual"])

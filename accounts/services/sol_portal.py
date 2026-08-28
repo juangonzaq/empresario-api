@@ -87,14 +87,87 @@ def menu_state() -> str:
     return FALLBACK_STATE
 
 
-def login_form(ruc: str, username: str, password: str) -> dict:
+# ── Destinos ────────────────────────────────────────────────────────────────
+# El acceso a SUNAT se desglosa en tres. Cada uno entra por su propio cliente
+# OAuth2 de SUNAT: el menú clásico (trámites, consultas y también el grupo
+# «Mis declaraciones y pagos») y e-renta, que es otra aplicación con su login.
+DESTINO_TRAMITES = "tramites"
+DESTINO_DECLARACIONES = "declaraciones"
+DESTINO_RENTA = "renta"
+DESTINOS = (DESTINO_TRAMITES, DESTINO_DECLARACIONES, DESTINO_RENTA)
+
+# e-renta construye en JavaScript esta URL de autorización; al pedirla sin
+# sesión, SUNAT redirige a su página de login con ``originalUrl`` y ``state``
+# ya resueltos. Ese es el formulario que se reproduce.
+RENTA_CLIENT_ID = "03590141-c69c-438c-a36a-8ee2a3ad9747"
+RENTA_REDIRECT = "https://e-renta.sunat.gob.pe/loader/recaudaciontributaria/declaracionpago/formularios"
+RENTA_AUTHEN_URL = (
+    f"https://api-seguridad.sunat.gob.pe/v1/clientessol/{RENTA_CLIENT_ID}/oauth2/authen"
+    f"?response_type=code&client_id={RENTA_CLIENT_ID}&scope=/e-renta"
+    f"&redirect_uri={RENTA_REDIRECT}"
+)
+
+
+class PortalUnavailable(RuntimeError):
+    """El portal no devolvió su página de login: no se puede armar el formulario."""
+
+
+def oauth_login_form(
+    authen_url: str, ruc: str, username: str, password: str,
+    session: requests.Session | None = None, timeout: int = FETCH_TIMEOUT_SECONDS,
+) -> dict:
+    """Formulario de login para cualquier aplicación que delega en Clave SOL.
+
+    Se pide la URL de autorización sin seguir la redirección: la ``Location``
+    es la página de login de SUNAT y lleva en su query ``originalUrl``,
+    ``state`` y ``lang``, que son justo los campos que la página copia en su
+    formulario. La acción es ``j_security_check`` bajo el mismo cliente.
+    """
+    http = session or requests
+    try:
+        response = http.get(
+            authen_url, allow_redirects=False, timeout=timeout,
+            headers={"User-Agent": USER_AGENT},
+        )
+    except requests.RequestException as exc:
+        raise PortalUnavailable(str(exc)) from exc
+    login_url = response.headers.get("Location", "")
+    if "/oauth2/" not in login_url:
+        raise PortalUnavailable(f"sin redirección de login ({response.status_code})")
+    from urllib.parse import parse_qs, urlparse
+
+    query = parse_qs(urlparse(login_url).query)
+    oauth_base = login_url.split("/oauth2/")[0] + "/oauth2"
+    return {
+        "action": f"{oauth_base}/j_security_check",
+        "method": "POST",
+        "fields": {
+            "tipo": "2",
+            "dni": "",
+            "custom_ruc": ruc,
+            "j_username": username,
+            "j_password": password,
+            "captcha": "",
+            "originalUrl": query.get("originalUrl", [""])[0],
+            "lang": query.get("lang", ["es-PE"])[0],
+            "state": query.get("state", [""])[0],
+        },
+    }
+
+
+def login_form(ruc: str, username: str, password: str, destino: str = DESTINO_TRAMITES) -> dict:
     """El formulario de login SOL listo para enviarse desde el navegador.
+
+    ``destino`` elige la aplicación: el menú clásico para trámites, consultas
+    y declaraciones, o e-renta para la declaración anual.
 
     Los nombres de campo son los de ``LoginForm`` en la página de SUNAT:
     ``tipo=2`` es «entrar con RUC» (1 sería con DNI), ``captcha`` va vacío
     porque SUNAT solo lo pide tras varios intentos fallidos, y ``originalUrl``,
     ``lang`` y ``state`` son los que la página copia de su propia URL.
     """
+    if destino == DESTINO_RENTA:
+        return oauth_login_form(RENTA_AUTHEN_URL, ruc, username, password)
     return {
         "action": LOGIN_ACTION,
         "method": "POST",

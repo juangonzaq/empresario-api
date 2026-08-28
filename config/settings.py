@@ -128,6 +128,7 @@ INSTALLED_APPS = [
     'billing',
     'reconciliation',
     'obligations',
+    'sunat_declaraciones',
 ]
 
 MIDDLEWARE = [

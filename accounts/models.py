@@ -505,8 +505,18 @@ class BusinessProfile(BaseModel):
         Organization, related_name="business_profile", on_delete=models.CASCADE
     )
     offering = models.CharField(max_length=15, choices=Offering, blank=True)
-    sector = models.CharField(max_length=15, choices=Sector, blank=True)
-    primary_goal = models.CharField(max_length=15, choices=Goal, blank=True)
+    # Un negocio puede identificarse con varios rubros (restaurante que además
+    # hace catering y vende insumos) y querer mejorar varias cosas a la vez.
+    # Se guardan en el orden en que la persona los eligió: el primero es el
+    # que más la representa y manda cuando hay que priorizar algo visual.
+    # No son las actividades económicas de la Ficha RUC —esas las trae SUNAT—,
+    # sino cómo la persona describe su negocio con sus palabras.
+    sectors = models.JSONField("rubros", default=list, blank=True)
+    goals = models.JSONField("objetivos", default=list, blank=True)
+    # Espejo del primer elemento de cada lista, para el admin y para reglas o
+    # reportes que todavía leen un solo valor. Se recalculan al guardar.
+    sector = models.CharField(max_length=15, choices=Sector, blank=True, editable=False)
+    primary_goal = models.CharField(max_length=15, choices=Goal, blank=True, editable=False)
     business_age = models.CharField(max_length=15, choices=Age, blank=True)
     people_count = models.PositiveSmallIntegerField(default=1)
     # Tri-estado a propósito (True/False/None): None = «no lo sé todavía». El
@@ -518,14 +528,27 @@ class BusinessProfile(BaseModel):
         "atiende en local físico", null=True, blank=True, default=None)
     sells_online = models.BooleanField(
         "vende por internet", null=True, blank=True, default=None)
+    # «¿Tienes trabajadores en planilla?». Decide qué se enseña (el acceso a
+    # SUNAFIL, las obligaciones laborales); la planilla real, si existe, manda.
+    has_payroll = models.BooleanField(
+        "tiene trabajadores en planilla", null=True, blank=True, default=None)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = "perfil del negocio"
         verbose_name_plural = "perfiles del negocio"
 
+    MAX_SECTORS = 3
+
     def __str__(self) -> str:
         return f"{self.organization.ruc} · {self.sector or 'sin rubro'}"
+
+    def save(self, *args, **kwargs):
+        self.sectors = list(self.sectors or [])
+        self.goals = list(self.goals or [])
+        self.sector = self.sectors[0] if self.sectors else ""
+        self.primary_goal = self.goals[0] if self.goals else ""
+        super().save(*args, **kwargs)
 
     @property
     def is_complete(self) -> bool:

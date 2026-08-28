@@ -7,7 +7,7 @@ from .views import (
     BusinessProfileView, LoginView, LogoutView, OrganizationListView,
     PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView,
     ProfileView, ConsentDocumentView, RegisterView, ResendVerificationView,
-    SunatAuthorizationView, SunatConnectionView, SunatPortalView,
+    SunatAuthorizationView, SunatConnectionView, SunatPortalView, SunafilPortalView,
     TeamInvitationView, TeamMemberView, TeamView, VerifyEmailView,
 )
 
@@ -35,6 +35,7 @@ urlpatterns = [
     path("organizations/invitations/<uuid:invitation_id>/", TeamInvitationView.as_view(), name="team-invitation"),
     path("organizations/sunat/", SunatConnectionView.as_view(), name="sunat-connection"),
     path("organizations/sunat/portal/", SunatPortalView.as_view(), name="sunat-portal"),
+    path("organizations/sunafil/portal/", SunafilPortalView.as_view(), name="sunafil-portal"),
     path("organizations/sunat/authorization/", SunatAuthorizationView.as_view(), name="sunat-authorization"),
     path("legal/autorizacion-sunat/", ConsentDocumentView.as_view(), name="consent-document"),
     path("status/", CompanyStatusView.as_view(), name="company-status"),

@@ -225,6 +225,32 @@ def _projection_inputs(account_ruc: str, year: int):
     return overrides, closed
 
 
+def _pagos_a_cuenta_declarados(account_ruc: str, year: int) -> dict[str, Decimal]:
+    """Periodo → pago a cuenta declarado en el 621 vigente (casilla 312)."""
+    try:
+        from sunat_declaraciones.services.casillas import resumen_621
+        from sunat_declaraciones.services.sync import vigentes_621
+    except Exception:  # pragma: no cover - app siempre presente
+        return {}
+    out: dict[str, Decimal] = {}
+    for period, decl in vigentes_621(account_ruc).items():
+        if not period.startswith(str(year)):
+            continue
+        pago = resumen_621(decl.casillas)["renta_pago_a_cuenta"]
+        if pago is not None:
+            out[period] = _q(pago)
+    return out
+
+
+def _dj_anual_declarada(account_ruc: str, year: int) -> dict[str, Any] | None:
+    """La DJ anual presentada de ese ejercicio, si e-renta ya la trajo."""
+    try:
+        from sunat_declaraciones.services import resumen_anual
+    except Exception:  # pragma: no cover
+        return None
+    return next((e for e in resumen_anual(account_ruc) if e["ejercicio"] == str(year)), None)
+
+
 def renta_summary(account_ruc: str, regime: str, year: int, manual: list[Any]) -> dict[str, Any]:
     regime_declared = regime if regime in REGIME_LABEL else ""
     regime_assumed = not regime_declared
@@ -291,6 +317,15 @@ def renta_summary(account_ruc: str, regime: str, year: int, manual: list[Any]) -
     for r in rows:
         r["closed"] = r["period"] in closed
 
+    # Lo que de verdad se declaró como pago a cuenta en el 621 de cada mes
+    # (casilla 312), cuando la consulta de declaraciones ya lo trajo. Es el
+    # contraste de la estimación: si difieren, el que manda es SUNAT.
+    declarados = _pagos_a_cuenta_declarados(account_ruc, year)
+    pac_declarado_total = Decimal("0")
+    for r in rows:
+        r["pago_a_cuenta_declarado"] = declarados.get(r["period"])
+        pac_declarado_total += declarados.get(r["period"]) or Decimal("0")
+
     pac_total = Decimal("0")
     for r in rows:
         if reg == "RUS":
@@ -333,7 +368,15 @@ def renta_summary(account_ruc: str, regime: str, year: int, manual: list[Any]) -
         "closed_periods": sorted(closed),
         "assumptions": assumptions,
         "months": rows,
-        "totals": {"ingresos": _q(ing_acum), "gastos": _q(gas_acum), "utilidad": _q(uti_acum), "pagos_a_cuenta": _q(pac_total)},
+        # Lo que se le declaró a SUNAT en la DJ anual de este ejercicio: el
+        # cierre real contra el que comparar la estimación de arriba.
+        "dj_anual": _dj_anual_declarada(account_ruc, year),
+        "totals": {
+            "ingresos": _q(ing_acum), "gastos": _q(gas_acum), "utilidad": _q(uti_acum),
+            "pagos_a_cuenta": _q(pac_total),
+            "pagos_a_cuenta_declarados": _q(pac_declarado_total),
+            "meses_declarados": len(declarados),
+        },
         "proyeccion": {
             "ingresos": ing_proy, "gastos": gas_proy, "utilidad": uti_proy,
             "planilla": planilla_proy,

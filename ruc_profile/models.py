@@ -62,6 +62,9 @@ class RucSnapshot(BaseModel):
         null=True, blank=True, help_text="Workers declared in the most recent period."
     )
     latest_worker_period = models.CharField(max_length=7, blank=True)
+    # Establecimientos anexos declarados (sin contar el domicilio fiscal).
+    # None = la sección no se capturó; 0 = SUNAT dice que no tiene ninguno.
+    branch_count = models.PositiveIntegerField(null=True, blank=True)
 
     changed = models.BooleanField(
         default=False, db_index=True,

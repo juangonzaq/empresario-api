@@ -27,5 +27,6 @@ urlpatterns = [
     path("api/", include("billing.urls")),
     path("api/", include("reconciliation.urls")),
     path("api/", include("obligations.urls")),
+    path("api/", include("sunat_declaraciones.urls")),
     path("api/auth/", include("rest_framework.urls")),  # login for the browsable API
 ]

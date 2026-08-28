@@ -212,10 +212,31 @@ def rucs_en_padron(rucs) -> dict[str, SujetoSinCapacidadOperativa]:
     }
 
 
+def fecha_padron() -> date | None:
+    """De cuándo es el padrón que se tiene guardado (última descarga)."""
+    from django.db.models import Max
+    return SujetoSinCapacidadOperativa.objects.aggregate(m=Max("visto_el"))["m"]
+
+
+def detalle(sujeto: SujetoSinCapacidadOperativa | None) -> dict | None:
+    """Lo del padrón que un usuario necesita ver: la resolución y sus fechas."""
+    if sujeto is None:
+        return None
+    return {
+        "razon_social": sujeto.razon_social,
+        "resolucion": sujeto.resolucion,
+        "fecha_resolucion": sujeto.fecha_resolucion,
+        "fecha_firme": sujeto.fecha_firme,
+        "fecha_publicacion": sujeto.fecha_publicacion,
+    }
+
+
 __all__ = [
     "FilaSsco",
     "PadronSscoError",
     "ResultadoSsco",
+    "detalle",
+    "fecha_padron",
     "guardar",
     "parsear",
     "rucs_en_padron",

@@ -61,6 +61,35 @@ def _urls_suscripcion(request: Request, organization: Organization) -> dict:
     }
 
 
+def _con_presentaciones(ruc: str, eventos: list[dict]) -> list[dict]:
+    """Cada vencimiento mensual dice si el 621 / la PLAME de ese periodo ya
+    figuran presentados en SUNAT (consulta de declaraciones)."""
+    try:
+        from sunat_declaraciones.services import presentaciones_por_periodo
+
+        presentadas = presentaciones_por_periodo(ruc)
+    except Exception:  # noqa: BLE001 — el calendario nunca debe caerse por esto
+        presentadas = {}
+    salida = []
+    for e in eventos:
+        periodo = e.get("periodo")
+        if e.get("tipo") == "SUNAT_MENSUAL" and periodo:
+            p = presentadas.get(periodo, {})
+            e = {
+                **e,
+                "presentado": {
+                    clave: None if p.get(clave) is None else {
+                        "fecha": p[clave]["fecha"].isoformat() if p[clave]["fecha"] else None,
+                        "nro_orden": p[clave]["nro_orden"],
+                        "a_tiempo": (p[clave]["fecha"] <= e["fecha"]) if (p[clave]["fecha"] and e.get("fecha")) else None,
+                    }
+                    for clave in ("621", "0601")
+                },
+            }
+        salida.append(e)
+    return salida
+
+
 class CalendarioPropioView(ManagedOrganizationAPIView):
     """El calendario completo de la empresa activa, con su contexto.
 
@@ -73,7 +102,9 @@ class CalendarioPropioView(ManagedOrganizationAPIView):
         organization = request.organization
         hoy = _hoy()
         contexto = contexto_de(organization)
-        eventos = eventos_de(organization, desde=hoy, con_cumpleanos=True)
+        eventos = _con_presentaciones(
+            organization.ruc, eventos_de(organization, desde=hoy, con_cumpleanos=True),
+        )
 
         return Response({
             **contexto.as_dict(),

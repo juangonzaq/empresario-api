@@ -243,6 +243,22 @@ def _consistency_alerts(account_ruc: str, consistency: dict[str, Any]) -> list[s
     return keys
 
 
+def _declaration_alerts(account_ruc: str) -> list[str]:
+    """Lo declarado y pagado a SUNAT contra el cronograma y contra sí mismo."""
+    from sunat_declaraciones.services import hallazgos
+
+    keys: list[str] = []
+    for h in hallazgos(account_ruc):
+        h = dict(h)
+        dedup_key = h.pop("dedup_key")
+        h["severity"] = {
+            "high": AlertSeverity.HIGH, "medium": AlertSeverity.MEDIUM,
+        }.get(h["severity"], AlertSeverity.INFO)
+        _upsert(account_ruc, dedup_key, **h)
+        keys.append(dedup_key)
+    return keys
+
+
 def rebuild_alerts(account_ruc: str) -> dict[str, int]:
     ruc = account_ruc
     docs = load_documents(ruc)
@@ -259,5 +275,6 @@ def rebuild_alerts(account_ruc: str) -> dict[str, int]:
     active += _lost_client_alerts(ruc, customers)
     active += _itf_alerts(ruc, itf)
     active += _consistency_alerts(ruc, consistency)
+    active += _declaration_alerts(ruc)
 
     return {"active": len(active), "total": FinanceAlert.objects.filter(account_ruc=ruc).count()}

@@ -1,0 +1,520 @@
+{
+ "id": "aaaaaaaaaaaaaaaaaaaaaaaa",
+ "razonSocial": "EMPRESA DE PRUEBA S.A.C.",
+ "identificadorPresentacion": null,
+ "codTipoDeclara": "02",
+ "codDep": "0023",
+ "numRuc": "20100000009",
+ "fecOperacion": "2026-03-20T14:39:29.802-05:00",
+ "codMedPre": "01",
+ "cntItem": 1,
+ "mtoPagar": 0,
+ "numIdResumen": null,
+ "codEcmResumen": "{80C20C9D-0200-C769-A683-BD5382ECABBA}",
+ "codEcmNps": null,
+ "codReport": null,
+ "codUsr": "USUARIO",
+ "indPagRea": "1",
+ "numSecFin": "59477351",
+ "numOpePag": null,
+ "numNpsPag": null,
+ "numDirIp": "",
+ "numMacAddr": null,
+ "nomSisOpe": "Win32",
+ "nomNavWeb": "Chrome 146",
+ "codEstBatch": null,
+ "indDel": "0",
+ "codFor": null,
+ "codMedpag": null,
+ "desMedpag": null,
+ "numRegPres": 7756807918,
+ "auditoria": {
+  "codUsuRegis": "USUARIO",
+  "fecRegis": "2026-03-20T19:39:29.877Z",
+  "codUsuModif": "ConsMongoModif",
+  "fecModif": "2026-03-20T19:39:30.041Z"
+ },
+ "listFormularios": [
+  {
+   "codTipoFormulario": "01",
+   "desFor": "Formulario Virtual N° 710 Renta Anual - EMPRESAS",
+   "numSec": 59477351,
+   "numOrd": 1160136986,
+   "numRuc": "20100000009",
+   "fecPres": "2026-03-20T14:39:29.802-05:00",
+   "horPres": "2026-03-20T14:39:29.802-05:00",
+   "perTri": "202513",
+   "semFor": "0",
+   "codIndRec": "0",
+   "codOrifor": "01",
+   "codOriPres": "01",
+   "codTipFor": "10",
+   "numValPag": 0,
+   "mtoPag": 0,
+   "codTipdetrac": "0",
+   "codEstado": "98",
+   "codEtapa": "00",
+   "numIdConstancia": 0,
+   "numIdResumen": 0,
+   "numIdReporte": 1,
+   "numIdConstanciaEcm": "{80C20C9D-0200-CB4E-ABE1-9E0A673B9928}",
+   "numIdResumenEcm": "{80C20C9D-0200-C769-A683-BD5382ECABBA}",
+   "numIdReporteEcm": "{80C20C9D-0200-C487-A228-0D3B55207FF2}",
+   "numNabono": "",
+   "numResrec": "",
+   "numPedPro": "",
+   "numPedAnu": "",
+   "indForAut": "0",
+   "codEntFin": "000",
+   "nomEntFin": null,
+   "numOpebco": 0,
+   "numOrdOri": 0,
+   "codFor": "0710",
+   "numVerFor": "1.0",
+   "indBan": "0",
+   "indDel": "0",
+   "listCasillas": [
+    {
+     "numCas": 801,
+     "desValCas": "20100000009",
+     "indDel": "0"
+    },
+    {
+     "numCas": 803,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 217,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 687,
+     "desValCas": "99",
+     "indDel": "0"
+    },
+    {
+     "numCas": 225,
+     "desValCas": "01",
+     "indDel": "0"
+    },
+    {
+     "numCas": 226,
+     "desValCas": "00000001",
+     "indDel": "0"
+    },
+    {
+     "numCas": 817,
+     "desValCas": "PEREZ",
+     "indDel": "0"
+    },
+    {
+     "numCas": 818,
+     "desValCas": " ANA",
+     "indDel": "0"
+    },
+    {
+     "numCas": 829,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 293,
+     "desValCas": "A",
+     "indDel": "0"
+    },
+    {
+     "numCas": 213,
+     "desValCas": "2",
+     "indDel": "0"
+    },
+    {
+     "numCas": 819,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 227,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 502,
+     "desValCas": "2",
+     "indDel": "0"
+    },
+    {
+     "numCas": 782,
+     "desValCas": "1",
+     "indDel": "0"
+    },
+    {
+     "numCas": 824,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 503,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 510,
+     "desValCas": "4",
+     "indDel": "0"
+    },
+    {
+     "numCas": 100,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 101,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 106,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 107,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 108,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 110,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 113,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 111,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 686,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 610,
+     "desValCas": "1.5",
+     "indDel": "0"
+    },
+    {
+     "numCas": 880,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 504,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 127,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 128,
+     "desValCas": "3884",
+     "indDel": "0"
+    },
+    {
+     "numCas": 130,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 506,
+     "desValCas": "-3884",
+     "indDel": "0"
+    },
+    {
+     "numCas": 131,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 279,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 297,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 359,
+     "desValCas": "1770",
+     "indDel": "0"
+    },
+    {
+     "numCas": 361,
+     "desValCas": "40619",
+     "indDel": "0"
+    },
+    {
+     "numCas": 365,
+     "desValCas": "345050",
+     "indDel": "0"
+    },
+    {
+     "numCas": 382,
+     "desValCas": "29660",
+     "indDel": "0"
+    },
+    {
+     "numCas": 383,
+     "desValCas": "7256",
+     "indDel": "0"
+    },
+    {
+     "numCas": 390,
+     "desValCas": "409843",
+     "indDel": "0"
+    },
+    {
+     "numCas": 402,
+     "desValCas": "51501",
+     "indDel": "0"
+    },
+    {
+     "numCas": 403,
+     "desValCas": "5392",
+     "indDel": "0"
+    },
+    {
+     "numCas": 404,
+     "desValCas": "4736",
+     "indDel": "0"
+    },
+    {
+     "numCas": 410,
+     "desValCas": "5822",
+     "indDel": "0"
+    },
+    {
+     "numCas": 412,
+     "desValCas": "67451",
+     "indDel": "0"
+    },
+    {
+     "numCas": 414,
+     "desValCas": "4000",
+     "indDel": "0"
+    },
+    {
+     "numCas": 421,
+     "desValCas": "358907",
+     "indDel": "0"
+    },
+    {
+     "numCas": 424,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 425,
+     "desValCas": "342392",
+     "indDel": "0"
+    },
+    {
+     "numCas": 426,
+     "desValCas": "409843",
+     "indDel": "0"
+    },
+    {
+     "numCas": 461,
+     "desValCas": "387310",
+     "indDel": "0"
+    },
+    {
+     "numCas": 463,
+     "desValCas": "387310",
+     "indDel": "0"
+    },
+    {
+     "numCas": 464,
+     "desValCas": "255344",
+     "indDel": "0"
+    },
+    {
+     "numCas": 466,
+     "desValCas": "131966",
+     "indDel": "0"
+    },
+    {
+     "numCas": 467,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 469,
+     "desValCas": "146424",
+     "indDel": "0"
+    },
+    {
+     "numCas": 470,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 471,
+     "desValCas": "14458",
+     "indDel": "0"
+    },
+    {
+     "numCas": 472,
+     "desValCas": "6057",
+     "indDel": "0"
+    },
+    {
+     "numCas": 473,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 477,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 484,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 485,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 487,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 489,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 492,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 493,
+     "desValCas": "20515",
+     "indDel": "0"
+    },
+    {
+     "numCas": 137,
+     "desValCas": "2",
+     "indDel": "0"
+    },
+    {
+     "numCas": 138,
+     "desValCas": "3884",
+     "indDel": "0"
+    },
+    {
+     "numCas": 139,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 505,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 144,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 146,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 180,
+     "desValCas": "0.0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 2,
+     "desValCas": "20100000009",
+     "indDel": "0"
+    },
+    {
+     "numCas": 5,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 13,
+     "desValCas": "20/03/2026",
+     "indDel": "0"
+    },
+    {
+     "numCas": 58,
+     "desValCas": "14:39:29",
+     "indDel": "0"
+    },
+    {
+     "numCas": 7,
+     "desValCas": "202513",
+     "indDel": "0"
+    },
+    {
+     "numCas": 805,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 871,
+     "desValCas": "0",
+     "indDel": "0"
+    },
+    {
+     "numCas": 61,
+     "desValCas": "1",
+     "indDel": "0"
+    }
+   ],
+   "listTributosPagados": [
+    {
+     "codTri": "030801",
+     "perTri": 202513,
+     "mtoBasImp": 0,
+     "mtoImpres": 0,
+     "mtoTotDeu": 0,
+     "mtoPagTot": 0,
+     "indVig": "1",
+     "indDel": "0",
+     "mtoResPag": 0
+    }
+   ]
+  }
+ ],
+ "numNotificacion": 953544762,
+ "nidi": false
+}

@@ -33,7 +33,7 @@ from decimal import Decimal
 from sunat_cpe.models import DocumentClass, ElectronicInvoice
 
 from ..models import Supplier
-from .actividad import compatibilidad, parsear_actividades
+from .actividad import compatibilidad, parsear_actividades, sectores_de
 from .constants import CONDITION_FOUND, STATUS_ACTIVE
 from .exposure import CERO, _igv_estimado
 from .ssco import rucs_en_padron
@@ -58,6 +58,23 @@ CORRELATIVAS_MINIMO = 5         # facturas para juzgar correlatividad
 CORRELATIVAS_COBERTURA = Decimal("0.8")  # fracción de la numeración que te llegó
 REDONDOS_FRACCION = Decimal("0.6")       # fracción de facturas con monto redondo
 CIERRE_FRACCION = Decimal("0.5")         # fracción del gasto en nov-dic
+
+# ── Capacidad operativa (los criterios con los que SUNAT arma el padrón SSCO) ──
+# Se miden con lo único público que hay: la sección «Cantidad de trabajadores»
+# (PLAME) y «Establecimientos anexos» de la consulta RUC del proveedor. Sin su
+# ficha capturada, estas señales no opinan. Capacidad financiera y logística
+# no tienen fuente pública; quedan fuera a propósito.
+UIT = Decimal("5500")                     # 2026
+MESES_VENTANA_VOLUMEN = 12                # lo que te facturó en su último año
+VOLUMEN_SIN_PERSONAL_UIT = 10             # ≥ S/ 55 000 con 0 personas
+VOLUMEN_POR_PERSONA_UIT = 25              # ≥ S/ 137 500 por persona y año
+VOLUMEN_POR_PERSONA_GRAVE = 2             # el doble ya es alta
+# Rubros que no se ejercen sin un local, almacén o taller. Una consultora sin
+# anexos es lo normal; una fábrica de muebles sin ninguno, no.
+SECTORES_CON_LOCAL = frozenset({
+    "manufactura", "comercio_general", "textil", "alimentos", "vehiculos",
+    "mineria", "agro", "hoteleria", "construccion",
+})
 MESES_CIERRE = (11, 12)
 
 # «critica» es el padrón SSCO: sola ya deja al proveedor en nivel alto.
@@ -90,6 +107,9 @@ class AnalisisProveedor:
     total: Decimal
     primera_compra: date | None
     ultima_compra: date | None
+    # Lo que su ficha RUC dice de su capacidad: None = ficha no capturada.
+    trabajadores: int | None = None
+    anexos: int | None = None
     senales: list[Senal] = field(default_factory=list)
 
     @property
@@ -144,6 +164,70 @@ class _Factura:
     total: Decimal
     serie: str
     numero: str
+
+
+@dataclass
+class _Capacidad:
+    """Personal y locales del proveedor según su ficha RUC, cotejados con los
+    meses en que te facturó."""
+
+    # Máximo de trabajadores + prestadores en los periodos cotejados. 0 = SUNAT
+    # no registra a nadie; None = la sección de planilla no se capturó.
+    personas: int | None
+    anexos: int | None
+    periodos: list[str] = field(default_factory=list)
+    actividades: str = ""
+
+
+def _capacidad(ficha, facturas: list[_Factura]) -> _Capacidad | None:
+    """Lee la ficha (con ``headcounts`` y ``sections`` precargados).
+
+    Se cotejan los periodos PLAME de los meses en que facturó; si la ficha no
+    cubre esos meses, se usan sus últimos doce periodos declarados. Una
+    sección de planilla capturada sin filas es un «no registra trabajadores»
+    de SUNAT, no un dato faltante.
+    """
+    if ficha is None:
+        return None
+    filas = {
+        h.period: (h.workers or 0) + (h.service_providers or 0)
+        for h in ficha.headcounts.all()
+    }
+    meses = {f"{f.fecha:%Y-%m}" for f in facturas if f.fecha}
+    cotejados = sorted(p for p in filas if p in meses)
+    if not cotejados:
+        cotejados = sorted(filas)[-MESES_VENTANA_VOLUMEN:]
+
+    planilla_capturada = any(
+        sec.key == "workers" and not sec.error for sec in ficha.sections.all()
+    )
+    if cotejados:
+        personas: int | None = max(filas[p] for p in cotejados)
+    elif planilla_capturada:
+        personas = 0
+    else:
+        personas = None
+    return _Capacidad(
+        personas=personas, anexos=ficha.branch_count, periodos=cotejados,
+        actividades=ficha.economic_activities or "",
+    )
+
+
+def _rango(periodos: list[str]) -> str:
+    if not periodos:
+        return "sus últimos periodos declarados"
+    if len(periodos) == 1:
+        return periodos[0]
+    return f"{periodos[0]} a {periodos[-1]}"
+
+
+def _ultimo_anio(facturas: list[_Factura]) -> list[_Factura]:
+    fechas = [f.fecha for f in facturas if f.fecha]
+    if not fechas:
+        return facturas
+    ultima = max(fechas)
+    desde = date(ultima.year - 1, ultima.month, 1)
+    return [f for f in facturas if f.fecha and f.fecha > desde]
 
 
 def _facturas_por_emisor(account_ruc: str) -> dict[str, list[_Factura]]:
@@ -451,6 +535,109 @@ def _cierre_ejercicio(facturas: list[_Factura]) -> Senal | None:
     )
 
 
+def _sin_personal(cap: _Capacidad | None, facturas: list[_Factura]) -> Senal | None:
+    """No declara a nadie en PLAME mientras te facturaba.
+
+    Es el primer criterio con el que SUNAT arma el padrón SSCO: quien facturó
+    tuvo que hacer el trabajo alguien. Se cuentan trabajadores y prestadores
+    de servicio (recibos por honorarios); un titular que trabaja solo no
+    aparece en PLAME, así que la señal pesa más cuanto más facturó.
+    """
+    if cap is None or cap.personas is None or cap.personas > 0:
+        return None
+    total = sum((f.total for f in facturas), CERO)
+    return Senal(
+        clave="sin_personal",
+        gravedad="alta",
+        titulo="Sin trabajadores declarados",
+        detalle=(
+            f"En su ficha RUC no figura ningún trabajador ni prestador de "
+            f"servicios en PLAME ({_rango(cap.periodos)}). Te facturó "
+            f"S/ {total:,.0f} y alguien tuvo que hacer ese trabajo: es el primer "
+            f"criterio que SUNAT mira para declarar a un proveedor sin capacidad "
+            f"operativa."
+        ),
+        comprobantes=len(facturas),
+        importe=total,
+    )
+
+
+def _sin_local(cap: _Capacidad | None, facturas: list[_Factura]) -> Senal | None:
+    """Rubro que exige local y solo tiene declarado el domicilio fiscal.
+
+    Los establecimientos anexos son la única huella pública de
+    infraestructura. Solo opina cuando la actividad es de las que no se
+    ejercen sin almacén, taller o tienda.
+    """
+    if cap is None or cap.anexos is None or cap.anexos > 0:
+        return None
+    actividades = parsear_actividades(cap.actividades)
+    sectores = frozenset().union(*(a.sectores for a in actividades)) if actividades else frozenset()
+    if not sectores & SECTORES_CON_LOCAL:
+        return None
+    return Senal(
+        clave="sin_local",
+        gravedad="media",
+        titulo="Sin local, almacén ni taller",
+        detalle=(
+            f"Se dedica a «{actividades[0].descripcion.lower()}» y en SUNAT solo "
+            f"tiene su domicilio fiscal: ningún establecimiento anexo. Un rubro "
+            f"así sin dónde producir, almacenar o atender es lo que un auditor "
+            f"pide explicar."
+        ),
+        comprobantes=len(facturas),
+        importe=sum((f.total for f in facturas), CERO),
+    )
+
+
+def _volumen_desproporcionado(
+    cap: _Capacidad | None, facturas: list[_Factura],
+) -> Senal | None:
+    """Te facturó mucho más de lo que su tamaño permite.
+
+    Se mira solo lo que te facturó a ti en su último año, que ya es un piso
+    de su facturación real. Con cero personas basta con superar unas UIT; con
+    personal, se mide por persona.
+    """
+    if cap is None or cap.personas is None:
+        return None
+    ultimo_anio = _ultimo_anio(facturas)
+    total = sum((f.total for f in ultimo_anio), CERO)
+    if cap.personas == 0:
+        if total < UIT * VOLUMEN_SIN_PERSONAL_UIT:
+            return None
+        gravedad = "alta"
+        comparacion = (
+            f"sin declarar a nadie en planilla (el umbral es "
+            f"{VOLUMEN_SIN_PERSONAL_UIT} UIT, S/ {UIT * VOLUMEN_SIN_PERSONAL_UIT:,.0f})"
+        )
+    else:
+        por_persona = total / cap.personas
+        umbral = UIT * VOLUMEN_POR_PERSONA_UIT
+        if por_persona < umbral:
+            return None
+        gravedad = "alta" if por_persona >= umbral * VOLUMEN_POR_PERSONA_GRAVE else "media"
+        comparacion = (
+            f"con {cap.personas} {'persona' if cap.personas == 1 else 'personas'} "
+            f"declaradas: S/ {por_persona:,.0f} por cabeza al año, más de "
+            f"{VOLUMEN_POR_PERSONA_UIT} UIT"
+        )
+    if cap.anexos == 0:
+        comparacion += " y sin ningún local declarado"
+    return Senal(
+        clave="volumen_desproporcionado",
+        gravedad=gravedad,
+        titulo="Factura más de lo que su tamaño permite",
+        detalle=(
+            f"En su último año te facturó S/ {total:,.0f} {comparacion}. Una "
+            f"facturación grande con una estructura mínima es el patrón típico "
+            f"del proveedor de fachada."
+        ),
+        comprobantes=len(ultimo_anio),
+        importe=total,
+    )
+
+
 def analizar(
     ruc: str,
     facturas: list[_Factura],
@@ -458,6 +645,7 @@ def analizar(
     nombre: str = "",
     actividad_empresa: str = "",
     padron_ssco: dict | None = None,
+    ficha=None,
 ) -> AnalisisProveedor:
     fechas = sorted(f.fecha for f in facturas if f.fecha)
     primera = fechas[0] if fechas else None
@@ -476,10 +664,17 @@ def analizar(
         primera_compra=primera,
         ultima_compra=ultima,
     )
+    cap = _capacidad(ficha, facturas)
+    if cap is not None:
+        analisis.trabajadores = cap.personas
+        analisis.anexos = cap.anexos
     candidatas = (
         _ssco(ruc, padron_ssco or {}, facturas),
         _no_habido(supplier, facturas),
         _baja_tras_facturar(supplier, ultima, facturas),
+        _sin_personal(cap, facturas),
+        _volumen_desproporcionado(cap, facturas),
+        _sin_local(cap, facturas),
         _mismo_dia(facturas),
         _actividad_ajena(supplier, actividad_empresa, facturas),
         _proveedor_reciente(supplier, primera, facturas),
@@ -510,6 +705,26 @@ def actividad_de_la_empresa(account_ruc: str) -> str:
     return ficha.economic_activities if ficha else ""
 
 
+def fichas_de_proveedores(rucs) -> dict:
+    """La última ficha RUC capturada de cada emisor, con planilla y secciones.
+
+    Las captura ``ruc_profile.capture`` cada mes para empresas, vigilados y
+    quien haya facturado en el último año. Sin ficha, las señales de
+    capacidad operativa simplemente no opinan.
+    """
+    from ruc_profile.models import RucSnapshot
+
+    rucs = [r for r in rucs if r]
+    if not rucs:
+        return {}
+    fichas = (
+        RucSnapshot.objects.filter(ruc__in=rucs, succeeded=True)
+        .latest_per_ruc()
+        .prefetch_related("headcounts", "sections")
+    )
+    return {f.ruc: f for f in fichas}
+
+
 def analizar_proveedor(supplier: Supplier) -> AnalisisProveedor:
     """Las señales de un solo proveedor, para su ficha."""
     facturas = _facturas_por_emisor(supplier.account_ruc).get(supplier.ruc, [])
@@ -517,6 +732,7 @@ def analizar_proveedor(supplier: Supplier) -> AnalisisProveedor:
         supplier.ruc, facturas, supplier,
         actividad_empresa=actividad_de_la_empresa(supplier.account_ruc),
         padron_ssco=rucs_en_padron([supplier.ruc]),
+        ficha=fichas_de_proveedores([supplier.ruc]).get(supplier.ruc),
     )
 
 
@@ -549,6 +765,7 @@ def simular_fiscalizacion(account_ruc: str) -> Fiscalizacion:
     nombres = _nombres(account_ruc, set(por_emisor) - set(cartera))
     actividad_empresa = actividad_de_la_empresa(account_ruc)
     padron_ssco = rucs_en_padron(por_emisor.keys())
+    fichas = fichas_de_proveedores(por_emisor.keys())
 
     resultado = Fiscalizacion(proveedores_analizados=len(por_emisor))
     por_senal: Counter[str] = Counter()
@@ -556,6 +773,7 @@ def simular_fiscalizacion(account_ruc: str) -> Fiscalizacion:
         analisis = analizar(
             ruc, facturas, cartera.get(ruc), nombres.get(ruc, ""),
             actividad_empresa=actividad_empresa, padron_ssco=padron_ssco,
+            ficha=fichas.get(ruc),
         )
         if not analisis.senales:
             continue

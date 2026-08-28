@@ -34,6 +34,9 @@ SECTIONS: tuple[SectionSpec, ...] = (
     SectionSpec("coactive_debt", "getInfoDC", "Deuda coactiva", is_risk_signal=True),
     SectionSpec("tax_omissions", "getInfoOT", "Omisiones tributarias", is_risk_signal=True),
     SectionSpec("workers", "getCantTrab", "Cantidad de trabajadores"),
+    # Locales declarados además del domicilio fiscal: oficinas, almacenes,
+    # talleres. Es la única huella pública de infraestructura de un RUC.
+    SectionSpec("branches", "getLocAnex", "Establecimientos anexos"),
     SectionSpec("probatory_acts", "getActPro", "Actas probatorias", is_risk_signal=True),
     SectionSpec("physical_invoices", "getActCPF", "Facturas físicas"),
     SectionSpec("reactiva_peru", "getReactivaPeru", "Reactiva Perú: deuda coactiva",
@@ -48,6 +51,7 @@ SECTIONS_BY_KEY = {spec.key: spec for spec in SECTIONS}
 
 # Sections whose rows are also stored as first-class models.
 SECTION_WORKERS = "workers"
+SECTION_BRANCHES = "branches"
 SECTION_LEGAL_REPRESENTATIVES = "legal_representatives"
 
 # SUNAT signals "nothing to show" with prose rather than an empty table.

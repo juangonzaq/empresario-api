@@ -19,9 +19,12 @@ from ..models import ExtractStatus, InvoiceExtract
 
 logger = logging.getLogger(__name__)
 
-PARSER_VERSION = "2"
+# Sube cuando cambia lo que se extrae: obliga a re-leer todos los XML.
+PARSER_VERSION = "3"
 
-MAX_ITEMS = 12
+# Una factura de distribuidora trae cientos de líneas; para cruzar con un
+# kardex hacen falta todas, no las doce primeras.
+MAX_ITEMS = 500
 
 
 def fix_mojibake(text: str) -> str:
@@ -159,19 +162,64 @@ def _lines(root: ET.Element) -> list[dict]:
     return items[:MAX_ITEMS]
 
 
+def _str(value: Decimal | None) -> str | None:
+    return str(value) if value is not None else None
+
+
 def _line_item(line: ET.Element) -> dict:
-    description = ""
+    """Una línea del comprobante con lo que hace falta para valorizar un
+    kardex: qué es (código y descripción), cuánto (cantidad y unidad), a
+    cuánto (valor unitario sin IGV y precio con IGV) y cómo tributa.
+
+    ``amount`` es el valor de venta de la línea sin IGV (LineExtensionAmount),
+    que es la base del costo; ``tax`` es el IGV de la línea y ``affectation``
+    el código del catálogo 07 (10 = gravado, 20 = exonerado, 30 = inafecto)."""
+    description = code = ""
     for item in _iter_local(line, "Item"):
         description = _text(next(_iter_local(item, "Description"), None))
+        for ident in _iter_local(item, "SellersItemIdentification"):
+            code = _text(next(_iter_local(ident, "ID"), None))
+            break
         break
     quantity_node = next(
         (n for n in line.iter() if _local(n.tag).endswith("Quantity")), None
     )
+    unit = quantity_node.get("unitCode", "") if quantity_node is not None else ""
     amount = _decimal(_text(next(_iter_local(line, "LineExtensionAmount"), None)))
+
+    # cac:Price/cbc:PriceAmount = valor unitario sin impuestos; el precio con
+    # IGV va en PricingReference con PriceTypeCode 01.
+    unit_value = None
+    for price in _iter_local(line, "Price"):
+        unit_value = _decimal(_text(next(_iter_local(price, "PriceAmount"), None)))
+        break
+    unit_price = None
+    for ref in _iter_local(line, "PricingReference"):
+        for alt in _iter_local(ref, "AlternativeConditionPrice"):
+            if _text(next(_iter_local(alt, "PriceTypeCode"), None)) == "01":
+                unit_price = _decimal(_text(next(_iter_local(alt, "PriceAmount"), None)))
+                break
+        break
+
+    tax = None
+    affectation = ""
+    for tax_total in _iter_local(line, "TaxTotal"):
+        tax = _decimal(_text(next(_iter_local(tax_total, "TaxAmount"), None)))
+        for cat in _iter_local(tax_total, "TaxCategory"):
+            affectation = _text(next(_iter_local(cat, "TaxExemptionReasonCode"), None))
+            break
+        break
+
     return {
-        "description": fix_mojibake(description)[:200],
+        "code": fix_mojibake(code)[:60],
+        "description": fix_mojibake(description)[:300],
         "quantity": _text(quantity_node) or None,
-        "amount": str(amount) if amount is not None else None,
+        "unit": unit[:10],
+        "unit_value": _str(unit_value),
+        "unit_price": _str(unit_price),
+        "amount": _str(amount),
+        "tax": _str(tax),
+        "affectation": affectation[:4],
     }
 
 
@@ -205,6 +253,18 @@ def parse_invoice_xml(xml_text: str) -> dict[str, Any]:
     supplier = next(_iter_local(root, "AccountingSupplierParty"), None)
     customer = next(_iter_local(root, "AccountingCustomerParty"), None)
 
+    # Vencimiento y orden de compra: cabecera UBL, útiles para cobranza y
+    # para cruzar la compra con lo pedido.
+    due_date = ""
+    for child in root:
+        if _local(child.tag) == "DueDate":
+            due_date = _text(child)
+            break
+    order_reference = ""
+    for ref in _iter_local(root, "OrderReference"):
+        order_reference = fix_mojibake(_text(next(_iter_local(ref, "ID"), None)))
+        break
+
     notes = []
     for child in root:
         if _local(child.tag) == "Note":
@@ -224,6 +284,8 @@ def parse_invoice_xml(xml_text: str) -> dict[str, Any]:
         "reference_reason_code": reason_code[:4],
         "reference_reason": reason[:255],
         "items": _lines(root),
+        "due_date": due_date[:10] or None,
+        "order_reference": order_reference[:60],
         "supplier_address": _party_address(supplier),
         "customer_address": _party_address(customer),
         "notes": notes[:5],
@@ -255,10 +317,16 @@ def extract_invoice(invoice: ElectronicInvoice) -> InvoiceExtract:
     return extract
 
 
-def extract_pending(force: bool = False) -> dict[str, int]:
-    """Parse every invoice whose extract is missing or stale."""
+def extract_pending(force: bool = False, account_ruc: str | None = None) -> dict[str, int]:
+    """Parse every invoice whose extract is missing or stale.
+
+    ``account_ruc`` acota a una empresa: así corre al final de cada
+    sincronización y el detalle (ítems, IGV, forma de pago) aparece con el
+    comprobante, no cuando pase la tarea global."""
     done = failed = skipped = 0
     invoices = ElectronicInvoice.objects.all().select_related("extract")
+    if account_ruc:
+        invoices = invoices.filter(account_ruc=account_ruc)
     for invoice in invoices.iterator():
         extract = getattr(invoice, "extract", None)
         if (

@@ -116,7 +116,7 @@ class CaptureEndpointTests(TenantAPITestCase):
         self.assertEqual(response.status_code, http.HTTP_200_OK)
         self.assertFalse(response.data["reused_recent_snapshot"])
         self.assertEqual(response.data["snapshot"]["business_name"], f.NAME)
-        self.assertEqual(len(response.data["snapshot"]["sections"]), 9)
+        self.assertEqual(len(response.data["snapshot"]["sections"]), 10)
 
     def test_reuses_a_recent_snapshot(self):
         make_snapshot(captured_on=date.today())

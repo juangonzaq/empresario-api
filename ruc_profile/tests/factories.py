@@ -94,3 +94,22 @@ def historical_page() -> str:
                      [["HABIDO", "16/04/2019", "10/10/2024"]])
         ),
     )
+
+
+def branches_page(rows: list[list[str]] | None = None) -> str:
+    return table_page(
+        ["Código", "Tipo de Establecimiento", "Dirección", "Actividad Económica"],
+        rows if rows is not None else [
+            ["0001", "OFICINA ADMINISTRATIVA", "AV. AREQUIPA 1234 LIMA", "-"],
+            ["0002", "DEPOSITO", "CAL. LOS TALLERES 55 ATE", "-"],
+        ],
+        title=f"ESTABLECIMIENTOS ANEXOS DE {RUC} - {NAME}",
+    )
+
+
+def no_branches_page() -> str:
+    return table_page(
+        ["Código", "Tipo de Establecimiento", "Dirección", "Actividad Económica"],
+        [["No existe información registrada para el contribuyente consultado"]],
+        title=f"ESTABLECIMIENTOS ANEXOS DE {RUC} - {NAME}",
+    )

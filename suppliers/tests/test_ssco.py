@@ -150,3 +150,41 @@ class CruceTests(TenantAPITestCase):
         response = self.client.get(reverse("suppliers:supplier-list"))
         marcas = {r["ruc"]: r["en_ssco"] for r in response.data["results"]}
         self.assertEqual(marcas, {RUC_ACTIVE: True, PROVEEDOR_NUEVO: False})
+
+
+class AltaContraPadronTests(TenantAPITestCase):
+    """Registrar un proveedor lo cruza con el padrón SSCO y devuelve el check."""
+
+    def setUp(self):
+        self.url = reverse("suppliers:supplier-list")
+        SujetoSinCapacidadOperativa.objects.create(
+            ruc="20131312955", razon_social="FANTASMA SAC",
+            resolucion="0120050012345", fecha_firme=date(2026, 3, 1),
+            visto_el=date(2026, 8, 1),
+        )
+
+    def alta(self, **datos):
+        from .test_monitor import profile
+        with patch("suppliers.views.RucLookupClient") as cliente:
+            cliente.return_value.fetch.return_value = profile()
+            return self.client.post(self.url, datos, format="json")
+
+    def test_rechaza_a_un_ssco_aunque_sunat_lo_de_por_activo(self):
+        respuesta = self.alta(ruc="20131312955")
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.data["code"], "proveedor_con_observaciones")
+        self.assertEqual(respuesta.data["ssco"]["resolucion"], "0120050012345")
+        self.assertIn("Sin Capacidad Operativa", respuesta.data["ruc"])
+
+    def test_lo_registra_igual_si_se_acepta_el_riesgo(self):
+        respuesta = self.alta(ruc="20131312955", accept_risk=True)
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertTrue(respuesta.data["en_ssco"])
+        self.assertEqual(respuesta.data["ssco"]["razon_social"], "FANTASMA SAC")
+
+    def test_el_alta_limpia_dice_que_no_figura_y_contra_que_padron(self):
+        respuesta = self.alta(ruc=RUC_ACTIVE)
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertFalse(respuesta.data["en_ssco"])
+        self.assertIsNone(respuesta.data["ssco"])
+        self.assertEqual(respuesta.data["padron_ssco_al"], "2026-08-01")

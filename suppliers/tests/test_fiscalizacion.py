@@ -10,7 +10,7 @@ from django.urls import reverse
 from suppliers.models import Supplier
 
 from core.testing import TenantAPITestCase
-from ruc_profile.models import RucSnapshot
+from ruc_profile.models import RucSection, RucSnapshot, WorkerHeadcount
 from suppliers.services import (
     analizar_proveedor, compatibilidad, parsear_actividades, simular_fiscalizacion,
 )
@@ -209,6 +209,109 @@ class ActividadTests(TenantAPITestCase):
         supplier = create_supplier(ruc=RUC_ACTIVE, economic_activities=FERRETERIA)
         comprobante(RUC_ACTIVE, "1000.00", issue_date=date(2026, 1, 20))
         self.assertNotIn("actividad_ajena", claves(analizar_proveedor(supplier)))
+
+
+MUEBLES = "Principal - 3100 - FABRICACION DE MUEBLES."
+CONSULTORIA = "Principal - 7020 - ACTIVIDADES DE CONSULTORIA DE GESTION."
+
+
+def ficha_proveedor(
+    ruc: str, *, planilla: list[tuple[str, int, int]] | None = (), anexos: int | None = 0,
+    actividades: str = MUEBLES,
+) -> RucSnapshot:
+    """``planilla=()`` = sección capturada sin filas (SUNAT no registra a
+    nadie); ``planilla=None`` = la sección no se capturó."""
+    ficha = RucSnapshot.objects.create(
+        ruc=ruc, captured_on=date(2026, 8, 1), economic_activities=actividades,
+        branch_count=anexos,
+    )
+    if planilla is not None:
+        RucSection.objects.create(snapshot=ficha, key="workers", has_data=bool(planilla))
+        for periodo, trabajadores, prestadores in planilla:
+            WorkerHeadcount.objects.create(
+                snapshot=ficha, period=periodo, workers=trabajadores,
+                service_providers=prestadores,
+            )
+    return ficha
+
+
+class CapacidadOperativaTests(TenantAPITestCase):
+    """Los criterios SSCO que sí tienen fuente pública: personal, local y volumen."""
+
+    def test_sin_personal_ni_local_con_volumen_alto(self):
+        ficha_proveedor(RUC_ACTIVE)  # planilla capturada vacía, 0 anexos, fabrica muebles
+        supplier = create_supplier(ruc=RUC_ACTIVE, economic_activities=MUEBLES)
+        for mes in (3, 5, 7):
+            comprobante(RUC_ACTIVE, "30000.00", issue_date=date(2026, mes, 10))
+
+        analisis = analizar_proveedor(supplier)
+        self.assertEqual(analisis.trabajadores, 0)
+        self.assertEqual(analisis.anexos, 0)
+        self.assertLessEqual({"sin_personal", "sin_local", "volumen_desproporcionado"}, claves(analisis))
+        self.assertEqual(analisis.nivel, "alto")
+        volumen = next(s for s in analisis.senales if s.clave == "volumen_desproporcionado")
+        self.assertEqual(volumen.gravedad, "alta")
+        self.assertEqual(volumen.importe, Decimal("90000.00"))
+        self.assertIn("sin ningún local", volumen.detalle)
+
+    def test_poco_volumen_sin_personal_solo_marca_personal(self):
+        ficha_proveedor(RUC_ACTIVE, anexos=1)
+        supplier = create_supplier(ruc=RUC_ACTIVE)
+        comprobante(RUC_ACTIVE, "2000.00", issue_date=date(2026, 7, 10))
+        senales = claves(analizar_proveedor(supplier))
+        self.assertIn("sin_personal", senales)
+        self.assertNotIn("volumen_desproporcionado", senales)
+        self.assertNotIn("sin_local", senales)
+
+    def test_con_planilla_en_los_meses_facturados_no_hay_senal(self):
+        ficha_proveedor(RUC_ACTIVE, planilla=[("2026-06", 0, 0), ("2026-07", 4, 1)])
+        supplier = create_supplier(ruc=RUC_ACTIVE)
+        comprobante(RUC_ACTIVE, "30000.00", issue_date=date(2026, 7, 10))
+        analisis = analizar_proveedor(supplier)
+        self.assertEqual(analisis.trabajadores, 5)
+        self.assertNotIn("sin_personal", claves(analisis))
+        self.assertNotIn("volumen_desproporcionado", claves(analisis))
+
+    def test_volumen_por_persona(self):
+        # 1 persona y S/ 300 000 en el año: 54 UIT por cabeza, más del doble del umbral.
+        ficha_proveedor(RUC_ACTIVE, planilla=[("2026-07", 1, 0)], anexos=1)
+        supplier = create_supplier(ruc=RUC_ACTIVE)
+        comprobante(RUC_ACTIVE, "300000.00", issue_date=date(2026, 7, 10))
+        # Una factura de hace dos años no cuenta para el último año.
+        comprobante(RUC_ACTIVE, "999999.00", issue_date=date(2024, 1, 10))
+        senal = next(
+            s for s in analizar_proveedor(supplier).senales
+            if s.clave == "volumen_desproporcionado"
+        )
+        self.assertEqual(senal.gravedad, "alta")
+        self.assertEqual(senal.importe, Decimal("300000.00"))
+        self.assertIn("1 persona", senal.detalle)
+
+    def test_consultora_sin_anexos_es_normal(self):
+        ficha_proveedor(RUC_ACTIVE, planilla=[("2026-07", 2, 0)], actividades=CONSULTORIA)
+        supplier = create_supplier(ruc=RUC_ACTIVE)
+        comprobante(RUC_ACTIVE, "5000.00", issue_date=date(2026, 7, 10))
+        self.assertNotIn("sin_local", claves(analizar_proveedor(supplier)))
+
+    def test_sin_ficha_o_sin_seccion_no_opina(self):
+        supplier = create_supplier(ruc=RUC_ACTIVE)
+        comprobante(RUC_ACTIVE, "80000.00", issue_date=date(2026, 7, 10))
+        analisis = analizar_proveedor(supplier)
+        self.assertIsNone(analisis.trabajadores)
+        self.assertFalse({"sin_personal", "sin_local", "volumen_desproporcionado"} & claves(analisis))
+
+        # Ficha capturada pero sin la sección de planilla ni la de anexos.
+        ficha_proveedor(RUC_ACTIVE, planilla=None, anexos=None)
+        analisis = analizar_proveedor(supplier)
+        self.assertIsNone(analisis.trabajadores)
+        self.assertFalse({"sin_personal", "sin_local", "volumen_desproporcionado"} & claves(analisis))
+
+    def test_la_simulacion_carga_las_fichas_en_lote(self):
+        ficha_proveedor(RUC_ACTIVE)
+        comprobante(RUC_ACTIVE, "60000.00", issue_date=date(2026, 7, 10))
+        resultado = simular_fiscalizacion(self.RUC)
+        self.assertEqual(resultado.por_senal.get("sin_personal"), 1)
+        self.assertEqual(resultado.por_senal.get("volumen_desproporcionado"), 1)
 
 
 class SimulacionTests(TenantAPITestCase):

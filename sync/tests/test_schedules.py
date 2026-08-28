@@ -59,7 +59,7 @@ class CadenceTests(TestCase):
             # resuelva un CAPTCHA. RHE además re-barre el ejercicio en curso:
             # la lista de pagos y las reversiones cambian tras la emisión.
             {"itf", "compliance", "ruc_profile", "remype", "tributos", "analytics",
-             "afpnet", "rhe"},
+             "afpnet", "rhe", "declaraciones", "renta_anual"},
         )
 
     def test_afpnet_no_se_pide_a_diario(self):
@@ -76,10 +76,14 @@ class CadenceTests(TestCase):
                 f"{cadence} no corre todas las fuentes",
             )
 
-    def test_el_analisis_con_ia_no_es_un_paso(self):
-        """Se quitó de la sincronización: ninguna cadencia debe ofrecerlo ni
-        gastar llamadas al modelo al sincronizar."""
-        self.assertNotIn("intel", {s.key for s in SOURCES})
+    def test_la_lectura_del_buzon_corre_tras_el_buzon_y_no_al_mes(self):
+        """Sin este paso, «Resumen», «Casos» y «Decisiones» quedaban vacíos:
+        nada disparaba el análisis. Va después del buzón, en la diaria y en la
+        inicial; en la mensual no hay buzón nuevo que leer."""
+        daily = [s.key for s in sources_for(Cadence.DAILY)]
+        self.assertIn("intel", daily)
+        self.assertGreater(daily.index("intel"), daily.index("mailbox"))
+        self.assertNotIn("intel", {s.key for s in sources_for(Cadence.MONTHLY)})
 
     def test_analytics_always_runs_last(self):
         for cadence in (Cadence.INITIAL, Cadence.DAILY, Cadence.MONTHLY):

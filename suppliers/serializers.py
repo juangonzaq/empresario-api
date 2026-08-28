@@ -32,6 +32,10 @@ class SupplierSerializer(serializers.ModelSerializer):
     # Está en el padrón de Sujetos Sin Capacidad Operativa de SUNAT. Es
     # independiente de estado/condición: un SSCO puede figurar ACTIVO y HABIDO.
     en_ssco = serializers.BooleanField(read_only=True, default=False)
+    # La resolución del padrón cuando está, y de cuándo es el padrón con el que
+    # se cruzó: «no figura» solo vale si se dice contra qué lista se miró.
+    ssco = serializers.JSONField(read_only=True, default=None)
+    padron_ssco_al = serializers.DateField(read_only=True, default=None)
     # Lo que un auditor vería en sus facturas: nivel y cuántas señales. El
     # detalle de cada señal va en ``/senales/``; aquí solo lo que la lista pinta.
     nivel_riesgo = serializers.CharField(read_only=True, default="sin_senales")
@@ -69,7 +73,7 @@ class SupplierSerializer(serializers.ModelSerializer):
             "status", "condition", "has_issue",
             "last_checked_at", "last_changed_at", "last_error",
             "purchases_total", "purchases_count", "last_purchase_on",
-            "en_ssco", "nivel_riesgo", "senales",
+            "en_ssco", "ssco", "padron_ssco_al", "nivel_riesgo", "senales",
             "accept_risk",
             "created_at", "updated_at",
         )
@@ -171,6 +175,9 @@ class AnalisisProveedorSerializer(serializers.Serializer):
     registrado_el = serializers.DateField(allow_null=True)
     inicio_actividades = serializers.DateField(allow_null=True)
     actividad_principal = serializers.CharField(allow_blank=True)
+    # Capacidad según su ficha RUC; null cuando no se ha capturado.
+    trabajadores = serializers.IntegerField(allow_null=True)
+    anexos = serializers.IntegerField(allow_null=True)
     comprobantes = serializers.IntegerField()
     total = serializers.DecimalField(max_digits=16, decimal_places=2)
     igv_estimado = serializers.DecimalField(max_digits=16, decimal_places=2)

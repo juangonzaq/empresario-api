@@ -17,7 +17,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
-    Membership, Organization, Role, SunatCredential, TaxRegime, User, validate_ruc,
+    BusinessProfile, Membership, Organization, Role, SunatCredential, TaxRegime, User, validate_ruc,
 )
 
 
@@ -136,17 +136,32 @@ class PasswordChangeSerializer(serializers.Serializer):
         return value
 
 
+def payroll_status(org: Organization) -> bool | None:
+    profile = getattr(org, "business_profile", None)
+    declared = getattr(profile, "has_payroll", None)
+    if declared is not None:
+        return declared
+    try:
+        from colaboradores.models import Colaborador
+    except Exception:  # pragma: no cover
+        return None
+    if Colaborador.objects.filter(taxpayer_id=org.ruc, is_active=True).exists():
+        return True
+    return None
+
+
 class OrganizationSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(read_only=True)
     role = serializers.SerializerMethodField()
     sunat_status = serializers.SerializerMethodField()
     subscription = serializers.SerializerMethodField()
+    has_payroll = serializers.SerializerMethodField()
 
     class Meta:
         model = Organization
         fields = ("id", "ruc", "name", "trade_name", "display_name", "role",
                   "sunat_status", "tax_regime", "tax_regime_source", "tax_regime_checked_at",
-                  "subscription")
+                  "subscription", "has_payroll")
         # El régimen lo lee la sincronización de la Ficha RUC en SOL o se
         # declara desde el calendario (PATCH /api/calendario/mio/); aquí solo se lee.
         read_only_fields = ("id", "ruc", "tax_regime", "tax_regime_source", "tax_regime_checked_at")
@@ -158,6 +173,12 @@ class OrganizationSerializer(serializers.ModelSerializer):
     def get_sunat_status(self, org: Organization) -> str:
         credential = getattr(org, "sunat_credential", None)
         return credential.status if credential else "sin_conectar"
+
+    def get_has_payroll(self, org: Organization) -> bool | None:
+        """¿Tiene planilla? Lo declarado en el perfil; si no lo dijo, la
+        planilla cargada decide; si tampoco hay, None (no se sabe). Gatea el
+        acceso a SUNAFIL en la barra."""
+        return payroll_status(org)
 
     def get_subscription(self, org: Organization) -> dict:
         """Estado de la suscripción, para que el front sepa desde la sesión si
@@ -289,15 +310,39 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
     guardar a medias y completar después."""
 
     is_complete = serializers.BooleanField(read_only=True)
+    sectors = serializers.ListField(
+        child=serializers.ChoiceField(choices=BusinessProfile.Sector.choices),
+        required=False, allow_empty=True,
+    )
+    goals = serializers.ListField(
+        child=serializers.ChoiceField(choices=BusinessProfile.Goal.choices),
+        required=False, allow_empty=True,
+    )
 
     class Meta:
-        from .models import BusinessProfile
-
         model = BusinessProfile
-        fields = ("offering", "sector", "primary_goal", "business_age",
+        fields = ("offering", "sectors", "goals", "business_age",
                   "people_count", "sells_to_consumers", "has_premises",
-                  "sells_online", "is_complete", "completed_at")
+                  "sells_online", "has_payroll", "is_complete", "completed_at")
         read_only_fields = ("is_complete", "completed_at")
+
+    @staticmethod
+    def _unique(values: list[str]) -> list[str]:
+        seen: list[str] = []
+        for v in values:
+            if v not in seen:
+                seen.append(v)
+        return seen
+
+    def validate_sectors(self, value: list[str]) -> list[str]:
+        value = self._unique(value)
+        if len(value) > BusinessProfile.MAX_SECTORS:
+            raise serializers.ValidationError(
+                f"Elige como máximo {BusinessProfile.MAX_SECTORS} rubros.")
+        return value
+
+    def validate_goals(self, value: list[str]) -> list[str]:
+        return self._unique(value)
 
     def validate_people_count(self, value: int) -> int:
         if value < 0 or value > 9999:

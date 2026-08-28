@@ -69,6 +69,90 @@ class SunatPortalTests(APITestCase):
             self.client.post(self.url)
         self.assertEqual(fetch.call_count, 1)
 
+    def test_renta_destination_uses_erenta_oauth_login(self):
+        class Redireccion:
+            status_code = 302
+            headers = {"Location": (
+                "https://api-seguridad.sunat.gob.pe/v1/clientessol/03590141-x/oauth2/login"
+                "?originalUrl=https://e-renta.sunat.gob.pe/loader/x&state=null"
+            )}
+
+        with patch.object(sol_portal.requests, "get", return_value=Redireccion()) as get:
+            response = self.client.post(self.url, {"destino": "renta"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(get.call_args.args[0], sol_portal.RENTA_AUTHEN_URL)
+        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertEqual(
+            response.data["action"],
+            "https://api-seguridad.sunat.gob.pe/v1/clientessol/03590141-x/oauth2/j_security_check",
+        )
+        self.assertEqual(response.data["fields"]["originalUrl"], "https://e-renta.sunat.gob.pe/loader/x")
+        self.assertEqual(response.data["fields"]["state"], "null")
+        self.assertEqual(response.data["fields"]["j_password"], "mi-clave-sol")
+
+    def test_renta_when_sunat_is_down_is_a_503_without_the_key(self):
+        with patch.object(
+            sol_portal.requests, "get", side_effect=requests.ConnectionError("caída"),
+        ):
+            response = self.client.post(self.url, {"destino": "renta"}, format="json")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "portal")
+        self.assertNotIn("mi-clave-sol", str(response.data))
+
+    def test_declaraciones_lands_on_the_classic_menu(self):
+        with patch.object(sol_portal, "fetch_menu_state", return_value="X"):
+            response = self.client.post(self.url, {"destino": "declaraciones"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["action"], sol_portal.LOGIN_ACTION)
+
+    def test_unknown_destination_is_rejected(self):
+        response = self.client.post(self.url, {"destino": "loteria"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_sunafil_portal_form(self):
+        from accounts.services import sunafil_portal
+
+        entry_html = (
+            'var pathurl = "https://api-seguridad.sunat.gob.pe"; var cid = "b647-x";'
+            ' var st = "s"; var redirectURL = "https://casillaelectronica.sunafil.gob.pe/x";'
+        )
+
+        class Entrada:
+            status_code = 200
+            text = entry_html
+            def raise_for_status(self): pass
+
+        class Redireccion:
+            status_code = 302
+            headers = {"Location": (
+                "https://api-seguridad.sunat.gob.pe/v1/clientessol/b647-x/oauth2/login"
+                "?originalUrl=https://casillaelectronica.sunafil.gob.pe/si.inbox/Login/Empresa&state=s"
+            )}
+
+        def fake_get(url, **kwargs):
+            return Entrada() if url == sunafil_portal.ENTRY_URL else Redireccion()
+
+        with patch("sunafil.services.client.requests.Session.get", side_effect=fake_get):
+            response = self.client.post(reverse("accounts:sunafil-portal"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["action"],
+            "https://api-seguridad.sunat.gob.pe/v1/clientessol/b647-x/oauth2/j_security_check",
+        )
+        self.assertEqual(response.data["fields"]["custom_ruc"], "20100000001")
+        self.assertEqual(response.data["fields"]["state"], "s")
+
+    def test_sunafil_portal_needs_credentials_and_role(self):
+        lectura = make_user("lectura2@uno.pe")
+        Membership.objects.create(user=lectura, organization=self.org, role=Role.VIEWER)
+        self.client.force_authenticate(lectura)
+        self.assertEqual(self.client.post(reverse("accounts:sunafil-portal")).status_code, 403)
+
+        self.client.force_authenticate(self.ana)
+        self.credential.delete()
+        response = self.client.post(reverse("accounts:sunafil-portal"))
+        self.assertEqual(response.status_code, 409)
+
     def test_get_is_not_allowed(self):
         # El formulario lleva la clave: no debe poder pedirse con un GET.
         self.assertEqual(self.client.get(self.url).status_code, 405)

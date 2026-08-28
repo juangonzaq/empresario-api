@@ -73,6 +73,7 @@ def eventos_para(ruc: str, planilla=True, bc=False, regimen="RMT", desde: date =
         ev.append(dict(
             fecha=date.fromisoformat(fechas[col]), tipo="SUNAT_MENSUAL", titulo=titulo,
             descripcion=_desc_mensual(planilla), alarmas_dias=[7, 2], recurrencia=None,
+            periodo=periodo,
         ))
 
     if regimen in ("RMT", "RG"):  # RER y RUS no presentan DJ Anual
@@ -113,7 +114,9 @@ def eventos_para(ruc: str, planilla=True, bc=False, regimen="RMT", desde: date =
 
 
 def serializar(e: dict) -> dict:
-    out = dict(e)
+    """El contrato público (calendario sin sesión): ``periodo`` es interno,
+    lo usa el calendario autenticado para cruzar con lo presentado."""
+    out = {k: v for k, v in e.items() if k != "periodo"}
     out["fecha"] = e["fecha"].isoformat() if e["fecha"] else None
     return out
 

@@ -31,6 +31,7 @@ from .context import CompanyContext
 FIELD_QUESTION: dict[str, str] = {
     "company.tax_regime": "tu régimen tributario (se detecta al conectar SUNAT)",
     "company.sector": "el rubro de tu negocio",
+    "company.sectors": "el rubro de tu negocio",
     "company.offering": "qué vendes principalmente",
     "company.worker_count": "cuántas personas trabajan contigo",
     "company.has_payroll": "si tienes trabajadores a tu cargo",
@@ -60,6 +61,9 @@ _OPERATORS: dict[str, Any] = {
     "lte": lambda left, right: left <= right,
     "in": lambda left, right: left in (right or []),
     "nin": lambda left, right: left not in (right or []),
+    # Para hechos que son listas (rubros, objetivos): ¿está el valor entre ellos?
+    "contains": lambda left, right: right in (left or []),
+    "ncontains": lambda left, right: right not in (left or []),
 }
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.db.models import Sum
 from django.utils import timezone
 
 from colaboradores.models import Colaborador
@@ -381,10 +382,261 @@ def ingest_fee_receipts(taxpayer_id: str) -> dict:
     return {"created": created, "updated": updated}
 
 
+# ------------------------------------------------------ declaraciones 621
+INCOME_TAX_CATEGORY = "INCOME_TAX"
+
+
+def ingest_declarations(taxpayer_id: str) -> dict:
+    """El pago a cuenta de renta **declarado** en el F.V. 621 (casilla 312) es
+    el impuesto a la renta del mes en el Estado de Resultados: una transacción
+    CONFIRMADA por periodo, con fuente propia y trazable al número de orden.
+
+    Se toma el 621 vigente de cada periodo (la rectificatoria más reciente); si
+    una rectificatoria cambia la cifra, la misma transacción se actualiza. El
+    IGV no entra: es un pasivo, no un gasto. Un 621 sin pago a cuenta (S/ 0)
+    no genera fila, y si dejara de haber pago a cuenta la fila se retira.
+    """
+    from sunat_declaraciones.services.casillas import resumen_621
+    from sunat_declaraciones.services.sync import vigentes_621
+
+    from ..models import CategorizationStatus, TransactionCategory
+
+    category = (
+        TransactionCategory.objects.filter(
+            taxpayer_id__in=["", taxpayer_id], code=INCOME_TAX_CATEGORY,
+        ).order_by("-taxpayer_id").first()
+    )
+    created = updated = 0
+    vivos: list[str] = []
+    for period, decl in vigentes_621(taxpayer_id).items():
+        pago = resumen_621(decl.casillas)["renta_pago_a_cuenta"]
+        if not pago or pago <= 0:
+            continue
+        date = datetime.date(int(period[:4]), int(period[4:6]), 1)
+        fields = {
+            "source_object_id": str(decl.pk),
+            "direction": TransactionDirection.OUTFLOW,
+            "document_kind": "declaracion",
+            "description": (
+                f"Pago a cuenta de renta · F.V. 621 periodo {period[4:6]}/{period[:4]}"
+                f" · orden {decl.nro_orden}"
+            ),
+            "issue_date": decl.fecha_presentacion or date,
+            "accounting_date": date,
+            "counterparty_tax_id": "20131312955",
+            "counterparty_name": "SUNAT",
+            "category": category,
+            "categorization_status": CategorizationStatus.CONFIRMED,
+            "categorized_at": timezone.now(),
+            "settlement_status": "settled",
+            **_amounts(Decimal(pago), Decimal("0"), "PEN", Decimal("1")),
+        }
+        # Una fila por periodo: el id externo es el periodo, no la orden, para
+        # que la rectificatoria reemplace y no duplique.
+        external_id = f"621-{period}"
+        vivos.append(external_id)
+        if _upsert(taxpayer_id, TransactionSource.SUNAT_DECLARATION, external_id, fields):
+            created += 1
+        else:
+            updated += 1
+    removed, _ = FinancialTransaction.objects.filter(
+        taxpayer_id=taxpayer_id, source=TransactionSource.SUNAT_DECLARATION, external_id__startswith="621-",
+    ).exclude(external_id__in=vivos).delete()
+    return {"created": created, "updated": updated, "removed": removed}
+
+
+def _category(taxpayer_id: str, code: str):
+    from ..models import TransactionCategory
+
+    return (
+        TransactionCategory.objects.filter(taxpayer_id__in=["", taxpayer_id], code=code)
+        .order_by("-taxpayer_id").first()
+    )
+
+
+def _sunat_fields(description: str, date: datetime.date, amount: Decimal, category, *, source_object_id: str = "", issue_date=None) -> dict:
+    from ..models import CategorizationStatus
+
+    return {
+        "source_object_id": source_object_id,
+        "direction": TransactionDirection.OUTFLOW,
+        "document_kind": "declaracion",
+        "description": description,
+        "issue_date": issue_date or date,
+        "accounting_date": date,
+        "counterparty_tax_id": "20131312955",
+        "counterparty_name": "SUNAT",
+        "category": category,
+        "categorization_status": CategorizationStatus.CONFIRMED,
+        "categorized_at": timezone.now(),
+        "settlement_status": "settled",
+        **_amounts(amount, Decimal("0"), "PEN", Decimal("1")),
+    }
+
+
+def _sync_source(taxpayer_id: str, source: str, rows: dict[str, dict]) -> dict:
+    """Deja la fuente igual a ``rows`` (external_id → fields): alta, cambio y retiro."""
+    created = updated = 0
+    for external_id, fields in rows.items():
+        if _upsert(taxpayer_id, source, external_id, fields):
+            created += 1
+        else:
+            updated += 1
+    removed, _ = FinancialTransaction.objects.filter(
+        taxpayer_id=taxpayer_id, source=source,
+    ).exclude(external_id__in=list(rows)).delete()
+    return {"created": created, "updated": updated, "removed": removed}
+
+
+# ---------------------------------------------------------------- PLAME
+def ingest_plame(taxpayer_id: str) -> dict:
+    """El costo de personal declarado en la PLAME, para los meses en que el
+    módulo de planilla no tiene el periodo cerrado.
+
+    Casillas del 0601: 452 = remuneraciones afectas a EsSalud (la base sobre
+    la que SUNAT calcula el 9 %), 412 = EsSalud a cargo del empleador. El
+    costo empresa es la suma de ambas; la ONP y la renta de 5.ª son
+    retenciones al trabajador y ya van dentro de la remuneración bruta. Los
+    honorarios de 4.ª (casilla 320) se excluyen: entran por recibos.
+
+    Si la planilla propia cierra el mes, manda ella: la PLAME se retira.
+    """
+    from payroll.models import PayrollPeriod, PayrollStatus
+    from sunat_declaraciones.models import DeclaracionPresentada, Formulario
+    from sunat_declaraciones.services.casillas import numero
+
+    category = _category(taxpayer_id, "PAYROLL_ADMIN")
+    cerrados = {
+        f"{p.year}{p.month:02d}"
+        for p in PayrollPeriod.objects.filter(taxpayer_id=taxpayer_id, status=PayrollStatus.CLOSED)
+    }
+    vigente: dict[str, DeclaracionPresentada] = {}
+    for d in (
+        DeclaracionPresentada.objects.de(taxpayer_id).formulario(Formulario.PLAME)
+        .exclude(periodo__endswith="13").order_by("periodo", "fecha_presentacion", "nro_orden")
+    ):
+        vigente[d.periodo] = d
+    rows: dict[str, dict] = {}
+    for period, decl in vigente.items():
+        if period in cerrados:
+            continue
+        remuneraciones = numero(decl.casillas, "C452") or Decimal("0")
+        essalud = numero(decl.casillas, "C412") or Decimal("0")
+        costo = remuneraciones + essalud
+        if costo <= 0:
+            continue
+        trabajadores = (decl.constancia or {}).get("trabajadores")
+        date = datetime.date(int(period[:4]), int(period[4:6]), 1)
+        rows[f"0601-{period}"] = _sunat_fields(
+            f"Planilla declarada (PLAME) {period[4:6]}/{period[:4]}"
+            + (f" · {trabajadores} trabajador(es)" if trabajadores else "")
+            + f" · remuneraciones {remuneraciones:,.0f} + EsSalud {essalud:,.0f} · orden {decl.nro_orden}",
+            date, costo, category, source_object_id=str(decl.pk), issue_date=decl.fecha_presentacion or date,
+        )
+    return _sync_source(taxpayer_id, TransactionSource.SUNAT_PLAME, rows)
+
+
+# ------------------------------------------------------------ DJ anual
+def ingest_annual(taxpayer_id: str) -> dict:
+    """Del 710 salen dos cosas que los comprobantes no ven.
+
+    * **Depreciación** del ejercicio = variación de la depreciación acumulada
+      (casilla 383) frente al 710 anterior; sin anterior, la acumulada entera.
+      Se reparte en doceavos, a la línea informativa que alimenta el EBITDA.
+    * **Ajuste del impuesto**: la línea mensual lleva pagos a cuenta; en
+      diciembre se ajusta para que el año sume el impuesto determinado
+      (casilla 113). Con pérdida, el ajuste devuelve los pagos a cuenta.
+    """
+    from sunat_declaraciones.services.casillas import numero
+    from sunat_declaraciones.services.renta_anual import vigentes
+
+    cat_dep = _category(taxpayer_id, "DEPRECIATION")
+    cat_tax = _category(taxpayer_id, "INCOME_TAX")
+    anuales = vigentes(taxpayer_id)
+    rows: dict[str, dict] = {}
+    for ejercicio, decl in anuales.items():
+        year = int(ejercicio)
+        c = decl.casillas
+        acumulada = numero(c, "383")
+        anterior = anuales.get(str(year - 1))
+        previa = numero(anterior.casillas, "383") if anterior else None
+        if acumulada is not None:
+            del_anio = acumulada - (previa or Decimal("0"))
+            if del_anio > 0:
+                mensual = (del_anio / 12).quantize(Decimal("0.01"))
+                for m in range(1, 13):
+                    rows[f"710-{ejercicio}-dep-{m:02d}"] = _sunat_fields(
+                        f"Depreciación {ejercicio} según DJ anual (casilla 383) · {del_anio:,.0f} en doceavos · orden {decl.nro_orden}",
+                        datetime.date(year, m, 1), mensual, cat_dep, source_object_id=str(decl.pk),
+                    )
+        impuesto = numero(c, "113")
+        if impuesto is not None:
+            pagos = FinancialTransaction.objects.filter(
+                taxpayer_id=taxpayer_id, source=TransactionSource.SUNAT_DECLARATION,
+                accounting_date__year=year, external_id__startswith="621-",
+            ).aggregate(t=Sum("net_amount_pen"))["t"] or Decimal("0")
+            ajuste = impuesto - pagos  # positivo = falta impuesto; negativo = pagos de más
+            if ajuste != 0:
+                rows[f"710-{ejercicio}-tax"] = _sunat_fields(
+                    f"Ajuste del impuesto a la renta {ejercicio} según DJ anual: impuesto {impuesto:,.0f} − pagos a cuenta {pagos:,.0f} · orden {decl.nro_orden}",
+                    datetime.date(year, 12, 1), ajuste, cat_tax, source_object_id=str(decl.pk),
+                )
+    return _sync_source(taxpayer_id, TransactionSource.SUNAT_ANNUAL, rows)
+
+
+# ------------------------------------------------------------- multas
+def ingest_penalties(taxpayer_id: str) -> dict:
+    """Multas e intereses pagados con boletas 1662 (tributos 6xxx en la
+    constancia). El fraccionamiento no entra: es deuda vieja, no gasto."""
+    from sunat_declaraciones.models import DeclaracionPresentada, Formulario
+    from sunat_declaraciones.services.tributos import tributos_de
+
+    category = _category(taxpayer_id, "SUNAT_PENALTIES")
+    rows: dict[str, dict] = {}
+    for b in DeclaracionPresentada.objects.de(taxpayer_id).formulario(Formulario.BOLETA):
+        multas = [t for t in tributos_de(b.constancia) if t["clase"] == "multa" and t["importe"]]
+        total = sum((t["importe"] for t in multas), Decimal("0"))
+        if total <= 0:
+            continue
+        fecha = (b.fecha_pago.date() if b.fecha_pago else b.fecha_presentacion) or datetime.date(int(b.periodo[:4]), int(b.periodo[4:6]), 1)
+        rows[f"1662-{b.nro_orden}"] = _sunat_fields(
+            f"Multa SUNAT · {' / '.join(t['descripcion'] for t in multas)} · periodo {b.periodo[4:6]}/{b.periodo[:4]} · orden {b.nro_orden}",
+            fecha, total, category, source_object_id=str(b.pk),
+        )
+    return _sync_penalties(taxpayer_id, rows)
+
+
+def _sync_penalties(taxpayer_id: str, rows: dict[str, dict]) -> dict:
+    """Las multas comparten fuente con los pagos a cuenta (``sunat_declaration``);
+    el retiro se limita a los ids ``1662-…`` para no tocar los ``621-…``."""
+    created = updated = 0
+    for external_id, fields in rows.items():
+        if _upsert(taxpayer_id, TransactionSource.SUNAT_DECLARATION, external_id, fields):
+            created += 1
+        else:
+            updated += 1
+    removed, _ = FinancialTransaction.objects.filter(
+        taxpayer_id=taxpayer_id, source=TransactionSource.SUNAT_DECLARATION, external_id__startswith="1662-",
+    ).exclude(external_id__in=list(rows)).delete()
+    return {"created": created, "updated": updated, "removed": removed}
+
+
+def ingest_sunat_declarations(taxpayer_id: str) -> dict:
+    """Todo lo que viene de SUNAT y no de comprobantes, en el orden que
+    importa: el ajuste anual necesita los pagos a cuenta ya cargados."""
+    return {
+        "declarations": ingest_declarations(taxpayer_id),
+        "plame": ingest_plame(taxpayer_id),
+        "penalties": ingest_penalties(taxpayer_id),
+        "annual": ingest_annual(taxpayer_id),
+    }
+
+
 def ingest_all(taxpayer_id: str) -> dict:
     return {
         "sunat": ingest_sunat(taxpayer_id),
         "manual": ingest_manual(taxpayer_id),
         "payroll": ingest_payroll(taxpayer_id),
         "fee_receipts": ingest_fee_receipts(taxpayer_id),
+        "sunat_declaraciones": ingest_sunat_declarations(taxpayer_id),
     }

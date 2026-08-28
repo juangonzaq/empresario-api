@@ -188,13 +188,44 @@ class OverviewView(OrganizationAPIView):
                 "main_cause_source": open_alerts[0].source if open_alerts else None,
                 "top": [_alert_payload(a) for a in open_alerts[:5]],
             },
+            # El 621 del mes según SUNAT: presentado o no, cuándo y cuánto se
+            # pagó. Por periodo, para que el selector de mes del tablero lo
+            # acompañe.
+            "declaraciones": _declaraciones_overview(request.ruc),
             "ai_summary": cached_ai,
             # De dónde salen los números del briefing; se calculan aquí, nunca
             # los redacta el modelo.
-            "sources": ai_service.briefing_sources(docs, itf, len(open_alerts)),
+            "sources": ai_service.briefing_sources(docs, itf, len(open_alerts), request.ruc),
         }
         overview_cache.set_overview(request.ruc, payload)
         return payload
+
+
+def _declaraciones_overview(ruc: str) -> dict:
+    from sunat_declaraciones.services import resumen as declaraciones_resumen
+
+    data = declaraciones_resumen(ruc)
+    por_periodo = {}
+    for p in data["periodos"]:
+        if p["periodo"].endswith("13"):
+            continue
+        d = p["igv_renta"]
+        por_periodo[p["periodo"]] = {
+            "presentado": d is not None,
+            "fecha_presentacion": d["fecha_presentacion"] if d else None,
+            "a_tiempo": d["a_tiempo"] if d else None,
+            "vencimiento": p["vencimiento"],
+            "pago_a_cuenta": (p["igv_renta_declarado"] or {}).get("renta_pago_a_cuenta"),
+            "igv_a_pagar": (p["igv_renta_declarado"] or {}).get("igv_a_pagar"),
+            "total_pagado": p["total_pagado"],
+        }
+    return {
+        "disponible": bool(por_periodo),
+        "periodo_que_toca": data["periodo_que_toca"],
+        "ultima_consulta": data["ultima_consulta"]["fecha"] if data["ultima_consulta"] else None,
+        "pagado_12m": data["totales"]["pagado_12m"],
+        "por_periodo": por_periodo,
+    }
 
 
 def _alert_payload(alert: FinanceAlert) -> dict:
@@ -518,6 +549,8 @@ class InvoiceInsightView(OrganizationAPIView):
                 "reference_id": extract.reference_id,
                 "reference_reason": extract.reference_reason,
                 "items": extract.items,
+                "due_date": extract.due_date,
+                "order_reference": extract.order_reference,
                 "supplier_address": extract.supplier_address,
                 "customer_address": extract.customer_address,
                 "notes": extract.notes,

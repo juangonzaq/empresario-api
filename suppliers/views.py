@@ -35,6 +35,8 @@ from .services import (
     compras_por_proveedor,
     comprobantes_en_riesgo,
     describir_comprobantes,
+    detalle_ssco,
+    fecha_padron,
     incorporar_desde_compras,
     proveedores_por_descubrir,
     resumen_riesgo,
@@ -83,6 +85,29 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
 
         acepta_riesgo = serializer.validated_data.pop("accept_risk", False)
         ruc = serializer.validated_data["ruc"]
+
+        # Primero el padrón SSCO, que es local y no admite discusión: un SSCO
+        # puede figurar ACTIVO y HABIDO en la ficha RUC y aun así sus facturas
+        # no valen. Se mira antes de salir a SUNAT para no ocultarlo detrás
+        # de un estado que parece limpio.
+        sujeto = rucs_en_padron([ruc]).get(ruc)
+        if sujeto is not None and not acepta_riesgo:
+            raise ValidationError({
+                "ruc": (
+                    "Este RUC figura en el padrón de Sujetos Sin Capacidad "
+                    "Operativa de SUNAT. Sus facturas no dan crédito fiscal ni "
+                    "gasto, sin prueba en contrario."
+                ),
+                "sunat": {
+                    "business_name": sujeto.razon_social,
+                    "status": "",
+                    "condition": "",
+                    "has_issue": True,
+                },
+                "ssco": detalle_ssco(sujeto),
+                "code": "proveedor_con_observaciones",
+            })
+
         perfil, error = self._consultar_sunat(ruc)
 
         if perfil is not None and perfil.has_issue and not acepta_riesgo:
@@ -98,6 +123,7 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
                     "condition": perfil.condition,
                     "has_issue": True,
                 },
+                "ssco": None,
                 "code": "proveedor_con_observaciones",
             })
 
@@ -119,6 +145,10 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         elif error:
             supplier.last_error = error[:500]
             supplier.save(update_fields=["last_error", "updated_at"])
+
+        # La respuesta del alta lleva el resultado del cruce: es el «check»
+        # que el usuario espera ver justo después de registrar.
+        self._con_exposicion([supplier])
 
     @staticmethod
     def _consultar_sunat(ruc: str):
@@ -156,8 +186,11 @@ class SupplierViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         compras = compras_por_proveedor(self.request.ruc)
         padron = rucs_en_padron(s.ruc for s in suppliers)
         observados = self._observados()
+        padron_al = fecha_padron()
         for supplier in suppliers:
             supplier.en_ssco = supplier.ruc in padron
+            supplier.ssco = detalle_ssco(padron.get(supplier.ruc))
+            supplier.padron_ssco_al = padron_al
             analisis = observados.get(supplier.ruc)
             supplier.nivel_riesgo = analisis.nivel if analisis else "sin_senales"
             supplier.puntaje_riesgo = analisis.puntaje if analisis else 0

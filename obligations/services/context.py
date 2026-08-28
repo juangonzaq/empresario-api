@@ -123,6 +123,16 @@ def build_context(organization) -> CompanyContext:
         headcount_known=active_employees > 0 or snapshot is not None or profile_answered,
     )
     has_payroll: bool | None = None if worker_count is None else worker_count > 0
+    # Si la persona respondió «¿tienes trabajadores en planilla?», eso decide
+    # cuando los datos duros no dicen lo contrario: un «sí» con conteo 0 es
+    # una planilla que aún no se cargó; un «no» con trabajadores activos no
+    # puede ganarle a la planilla real.
+    declared_payroll = getattr(profile, "has_payroll", None)
+    if declared_payroll is True and not has_payroll:
+        has_payroll = True
+    elif declared_payroll is False and not active_employees and not declared_workers:
+        has_payroll = False
+        worker_count = 0
 
     declared_periods = _declared_periods(ruc)
     consistency_score = _consistency_score(ruc)
@@ -140,7 +150,12 @@ def build_context(organization) -> CompanyContext:
         "company.active_employee_count": active_employees,
         # Perfil declarado del negocio (opcional): rubro, giro y tres hechos
         # tri-estado que abren o cierran ramas enteras del catálogo.
+        # Rubros y objetivos son listas (la persona puede elegir varios). Una
+        # lista vacía es «no lo ha dicho» (None), no «ningún rubro». Las
+        # reglas usan `contains`; `company.sector` sigue siendo el principal.
+        "company.sectors": list(getattr(profile, "sectors", None) or []) or None,
         "company.sector": getattr(profile, "sector", "") or None,
+        "company.goals": list(getattr(profile, "goals", None) or []) or None,
         "company.offering": getattr(profile, "offering", "") or None,
         "company.sells_to_consumers": getattr(profile, "sells_to_consumers", None),
         "company.has_premises": getattr(profile, "has_premises", None),

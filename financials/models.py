@@ -38,6 +38,9 @@ class TransactionSource(models.TextChoices):
     MANUAL_PURCHASE = "manual_purchase", "Compra manual"
     PAYROLL = "payroll", "Planilla"
     FEE_RECEIPT = "fee_receipt", "Recibo por honorarios"
+    SUNAT_DECLARATION = "sunat_declaration", "Declaración SUNAT"
+    SUNAT_PLAME = "sunat_plame", "Planilla declarada (PLAME)"
+    SUNAT_ANNUAL = "sunat_annual", "DJ anual de renta"
     ADJUSTMENT = "adjustment", "Ajuste"
 
 

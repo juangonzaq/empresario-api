@@ -37,7 +37,7 @@ class RucSnapshotListSerializer(serializers.ModelSerializer):
             "taxpayer_type", "status", "condition",
             "has_coactive_debt", "has_tax_omissions", "has_probatory_acts",
             "reactiva_peru_debt", "covid_guarantee_debt", "has_risk_signals",
-            "worker_count", "latest_worker_period",
+            "worker_count", "latest_worker_period", "branch_count",
             "changed", "change_summary", "succeeded", "error",
         )
 

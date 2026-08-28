@@ -14,12 +14,13 @@ from suppliers.services.ruc_client import RucLookupError
 from ..models import LegalRepresentative, RucSection, RucSnapshot, WorkerHeadcount
 from .client import FullProfile, RucProfileClient
 from .constants import (
+    SECTION_BRANCHES,
     SECTION_LEGAL_REPRESENTATIVES,
     SECTION_WORKERS,
     SECTIONS,
     SECTIONS_BY_KEY,
 )
-from .parsers import parse_legal_representatives, parse_worker_rows
+from .parsers import count_branches, parse_legal_representatives, parse_worker_rows
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,7 @@ class RucProfileSynchronizer:
                 "has_risk_signals": any(signals.values()),
                 "worker_count": latest["workers"] if latest else None,
                 "latest_worker_period": latest["period"] if latest else "",
+                "branch_count": self._branch_count(profile),
                 "changed": bool(changes),
                 "change_summary": "; ".join(changes),
                 "succeeded": True,
@@ -159,6 +161,11 @@ class RucProfileSynchronizer:
             if getattr(previous, field) != current:
                 changes.append(f"{field}: {getattr(previous, field)} -> {current}")
         return changes
+
+    def _branch_count(self, profile: FullProfile) -> int | None:
+        # Sin la sección (error o no pedida) no se sabe: None, no cero.
+        section = profile.section(SECTION_BRANCHES)
+        return count_branches(section) if section else None
 
     def _headcounts(self, profile: FullProfile) -> list[dict]:
         section = profile.section(SECTION_WORKERS)

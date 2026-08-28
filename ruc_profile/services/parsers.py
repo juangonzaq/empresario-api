@@ -156,6 +156,17 @@ def parse_worker_rows(data: SectionData) -> list[dict[str, Any]]:
     return rows
 
 
+def count_branches(data: SectionData) -> int:
+    """Filas de ``Establecimientos anexos``: ``Código | Tipo | Dirección | Actividad``.
+
+    Se cuentan filas con dirección, no cabeceras ni el aviso de «no registra».
+    """
+    return sum(
+        1 for table in data.tables for row in table.rows
+        if len(row) >= 3 and not is_no_data_row(row)
+    )
+
+
 def parse_legal_representatives(data: SectionData) -> list[dict[str, Any]]:
     """``Documento | Nro. Documento | Nombre | Cargo | Fecha Desde``."""
     rows: list[dict[str, Any]] = []
