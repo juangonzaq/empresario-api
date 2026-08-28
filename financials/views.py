@@ -70,6 +70,29 @@ class SyncView(ManagedOrganizationAPIView):
         return Response({"ingested": ingested, "categorized": categorized})
 
 
+class PeriodsView(OrganizationAPIView):
+    """Los ejercicios y meses con transacciones de la empresa, del más
+    reciente al más antiguo. El front arma sus filtros con esto: nunca con
+    una lista fija de años."""
+
+    def get(self, request: Request) -> Response:
+        filas = (
+            FinancialTransaction.objects.filter(taxpayer_id=request.ruc)
+            .values_list("accounting_date__year", "accounting_date__month")
+            .distinct()
+            .order_by("-accounting_date__year", "-accounting_date__month")
+        )
+        por_anio: dict[int, list[int]] = {}
+        for year, month in filas:
+            por_anio.setdefault(year, []).append(month)
+        return Response({
+            "years": [
+                {"year": year, "months": sorted(months, reverse=True)}
+                for year, months in por_anio.items()
+            ],
+        })
+
+
 class IncomeStatementView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
         year = _year(request)
@@ -93,6 +116,19 @@ class RatiosView(OrganizationAPIView):
             "year": year,
             "ratios": ratios.annual_ratios(request.ruc, year),
         })
+
+
+class RatiosHistoryView(OrganizationAPIView):
+    """``?years=3`` — los últimos N ejercicios (tope 6), del más antiguo al actual."""
+
+    def get(self, request: Request) -> Response:
+        try:
+            n = max(1, min(int(request.query_params.get("years") or 3), 6))
+        except ValueError:
+            n = 3
+        hasta = _year(request)
+        years = list(range(hasta - n + 1, hasta + 1))
+        return Response({"years": ratios.ratios_history(request.ruc, years)})
 
 
 class MonthlyRatiosView(OrganizationAPIView):

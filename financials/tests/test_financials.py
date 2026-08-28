@@ -297,3 +297,69 @@ class MastersApiTests(TenantAPITestCase):
         ).data
         self.assertEqual(len(data["rows"]), 1)
         self.assertEqual(data["rows"][0]["functional_currency"], "PEN")
+
+
+class KpisAcumuladoTests(TenantAPITestCase):
+    """El acumulado del ejercicio y el peso de cada gasto sobre la venta."""
+
+    def setUp(self):
+        # Dos ventas de 1000 neto (marzo y abril) y una compra de 500 neto
+        # (marzo), que la heurística confirma como costo de venta.
+        make_invoice(issue_date=datetime.date(2026, 3, 10), period="202603")
+        make_invoice(issue_date=datetime.date(2026, 4, 10), period="202604")
+        make_invoice(
+            direction=Direction.RECEIVED, issuer_ruc="20100070970",
+            receiver_ruc=RUC, total_amount=Decimal("590.00"),
+            issue_date=datetime.date(2026, 3, 12), period="202603",
+        )
+        ingest.ingest_sunat(RUC)
+        categorization.categorize_pending(RUC)
+
+    def test_acumulado_y_porcentajes(self):
+        data = ratios.kpis(RUC, 2026)
+        acumulado = data["accumulated"]
+        self.assertEqual(acumulado["net_sales"], 2000.0)
+        self.assertEqual(acumulado["cost_of_sales_line"], 500.0)
+        self.assertEqual(acumulado["cost_of_sales_line_pct"], 25.0)
+        self.assertEqual(acumulado["gross_profit"], 1500.0)
+        self.assertEqual(acumulado["gross_profit_pct"], 75.0)
+        self.assertEqual(acumulado["last_month_with_data"], 4)
+
+        marzo = next(m for m in data["months"] if m["month"] == 3)
+        self.assertEqual(marzo["cost_of_sales_line_pct"], 50.0)
+        abril = next(m for m in data["months"] if m["month"] == 4)
+        self.assertEqual(abril["cost_of_sales_line_pct"], 0.0)
+
+    def test_el_historico_de_ratios_trae_un_bloque_por_anio(self):
+        url = reverse("financials:ratios-history")
+        response = self.client.get(url, {"years": 3, "year": 2026})
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        anios = [b["year"] for b in response.data["years"]]
+        self.assertEqual(anios, [2024, 2025, 2026])
+        ultimo = response.data["years"][-1]["ratios"]
+        margen = next(r for r in ultimo if r["code"] == "GROSS_MARGIN")
+        self.assertEqual(margen["value"], 75.0)
+        vacio = response.data["years"][0]["ratios"]
+        self.assertTrue(all(r["value"] is None for r in vacio if r["code"] == "GROSS_MARGIN"))
+
+
+class PeriodsTests(TenantAPITestCase):
+    """Los filtros del tablero se arman con los periodos que existen."""
+
+    def test_lista_solo_ejercicios_y_meses_con_datos(self):
+        make_invoice(issue_date=datetime.date(2024, 11, 5), period="202411")
+        make_invoice(issue_date=datetime.date(2026, 3, 10), period="202603")
+        make_invoice(issue_date=datetime.date(2026, 4, 10), period="202604")
+        ingest.ingest_sunat(RUC)
+
+        response = self.client.get(reverse("financials:periods"))
+
+        self.assertEqual(response.status_code, http.HTTP_200_OK)
+        self.assertEqual(response.json()["years"], [
+            {"year": 2026, "months": [4, 3]},
+            {"year": 2024, "months": [11]},
+        ])
+
+    def test_sin_datos_devuelve_vacio(self):
+        response = self.client.get(reverse("financials:periods"))
+        self.assertEqual(response.json(), {"years": []})

@@ -247,5 +247,44 @@ def kpis(taxpayer_id: str, year: int) -> dict:
         row["net_margin_pct"] = pct(
             now.get("NET_INCOME", {}).get(month, Decimal("0")), sales or None
         )
+        # Peso de cada bloque de gasto sobre la venta del mes, en magnitud:
+        # las líneas de gasto llevan signo negativo en el estado.
+        for code in ("COST_OF_SALES_LINE", "ADMIN_EXPENSES_LINE", "SELLING_EXPENSES_LINE"):
+            row[f"{code.lower()}_pct"] = pct(
+                abs(now.get(code, {}).get(month, Decimal("0"))), sales or None
+            )
         months.append(row)
-    return {"year": year, "months": months}
+    return {"year": year, "months": months, "accumulated": _accumulated(now)}
+
+
+def _accumulated(series: dict[str, dict[int, Decimal]]) -> dict:
+    """El acumulado del ejercicio: lo que se lee primero en un tablero.
+
+    Suma los meses de cada línea y expresa cada una como porcentaje de la
+    venta neta acumulada (análisis vertical). Los gastos van en magnitud,
+    para que «costo de venta 80 %» se lea sin signo.
+    """
+    totales = {
+        code: sum(series.get(code, {}).values(), Decimal("0")) for code in KPI_LINES
+    }
+    sales = totales["NET_SALES"]
+    out = {"last_month_with_data": max(
+        (m for m, v in series.get("NET_SALES", {}).items() if v), default=0,
+    )}
+    for code, value in totales.items():
+        magnitud = abs(value) if code.endswith("_LINE") else value
+        out[code.lower()] = float(magnitud)
+        out[f"{code.lower()}_pct"] = pct(magnitud, sales or None)
+    return out
+
+
+def ratios_history(taxpayer_id: str, years: list[int]) -> list[dict]:
+    """Los ratios anuales de varios ejercicios, para verlos evolucionar.
+
+    Un ratio de un solo año es una foto; la tendencia es lo que dice si la
+    empresa mejora o se deteriora. Se reutiliza ``annual_ratios`` tal cual,
+    un ejercicio por vez, y los que no tienen datos salen con ``value=None``.
+    """
+    return [
+        {"year": year, "ratios": annual_ratios(taxpayer_id, year)} for year in years
+    ]
