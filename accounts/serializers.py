@@ -34,9 +34,9 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id", "email", "first_name", "last_name", "phone",
-            "full_name", "email_verified", "created_at",
+            "full_name", "email_verified", "referral_code", "created_at",
         )
-        read_only_fields = ("id", "email", "created_at")
+        read_only_fields = ("id", "email", "referral_code", "created_at")
 
 
 def _password_field() -> serializers.CharField:

@@ -112,7 +112,8 @@ class ReferidosTests(APITestCase):
         self.client.force_authenticate(self.ref)
         r = self.client.get(reverse("billing:referrals"))
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["code"]), 8)
+        self.assertEqual(len(r.data["code"]), 6)
+        self.assertTrue(r.data["code"].isdigit())
         self.assertEqual(r.data["link"], f"https://app.empresario.pe/registro?ref={self.ref.referral_code}")
         self.assertEqual(r.data["target"], 5)
 

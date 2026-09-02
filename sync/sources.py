@@ -69,6 +69,9 @@ class Source:
     # la leyenda «≈ cuánto demora» del panel: cuando la empresa ya tiene
     # historial, manda la mediana de SUS corridas (services.estimated_durations).
     estimate: int = 30
+    # Funciones de IA: corren solo con plan de pago vigente (la prueba no las
+    # incluye); sin pago, el paso se marca Omitido con el motivo a la vista.
+    premium: bool = False
 
     def runs_on(self, cadence: str) -> bool:
         # Lo manual siempre corre todo: si alguien pulsa «sincronizar ahora»
@@ -501,7 +504,7 @@ SOURCES: list[Source] = [
     Source("mailbox", "Buzón SUNAT", True, _mailbox,
            frozenset({INITIAL, DAILY}), estimate=15),
     Source("intel", "Lectura del buzón (IA)", False, _intel,
-           frozenset({INITIAL, DAILY}), estimate=300),
+           frozenset({INITIAL, DAILY}), estimate=300, premium=True),
     # REMYPE casi cierra la fila: consulta pública que cambia poco y cuyo
     # portal se cae con frecuencia — un timeout aquí ya no retrasa a nadie.
     Source("remype", "Acreditación REMYPE", False, _remype,

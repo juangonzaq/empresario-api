@@ -19,6 +19,27 @@ class PaymentRequired(APIException):
         super().__init__({"detail": detail or self.default_detail, "code": self.default_code})
 
 
+class PaidPlanActive(BasePermission):
+    """Funciones del plan de pago: la prueba gratuita no las incluye.
+
+    Se suma DESPUÉS de ``SubscriptionActive`` en las vistas premium (IA):
+    aquella deja pasar la prueba vigente; esta exige periodo pagado. El 402
+    lleva el mismo ``code``, así el frontend aterriza en Suscripción igual.
+    """
+
+    def has_permission(self, request, view) -> bool:
+        from .services import has_paid_plan
+
+        organization = getattr(request, "organization", None)
+        if organization is None:
+            return True  # ya lo rechazó (o lo rechazará) HasOrganization
+        if has_paid_plan(organization):
+            return True
+        raise PaymentRequired(
+            "Esta función es parte del plan de pago. Actívalo en Suscripción."
+        )
+
+
 class SubscriptionActive(BasePermission):
     """Exige una suscripción vigente en la empresa ya resuelta por ``HasOrganization``."""
 

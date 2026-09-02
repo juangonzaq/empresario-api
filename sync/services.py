@@ -469,6 +469,12 @@ def _execute(job: SyncJob) -> SyncJob:
         job.finish(error=str(exc))
         return job
 
+    from billing.services import has_paid_plan
+
+    # Los pasos de IA cuestan tokens reales: solo corren con plan pagado
+    # vigente. Se evalúa una vez por corrida, no por paso.
+    con_pago = has_paid_plan(organization)
+
     fatal = ""
     for source in sources:
         # La cancelación es cooperativa: se mira entre paso y paso. El paso en
@@ -476,6 +482,9 @@ def _execute(job: SyncJob) -> SyncJob:
         # no arranca ninguno más.
         if job.cancellation_requested():
             return _abandonar_por_cancelacion(job)
+        if source.premium and not con_pago:
+            job.mark_step(source.key, StepStatus.SKIPPED, "Disponible con el plan de pago")
+            continue
         if fatal and source.needs_sol:
             job.mark_step(source.key, StepStatus.SKIPPED, "No se pudo entrar a SUNAT")
             continue

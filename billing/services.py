@@ -20,13 +20,15 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-# Sin I, O, 0, 1: se dicta por teléfono y se escribe en el celular.
-_ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+# Solo números: 6 dígitos se dictan por teléfono y se escriben en el celular
+# sin confundir letras. Un millón de combinaciones sobra para la base actual;
+# el bucle resuelve la colisión ocasional.
+_DIGITOS = "0123456789"
 
 
 def new_referral_code() -> str:
     while True:
-        code = "".join(secrets.choice(_ALFABETO) for _ in range(8))
+        code = "".join(secrets.choice(_DIGITOS) for _ in range(6))
         if not User.objects.filter(referral_code=code).exists():
             return code
 
@@ -41,6 +43,15 @@ def referral_target() -> int:
 
 def reward_days() -> int:
     return int(getattr(settings, "REFERRAL_REWARD_DAYS", 30))
+
+
+def has_paid_plan(organization) -> bool:
+    """True solo con un periodo PAGADO vigente; la prueba gratuita no cuenta.
+
+    Gatea las funciones de IA (chat Vigía, lectura IA del buzón): cada uso
+    cuesta tokens de verdad, así que viven en la versión de pago.
+    """
+    return ensure_subscription(organization).status == "active"
 
 
 # ------------------------------------------------------- asientos de empresa

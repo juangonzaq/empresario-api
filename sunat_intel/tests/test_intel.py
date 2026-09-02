@@ -192,6 +192,18 @@ class ApiTests(TenantAPITestCase):
         )
         cases.rebuild_cases(TAXPAYER_ID)
         self.case = Case.objects.get()
+        self._pagar()
+
+    def _pagar(self):
+        # Vigía es del plan de pago: los tests de ask corren como cliente
+        # pagante; el 402 de la prueba gratuita tiene su propio test.
+        from django.utils import timezone
+        from datetime import timedelta
+        from billing.services import ensure_subscription
+
+        sub = ensure_subscription(self.organization)
+        sub.current_period_end = timezone.now() + timedelta(days=30)
+        sub.save(update_fields=["current_period_end"])
 
     def test_overview_counts_and_separation_of_concerns(self):
         data = self.client.get(reverse("sunat_intel:overview")).data
@@ -286,6 +298,16 @@ class ApiTests(TenantAPITestCase):
         response = self.client.delete(reverse("sunat_intel:vigia-history"))
         self.assertEqual(response.data["deleted"], 1)
         self.assertEqual(VigiaMessage.objects.count(), 0)
+
+    def test_ask_sin_plan_pagado_devuelve_402(self):
+        from billing.services import ensure_subscription
+
+        sub = ensure_subscription(self.organization)
+        sub.current_period_end = None
+        sub.save(update_fields=["current_period_end"])
+        r = self.client.post(reverse("sunat_intel:ask"), {"question": "hola"}, format="json")
+        self.assertEqual(r.status_code, 402)
+        self.assertEqual(r.data["code"], "suscripcion_vencida")
 
     def test_ask_requires_question(self):
         response = self.client.post(reverse("sunat_intel:ask"), {}, format="json")

@@ -17,6 +17,7 @@ from .serializers import (
     VigiaMessageSerializer,
 )
 from accounts.tenancy import HasOrganization, OrganizationAPIView
+from billing.permissions import PaidPlanActive
 from rest_framework.permissions import IsAuthenticated
 
 from .services import ask as ask_service
@@ -137,7 +138,12 @@ class AskView(OrganizationAPIView):
 
     The OpenAI key never leaves the backend; the frontend only sends the
     question and receives the answer with its sources.
+
+    Vigía es del plan de pago: cada pregunta cuesta tokens reales, así que la
+    prueba gratuita no lo incluye (402 con code para aterrizar en Suscripción).
     """
+
+    permission_classes = [*OrganizationAPIView.permission_classes, PaidPlanActive]
 
     def post(self, request: Request) -> Response:
         question = str(request.data.get("question") or "").strip()
