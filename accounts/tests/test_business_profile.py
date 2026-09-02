@@ -25,16 +25,18 @@ class BusinessProfileApiTests(APITestCase):
 
     def test_put_saves_and_marks_complete(self):
         res = self.client.put(self.url, {
-            "offering": "food", "sectors": ["food", "commerce"],
+            "offerings": ["food", "products"], "sectors": ["food", "commerce"],
             "goals": ["tax_ready", "cashflow"],
             "business_age": "starting", "people_count": 3,
         }, format="json")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res.data["is_complete"])
         self.assertEqual(res.data["sectors"], ["food", "commerce"])
+        self.assertEqual(res.data["offerings"], ["food", "products"])
         profile = BusinessProfile.objects.get(organization=self.org)
         self.assertEqual(profile.sectors, ["food", "commerce"])
         # El primero elegido es el principal (columna espejo para admin/reportes).
+        self.assertEqual(profile.offering, "food")
         self.assertEqual(profile.sector, "food")
         self.assertEqual(profile.primary_goal, "tax_ready")
         self.assertEqual(profile.people_count, 3)
@@ -62,12 +64,18 @@ class BusinessProfileApiTests(APITestCase):
         self.assertEqual(food.applicability_status, enums.ApplicabilityStatus.UNKNOWN)
 
         # Declara otro rubro y otra oferta: ahora sí es un no.
-        self.client.put(self.url, {"sectors": ["services"], "offering": "services"}, format="json")
+        self.client.put(self.url, {"sectors": ["services"], "offerings": ["services"]}, format="json")
         food.refresh_from_db()
         self.assertEqual(food.applicability_status, enums.ApplicabilityStatus.NOT_APPLICABLE)
 
+        # Vende servicios Y comida (mix): con que la comida esté en la lista
+        # basta, la regla aplica aunque no sea lo principal.
+        self.client.put(self.url, {"offerings": ["services", "food"]}, format="json")
+        food.refresh_from_db()
+        self.assertEqual(food.applicability_status, enums.ApplicabilityStatus.APPLICABLE)
+
         # Declaro que vendo comida → la regla pasa a aplicar.
-        self.client.put(self.url, {"sectors": ["food"]}, format="json")
+        self.client.put(self.url, {"sectors": ["food"], "offerings": ["food"]}, format="json")
         food.refresh_from_db()
         self.assertEqual(food.applicability_status, enums.ApplicabilityStatus.APPLICABLE)
 

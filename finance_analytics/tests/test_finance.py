@@ -85,6 +85,13 @@ def make_doc(**overrides):
 make_doc.counter = 1
 
 
+def periodo_actual() -> str:
+    """El mes de hoy. La vista del briefing exige facturación en los últimos
+    2 meses: un periodo fijo en esos tests los rompía al avanzar el
+    calendario (pasó el 2026-09-01 con docs de 202607)."""
+    return timezone.localdate().strftime("%Y%m")
+
+
 class XmlExtractTests(TenantAPITestCase):
     def test_parse_invoice_xml(self):
         data = parse_invoice_xml(UBL_INVOICE)
@@ -488,7 +495,7 @@ class BriefingTests(TenantAPITestCase):
         )
 
     def test_failed_generation_falls_back_to_last_briefing(self):
-        make_doc(total_amount=Decimal("1000"))
+        make_doc(total_amount=Decimal("1000"), period=periodo_actual())
         FinanceAiSummary.objects.create(
             account_ruc=RUC, period="202606", fingerprint="old",
             summary="Briefing anterior", key_changes=["Algo"], attention=[], actions=[],
@@ -503,7 +510,7 @@ class BriefingTests(TenantAPITestCase):
         self.assertIn("último disponible", response.data["stale_note"])
 
     def test_failed_generation_without_history_reports_the_error(self):
-        make_doc(total_amount=Decimal("1000"))
+        make_doc(total_amount=Decimal("1000"), period=periodo_actual())
         with patch.object(
             ai_summary.llm, "structured_completion", side_effect=RuntimeError("boom")
         ):

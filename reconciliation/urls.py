@@ -1,14 +1,17 @@
 from django.urls import path
 
 from .views import (
-    DocumentsView, ExplainView, MovementClassifyView, MovementsView, RunView,
-    StatementDeleteView, StatementsView, SummaryView,
+    CollectionsView, CustomerDocumentsView, DocumentsView, ExplainView,
+    MovementClassifyView, MovementsView, RunView, StatementDeleteView, StatementsView,
+    SummaryView,
 )
 
 app_name = "reconciliation"
 
 urlpatterns = [
     path("reconciliation/summary/", SummaryView.as_view(), name="summary"),
+    path("reconciliation/collections/", CollectionsView.as_view(), name="collections"),
+    path("reconciliation/collections/customer/", CustomerDocumentsView.as_view(), name="collections-customer"),
     path("reconciliation/run/", RunView.as_view(), name="run"),
     path("reconciliation/documents/", DocumentsView.as_view(), name="documents"),
     path("reconciliation/movements/", MovementsView.as_view(), name="movements"),

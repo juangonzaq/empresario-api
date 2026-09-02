@@ -210,3 +210,45 @@ def suppliers_analysis(docs: list[ElectronicInvoice], months: int = WINDOW_MONTH
             "válidas tributariamente; eso requiere revisión contable."
         )
     return data
+
+
+def top_customers_by_year(docs: list[ElectronicInvoice]) -> dict[str, Any]:
+    """El cliente principal de CADA año presente en ``docs``, con su peso
+    sobre la facturación neta en soles de ese año.
+
+    Alimenta el card del tablero cuando el selector de periodo viaja a un año
+    antiguo: la ventana móvil de 12 meses siempre describía el presente, así
+    que el card mostraba el mismo cliente sin importar el año elegido. Misma
+    base que la ventana móvil: neto (bruto − NC) y solo soles.
+    """
+    por_anio: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        if (
+            doc.direction != Direction.ISSUED or doc.is_cancelled
+            or doc.is_rejected or not doc.period
+            or (doc.currency or "PEN") != "PEN"
+        ):
+            continue
+        year = doc.period[:4]
+        bucket = por_anio.setdefault(
+            year, {"total": Decimal("0"), "parties": {}}
+        )
+        amount = _signed_amount(doc)
+        bucket["total"] += amount
+        key = _party_key(doc, Direction.ISSUED)
+        bucket["parties"][key] = bucket["parties"].get(key, Decimal("0")) + amount
+
+    out: dict[str, Any] = {}
+    for year, bucket in por_anio.items():
+        if not bucket["parties"] or bucket["total"] <= 0:
+            out[year] = None
+            continue
+        (ruc, name), net = max(bucket["parties"].items(), key=lambda kv: kv[1])
+        out[year] = {
+            "ruc": ruc,
+            "name": name,
+            "net_pen": money(net),
+            "share_pct": round(float(net / bucket["total"] * 100), 1),
+            "year_net_pen": money(bucket["total"]),
+        }
+    return out

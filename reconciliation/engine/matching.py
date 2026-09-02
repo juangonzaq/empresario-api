@@ -82,6 +82,35 @@ def _open_invoices(account_ruc: str) -> list[ElectronicInvoice]:
     )
 
 
+def _norm_number(value: str) -> str:
+    # «E001 - 487» y «E001-487» son el mismo comprobante; los espacios varían
+    # según de dónde vino el dato (portal, XML, referencia de la NC).
+    return re.sub(r"\s", "", (value or "").upper())
+
+
+def _credit_notes_by_invoice(account_ruc: str) -> dict[str, Decimal]:
+    """Total de notas de crédito emitidas por factura referenciada.
+
+    Una NC reduce lo cobrable: el cliente paga factura − NC, y una factura
+    anulada por completo no es una cuenta por cobrar. Las NC sin referencia
+    legible no se asignan a nadie — mejor un saldo de más que un descuento
+    inventado sobre la factura equivocada.
+    """
+    notes = (
+        ElectronicInvoice.objects.for_account(account_ruc)
+        .filter(direction=Direction.ISSUED, document_class=DocumentClass.CREDIT_NOTE,
+                is_cancelled=False, is_rejected=False)
+        .exclude(references_document="")
+        .select_related("extract", "override").defer("xml_content", "raw")
+    )
+    by_invoice: dict[str, Decimal] = {}
+    for note in notes:
+        key = _norm_number(note.references_document)
+        amount = from_cpe(note).total or Decimal("0")
+        by_invoice[key] = by_invoice.get(key, Decimal("0")) + amount
+    return by_invoice
+
+
 def _match_score(inv, mov: BankMovement) -> tuple[float, list[str]] | None:
     doc = from_cpe(inv)
     if (doc.currency or "PEN") != (mov.currency or "PEN"):
@@ -113,6 +142,7 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
     """
     invoices = _open_invoices(account_ruc)
     credits = list(BankMovement.objects.filter(account_ruc=account_ruc, kind=MovementKind.CREDIT))
+    notes = _credit_notes_by_invoice(account_ruc)
 
     SettlementLine.objects.filter(settlement__account_ruc=account_ruc, matched_by="rules").delete()
 
@@ -124,6 +154,9 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
             defaults={"invoice_total": doc.total or Decimal("0"), "billing_period": inv.period},
         )
         st.invoice_total = doc.total or Decimal("0")
+        # Tope en el total: una NC mayor que su factura es un dato raro, no un
+        # crédito a favor que haya que perseguir en el banco.
+        st.credit_notes_amount = min(notes.get(_norm_number(inv.full_number), Decimal("0")), st.invoice_total)
         settlements[str(inv.pk)] = st
 
     # Capacity left on each movement after manual links.
@@ -137,6 +170,10 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
     def paid(st: InvoiceSettlement) -> Decimal:
         return sum((l.amount for l in st.lines.all()), Decimal("0"))
 
+    def remaining(st: InvoiceSettlement) -> Decimal:
+        # Lo que de verdad falta cobrar: el cliente paga factura − NC.
+        return st.invoice_total - st.credit_notes_amount - paid(st)
+
     def link(st: InvoiceSettlement, mov: BankMovement, amount: Decimal, score: float, ev: list[str]) -> None:
         SettlementLine.objects.create(settlement=st, movement=mov, amount=amount, confidence=round(score, 2), evidence=ev)
         used[str(mov.pk)] = used.get(str(mov.pk), Decimal("0")) + amount
@@ -145,20 +182,20 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
     candidates = []
     for inv in invoices:
         st = settlements[str(inv.pk)]
-        remaining = st.invoice_total - paid(st)
-        if remaining <= AMOUNT_TOLERANCE:
+        pending = remaining(st)
+        if pending <= AMOUNT_TOLERANCE:
             continue
         for mov in credits:
-            if abs(capacity(mov) - remaining) > AMOUNT_TOLERANCE:
+            if abs(capacity(mov) - pending) > AMOUNT_TOLERANCE:
                 continue
             scored = _match_score(inv, mov)
             if scored:
-                candidates.append((scored[0], inv, mov, remaining, scored[1]))
-    for score, inv, mov, remaining, ev in sorted(candidates, key=lambda c: -c[0]):
+                candidates.append((scored[0], inv, mov, pending, scored[1]))
+    for score, inv, mov, pending, ev in sorted(candidates, key=lambda c: -c[0]):
         st = settlements[str(inv.pk)]
-        if st.invoice_total - paid(st) <= AMOUNT_TOLERANCE or capacity(mov) < remaining - AMOUNT_TOLERANCE:
+        if remaining(st) <= AMOUNT_TOLERANCE or capacity(mov) < pending - AMOUNT_TOLERANCE:
             continue
-        link(st, mov, remaining, score, ev)
+        link(st, mov, pending, score, ev)
 
     # Pass 2 — one movement settles several invoices of the same counterparty.
     for mov in credits:
@@ -168,17 +205,17 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
         open_by_party: dict[str, list] = {}
         for inv in invoices:
             st = settlements[str(inv.pk)]
-            remaining = st.invoice_total - paid(st)
-            if remaining > AMOUNT_TOLERANCE and _match_score(inv, mov):
-                open_by_party.setdefault(from_cpe(inv).counterparty_ruc or "-", []).append((inv, remaining))
+            pending = remaining(st)
+            if pending > AMOUNT_TOLERANCE and _match_score(inv, mov):
+                open_by_party.setdefault(from_cpe(inv).counterparty_ruc or "-", []).append((inv, pending))
         for party, items in open_by_party.items():
             found = False
             for size in range(2, min(COMBO_LIMIT, len(items)) + 1):
                 for combo in combinations(items, size):
                     if abs(sum(r for _, r in combo) - cap) <= AMOUNT_TOLERANCE:
-                        for inv, remaining in combo:
+                        for inv, pending in combo:
                             scored = _match_score(inv, mov)
-                            link(settlements[str(inv.pk)], mov, remaining, scored[0] * 0.9, scored[1])
+                            link(settlements[str(inv.pk)], mov, pending, scored[0] * 0.9, scored[1])
                         found = True
                         break
                 if found:
@@ -187,8 +224,8 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
     # Pass 3 — partial payments strongly tied by counterparty in description.
     for inv in invoices:
         st = settlements[str(inv.pk)]
-        remaining = st.invoice_total - paid(st)
-        if remaining <= AMOUNT_TOLERANCE:
+        pending = remaining(st)
+        if pending <= AMOUNT_TOLERANCE:
             continue
         for mov in sorted(credits, key=lambda m: m.date):
             cap = capacity(mov)
@@ -200,31 +237,33 @@ def rebuild_settlements(account_ruc: str) -> dict[str, Any]:
             desc_tied = any("descripción" in e for e in scored[1])
             if not desc_tied:
                 continue
-            amount = min(cap, remaining)
+            amount = min(cap, pending)
             link(st, mov, amount, min(scored[0], 0.7), scored[1] + ["Pago parcial"])
-            remaining -= amount
-            if remaining <= AMOUNT_TOLERANCE:
+            pending -= amount
+            if pending <= AMOUNT_TOLERANCE:
                 break
 
-    stats = {"paid": 0, "partial": 0, "unpaid": 0, "overpaid": 0}
+    stats = {"paid": 0, "partial": 0, "unpaid": 0, "overpaid": 0, "credited": 0}
     for st in settlements.values():
         total_paid = paid(st)
         st.paid_amount = total_paid
-        st.balance = st.invoice_total - total_paid
+        st.balance = st.invoice_total - st.credit_notes_amount - total_paid
         last = st.lines.select_related("movement").order_by("-movement__date").first()
         st.last_payment_date = last.movement.date if last else None
         st.collection_period = last.movement.period if last else ""
-        if total_paid <= 0:
-            st.status = SettlementStatus.UNPAID
-        elif st.balance > AMOUNT_TOLERANCE:
-            st.status = SettlementStatus.PARTIAL
+        if st.balance > AMOUNT_TOLERANCE:
+            # Con NC de por medio el saldo ya es el neto; «sin pago» sigue
+            # significando que del banco no llegó nada.
+            st.status = SettlementStatus.PARTIAL if total_paid > 0 else SettlementStatus.UNPAID
         elif st.balance >= -AMOUNT_TOLERANCE:
-            st.status = SettlementStatus.PAID
+            if total_paid <= 0 and st.credit_notes_amount > 0:
+                st.status = SettlementStatus.CREDITED
+            else:
+                st.status = SettlementStatus.PAID
         else:
             st.status = SettlementStatus.OVERPAID
         st.save()
-        key = {"unpaid": "unpaid", "partial": "partial", "paid": "paid", "overpaid": "overpaid"}[st.status]
-        stats[key] += 1
+        stats[st.status] += 1
 
     # Movements that pay invoices get their category confirmed.
     for mov in credits:

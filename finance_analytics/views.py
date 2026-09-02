@@ -65,11 +65,6 @@ class CustomersView(OrganizationAPIView):
         return Response(parties_service.customers_analysis(load_documents(request.ruc)))
 
 
-class SuppliersView(OrganizationAPIView):
-    def get(self, request: Request) -> Response:
-        return Response(parties_service.suppliers_analysis(load_documents(request.ruc)))
-
-
 class CreditNotesView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
         return Response(credit_notes_detail(load_documents(request.ruc)))
@@ -101,13 +96,18 @@ class PeriodDocumentsView(OrganizationAPIView):
 
 
 class ItfView(OrganizationAPIView):
-    def get(self, request: Request) -> Response:
-        return Response(itf_service.itf_summary(request.ruc))
+    """``?months=`` amplía la ventana (tope 120): la vista de ITF navega por
+    año con el selector de periodo y necesita el histórico completo. Son
+    agregados por mes, no filas: pedir 10 años sigue siendo barato."""
 
-
-class ConsistencyView(OrganizationAPIView):
     def get(self, request: Request) -> Response:
-        return Response(consistency_service.consistency_analysis(load_documents(request.ruc), request.ruc))
+        try:
+            months = int(request.query_params.get("months") or 12)
+        except (TypeError, ValueError):
+            months = 12
+        return Response(
+            itf_service.itf_summary(request.ruc, months=max(12, min(120, months)))
+        )
 
 
 class OverviewView(OrganizationAPIView):
@@ -120,19 +120,43 @@ class OverviewView(OrganizationAPIView):
     cuando los datos cambian— y aquí solo se leen.
     """
 
+    # La ventana de las series se puede ampliar (?months=) para que el tablero
+    # muestre el resumen de un año antiguo. Con tope: el histórico entero de
+    # una empresa grande costaba decenas de MB por petición.
+    MIN_MONTHS = 13
+    MAX_MONTHS = 120
+
+    def _months(self, request: Request) -> int:
+        try:
+            months = int(request.query_params.get("months") or self.MIN_MONTHS)
+        except (TypeError, ValueError):
+            months = self.MIN_MONTHS
+        return max(self.MIN_MONTHS, min(self.MAX_MONTHS, months))
+
     def get(self, request: Request) -> Response:
-        cached = overview_cache.get_overview(request.ruc)
+        months = self._months(request)
+        cached = overview_cache.get_overview(request.ruc, months)
         if cached is not None:
             return Response(cached)
-        return Response(self._build(request))
+        return Response(self._build(request, months))
 
-    def _build(self, request: Request) -> dict:
-        docs = load_documents(request.ruc)
-        manual = load_manual_entries(request.ruc)
-        sales = sales_summary(docs, months=13, manual=manual)
-        purchases = purchases_summary(docs, months=13, manual=manual)
+    def _build(self, request: Request, months: int = MIN_MONTHS) -> dict:
+        from .services.cpe_summary import _period_floor
+
+        docs_series = load_documents(request.ruc, months)
+        manual_series = load_manual_entries(request.ruc, months)
+        # Solo las series de ventas/compras/ITF viajan en el tiempo. Clientes,
+        # consistencia, semáforo y briefing siguen mirando los últimos 13
+        # meses: sus ventanas y su costo están calibrados para eso.
+        if months > self.MIN_MONTHS:
+            floor = _period_floor(self.MIN_MONTHS)
+            docs = [d for d in docs_series if d.period >= floor]
+        else:
+            docs = docs_series
+        sales = sales_summary(docs_series, months=months, manual=manual_series)
+        purchases = purchases_summary(docs_series, months=months, manual=manual_series)
         customers = parties_service.customers_analysis(docs)
-        itf = itf_service.itf_summary(request.ruc)
+        itf = itf_service.itf_summary(request.ruc, months=max(months, 12))
         consistency = consistency_service.consistency_analysis(docs, request.ruc)
         open_alerts = sorted(
             FinanceAlert.objects.filter(account_ruc=request.ruc).open(),
@@ -158,6 +182,9 @@ class OverviewView(OrganizationAPIView):
             "semaforo": semaforo_service.semaforo(request.ruc, sales, purchases),
             "customers": customers["summary"],
             "top_customers": customers["parties"][:5],
+            # El cliente principal de cada año cubierto por la ventana pedida:
+            # el card del tablero lo usa para seguir al año elegido.
+            "customers_yearly": parties_service.top_customers_by_year(docs_series),
             "itf": {
                 "meaning": itf["meaning"],
                 "gross_movement_note": itf["gross_movement_note"],
@@ -197,7 +224,7 @@ class OverviewView(OrganizationAPIView):
             # los redacta el modelo.
             "sources": ai_service.briefing_sources(docs, itf, len(open_alerts), request.ruc),
         }
-        overview_cache.set_overview(request.ruc, payload)
+        overview_cache.set_overview(request.ruc, payload, months)
         return payload
 
 

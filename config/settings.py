@@ -397,6 +397,15 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 
 # Logging
+#
+# Además de la consola (journald bajo systemd), todo ERROR+ queda en un archivo
+# rotativo en el servidor: LOG_DIR/error.log (por defecto BASE_DIR/logs). Ahí
+# van los tracebacks completos de los scrapers, las tareas de Celery y las
+# vistas — el mismo detalle que el admin de sync guarda por paso, pero
+# cronológico y grepeable. Rotación de 10 MB × 5 para que nunca llene el disco.
+
+LOG_DIR = Path(os.getenv('LOG_DIR', BASE_DIR / 'logs'))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LOGGING = {
     'version': 1,
@@ -406,17 +415,32 @@ LOGGING = {
     },
     'handlers': {
         'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
+        'errors': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOG_DIR / 'error.log'),
+            'maxBytes': 10 * 1024 * 1024,
+            'backupCount': 5,
+            'level': 'ERROR',
+            'formatter': 'simple',
+            # No crea el archivo hasta el primer error; así los procesos de
+            # solo lectura (shell, comandos) no van dejando ficheros vacíos.
+            'delay': True,
+        },
     },
-    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'root': {'handlers': ['console', 'errors'], 'level': 'WARNING'},
     'loggers': {
         app: {
-            'handlers': ['console'],
+            # 'errors' va explícito porque estos loggers no propagan al root:
+            # sin él, justo los errores de los scrapers —los que más importan—
+            # eran los únicos que no llegaban al archivo.
+            'handlers': ['console', 'errors'],
             'level': os.getenv('LOG_LEVEL', 'INFO'),
             'propagate': False,
         }
         for app in (
             'sunat_mailbox', 'suppliers', 'remype', 'ruc_profile', 'sunafil',
             'compliance_profile', 'sunat_itf', 'sunat_cpe', 'sunat_rhe',
+            'sync', 'sunat_declaraciones', 'sunat_intel', 'afpnet',
         )
     },
 }

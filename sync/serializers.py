@@ -19,9 +19,13 @@ class SyncJobSerializer(serializers.ModelSerializer):
         La decide el modelo, no el frontend: así el botón «Reintentar» aparece
         exactamente cuando el endpoint lo aceptaría, en lugar de repetir la
         regla en dos sitios y que se desincronicen.
+
+        ``debug`` (el traceback crudo que guarda cada fallo) se queda fuera:
+        es para el admin, y por el API expondría rutas y detalles internos.
         """
         return [
-            {**step, "retryable": job.can_retry(step.get("key", ""))}
+            {**{k: v for k, v in step.items() if k != "debug"},
+             "retryable": job.can_retry(step.get("key", ""))}
             for step in job.steps
         ]
 

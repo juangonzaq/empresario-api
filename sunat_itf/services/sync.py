@@ -39,7 +39,11 @@ class ItfSynchronizer:
         self.client = client
 
     def run(self, period_end: str) -> SyncResult:
-        period_start, period_end = ytd_range(period_end)
+        return self.run_range(*ytd_range(period_end))
+
+    def run_range(self, period_start: str, period_end: str) -> SyncResult:
+        """Un rango dentro de UN ejercicio (el formulario del portal consulta
+        por ejercicio; el borrado por periodos asume mismo año)."""
         html = self.client.fetch_report(period_start, period_end)
         records = list(iter_records(html, self.client.taxpayer_id))
 
@@ -64,3 +68,27 @@ class ItfSynchronizer:
             period_start, period_end, len(records), deleted,
         )
         return SyncResult(stored=len(records), periods=(period_start, period_end))
+
+    # El ITF existe desde 2004: caminar más atrás solo gasta sesión.
+    FLOOR_YEAR = 2004
+
+    def backfill(self, period_end: str, stop_after_empty_years: int = 2) -> SyncResult:
+        """El histórico completo: el año en curso (hasta ``period_end``) y
+        luego año por año hacia atrás — el reporte acepta rangos, así que
+        cada ejercicio cuesta UNA sola consulta al portal. Se detiene tras
+        ``stop_after_empty_years`` ejercicios seguidos sin movimientos, la
+        misma heurística que el backfill de comprobantes."""
+        result = self.run(period_end)
+        total = result.stored
+        earliest = result.periods[0]
+
+        empty_years = 0
+        year = int(period_end[:4]) - 1
+        while empty_years < stop_after_empty_years and year >= self.FLOOR_YEAR:
+            yearly = self.run_range(f"{year}01", f"{year}12")
+            total += yearly.stored
+            empty_years = 0 if yearly.stored else empty_years + 1
+            if yearly.stored:
+                earliest = f"{year}01"
+            year -= 1
+        return SyncResult(stored=total, periods=(earliest, period_end))

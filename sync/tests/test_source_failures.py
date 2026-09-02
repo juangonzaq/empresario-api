@@ -277,3 +277,45 @@ class RuidoTecnicoTests(TestCase):
             "Menu option 'Perfil de Cumplimiento' was never shown. run with --headful to check."
         ))
         self.assertTrue(texto.startswith("No se pudo completar esta fuente."))
+
+
+class DebugParaElAdminTests(TenantAPITestCase):
+    """El fallo guarda el error crudo (traceback) para diagnosticar desde el
+    admin, sin que ese detalle interno salga jamás por el API."""
+
+    def setUp(self):
+        self.job = SyncJob.objects.create(
+            organization=self.organization, kind=JobKind.MANUAL,
+            steps=initial_steps(JobKind.MANUAL),
+        )
+        self.credenciales = Credentials(
+            ruc=self.RUC, username="CONSULTA1", password="clave-sol"
+        )
+
+    def test_el_paso_caido_guarda_el_traceback_y_el_api_lo_omite(self):
+        _run_source(
+            self.job, fuente_que_falla("mailbox", ValueError("boom interno")),
+            self.credenciales,
+        )
+
+        paso = self.job.step("mailbox")
+        self.assertIn("Traceback", paso["debug"])
+        self.assertIn("boom interno", paso["debug"])
+        # La pantalla sigue viendo la frase amigable, no el error crudo.
+        self.assertNotIn("boom interno", paso["detail"])
+
+        from sync.serializers import SyncJobSerializer
+
+        serializado = next(
+            s for s in SyncJobSerializer(self.job).data["steps"]
+            if s["key"] == "mailbox"
+        )
+        self.assertNotIn("debug", serializado)
+
+    def test_el_reintento_arranca_sin_el_debug_anterior(self):
+        _run_source(
+            self.job, fuente_que_falla("mailbox", ValueError("boom")),
+            self.credenciales,
+        )
+        self.job.mark_step("mailbox", StepStatus.RUNNING)
+        self.assertNotIn("debug", self.job.step("mailbox"))

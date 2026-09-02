@@ -5,9 +5,11 @@ cliente y sincronizador que ya usaban las tareas programadas. Los scrapers
 siempre aceptaron ``(taxpayer_id, username, password)`` como parámetros; lo
 único que era de una sola empresa eran los llamadores.
 
-El orden importa: primero lo que no necesita clave (así la ficha del RUC
-aparece en pantalla en segundos), después lo que exige entrar al portal, y al
-final la analítica, que solo recalcula sobre lo ya guardado.
+El orden importa: primero lo rápido que pinta el panel (la ficha del RUC
+aparece en segundos), después los portales, y al final lo lento o frágil —la
+lectura IA del buzón fue el 47% de una carga inicial medida, y REMYPE llegó a
+gastar minuto y medio en un timeout de SUNAT—: así un paso pesado o caído no
+retrasa a los que sí traen datos que se ven.
 """
 
 from __future__ import annotations
@@ -63,6 +65,10 @@ class Source:
     needs_sol: bool
     run: Callable[[Credentials, str], dict[str, Any]]
     cadences: frozenset[str]
+    # Segundos que suele tardar, medidos de corridas reales. Es la semilla de
+    # la leyenda «≈ cuánto demora» del panel: cuando la empresa ya tiene
+    # historial, manda la mediana de SUS corridas (services.estimated_durations).
+    estimate: int = 30
 
     def runs_on(self, cadence: str) -> bool:
         # Lo manual siempre corre todo: si alguien pulsa «sincronizar ahora»
@@ -317,7 +323,16 @@ def _itf(creds, cadence: str) -> dict[str, Any]:
         client.login()
     except ItfPortalError as exc:
         raise LoginFailed(str(exc)) from exc
-    result = ItfSynchronizer(client).run(previous_period())
+    synchronizer = ItfSynchronizer(client)
+    if cadence in (Cadence.INITIAL, Cadence.MANUAL):
+        # Primera carga: el histórico entero, un ejercicio por consulta (el
+        # reporte acepta rangos), hasta dos años seguidos sin movimientos.
+        # Sin esto el tablero mostraba «Sin ITF sincronizado» en todo año
+        # anterior al alta.
+        result = synchronizer.backfill(previous_period())
+    else:
+        # A diario/mensual basta re-contrastar el año en curso.
+        result = synchronizer.run(previous_period())
     return {"movimientos": getattr(result, "stored", 0)}
 
 
@@ -441,55 +456,60 @@ DAILY = Cadence.DAILY
 MONTHLY = Cadence.MONTHLY
 
 SOURCES: list[Source] = [
-    # Datos públicos, sin clave: cambian poco, se revisan una vez al mes.
+    # La ficha pública primero: sin clave y en segundos, pinta el panel.
     Source("ruc_profile", "Ficha RUC", False, _ruc_profile,
-           frozenset({INITIAL, MONTHLY})),
-    Source("remype", "Acreditación REMYPE", False, _remype,
-           frozenset({INITIAL, MONTHLY})),
+           frozenset({INITIAL, MONTHLY}), estimate=5),
     # El régimen de renta sale de la Ficha RUC *dentro* de SOL (tributos
     # afectos); cambia muy de tanto en tanto.
     Source("tributos", "Régimen tributario (Ficha RUC)", True, _tributos,
-           frozenset({INITIAL, MONTHLY})),
+           frozenset({INITIAL, MONTHLY}), estimate=10),
     # Perfil de cumplimiento: SUNAT lo recalcula por trimestre.
     Source("compliance", "Perfil de cumplimiento", True, _compliance,
-           frozenset({INITIAL, MONTHLY})),
-    # Lo que se mueve a diario y trae plazos que vencen.
-    Source("mailbox", "Buzón SUNAT", True, _mailbox,
-           frozenset({INITIAL, DAILY})),
+           frozenset({INITIAL, MONTHLY}), estimate=10),
     Source("cpe", "Comprobantes electrónicos", True, _cpe,
-           frozenset({INITIAL, DAILY})),
+           frozenset({INITIAL, DAILY}), estimate=90),
     Source("rhe", "Recibos por honorarios", True, _rhe,
-           frozenset({INITIAL, DAILY, MONTHLY})),
+           frozenset({INITIAL, DAILY, MONTHLY}), estimate=20),
     Source("sunafil", "Casilla SUNAFIL", True, _sunafil,
-           frozenset({INITIAL, DAILY})),
+           frozenset({INITIAL, DAILY}), estimate=10),
     # AFPnet no usa la clave SOL —de ahí el False— y su sesión la abre una
     # persona resolviendo un CAPTCHA. Se consulta una vez al mes porque los
     # aportes se declaran mensualmente: pedirlo a diario gastaría la sesión sin
     # traer nada nuevo, y cada sesión cuesta un CAPTCHA.
     Source("afpnet", "Aportes AFP (AFPnet)", False, _afpnet,
-           frozenset({INITIAL, MONTHLY})),
+           frozenset({INITIAL, MONTHLY}), estimate=30),
     # El ITF se publica una vez cerrado el mes.
     Source("itf", "Movimientos bancarios (ITF)", True, _itf,
-           frozenset({INITIAL, MONTHLY})),
-    # La consulta de RUC es pública: no gasta la sesión SOL ni depende de ella.
+           frozenset({INITIAL, MONTHLY}), estimate=5),
+    # La consulta de RUC es pública: no gasta la sesión SOL ni depende de
+    # ella. Va tras los comprobantes porque de ahí se puebla la cartera.
     Source("suppliers", "Estado de proveedores", False, _suppliers,
-           frozenset({INITIAL, DAILY})),
+           frozenset({INITIAL, DAILY}), estimate=20),
     # Lo que se presentó y pagó a SUNAT. Las declaraciones son mensuales;
     # va antes de la analítica porque de aquí salen alertas y el declarado
     # que cruza la conciliación.
     Source("declaraciones", "Declaraciones y pagos (SOL)", True, _declaraciones,
-           frozenset({INITIAL, MONTHLY})),
+           frozenset({INITIAL, MONTHLY}), estimate=45),
     # La DJ anual se presenta una vez al año; una vez al mes basta para
     # recoger rectificatorias y el ejercicio nuevo.
     Source("renta_anual", "Declaración anual de renta (e-renta)", True, _renta_anual,
-           frozenset({INITIAL, MONTHLY})),
-    # Los dos últimos no salen a los portales: van sobre lo que los pasos
-    # anteriores acaban de guardar. El análisis del buzón corre tras el buzón
-    # (diario) y en la carga inicial; solo cuesta por mensaje nuevo.
+           frozenset({INITIAL, MONTHLY}), estimate=45),
+    # El buzón y su lectura van al final: los mensajes no alimentan a ninguna
+    # otra fuente, y el análisis con IA fue el paso más caro de una carga
+    # medida (4m39s de 10m). La lectura corre pegada al buzón porque consume
+    # exactamente lo que este acaba de traer.
+    Source("mailbox", "Buzón SUNAT", True, _mailbox,
+           frozenset({INITIAL, DAILY}), estimate=15),
     Source("intel", "Lectura del buzón (IA)", False, _intel,
-           frozenset({INITIAL, DAILY})),
+           frozenset({INITIAL, DAILY}), estimate=300),
+    # REMYPE casi cierra la fila: consulta pública que cambia poco y cuyo
+    # portal se cae con frecuencia — un timeout aquí ya no retrasa a nadie.
+    Source("remype", "Acreditación REMYPE", False, _remype,
+           frozenset({INITIAL, MONTHLY}), estimate=60),
+    # La analítica siempre al último: no sale a internet y recalcula sobre
+    # TODO lo que los pasos anteriores dejaron guardado.
     Source("analytics", "Analítica financiera", False, _analytics,
-           frozenset({INITIAL, DAILY, MONTHLY})),
+           frozenset({INITIAL, DAILY, MONTHLY}), estimate=5),
 ]
 
 SOURCES_BY_KEY = {source.key: source for source in SOURCES}

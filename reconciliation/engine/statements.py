@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -26,6 +27,8 @@ from typing import Any
 from pypdf import PdfReader
 
 from ..models import BankMovement, MovementKind
+
+logger = logging.getLogger(__name__)
 
 # ---- password ----------------------------------------------------------
 
@@ -42,9 +45,43 @@ class WrongPassword(Exception):
     pass
 
 
+def _sanitize_pdf(data: bytes) -> bytes:
+    """Recorta el PDF real de adentro del envoltorio del banco.
+
+    Caso real (BCP, 2026-09): el EECC descargado empieza con ``$BOP$`` y
+    termina en ``$EOP$$BOP$$EOP$`` — marcadores del spool de impresión del
+    banco alrededor del PDF. Esos bytes extra corren TODOS los offsets
+    internos (xref) y tanto pypdf como pdfminer concluyen «no hay /Root».
+    Del primer ``%PDF`` al último ``%%EOF`` está el documento de verdad."""
+    start = data.find(b"%PDF")
+    if start <= 0:
+        return data  # ya empieza en %PDF, o ni siquiera es un PDF: que el parser lo diga
+    end = data.rfind(b"%%EOF")
+    return data[start:end + 5] if end > start else data[start:]
+
+
 def extract_text(data: bytes, passwords: list[str]) -> str:
-    """Open (decrypting if needed) and return the concatenated text. Tries each
-    candidate password in order; raises ``WrongPassword`` if none opens it."""
+    """Open (decrypting if needed) and return the concatenated text.
+
+    pypdf primero; si el PDF tiene la estructura rota —los EECC bancarios
+    suelen traer la tabla xref dañada y pypdf muere con «Cannot find Root
+    object» aunque cualquier visor lo abra—, cae a pdfminer, que reconstruye
+    el índice escaneando los objetos. ``WrongPassword`` si ninguna contraseña
+    candidata lo abre."""
+    data = _sanitize_pdf(data)
+    try:
+        return _extract_pypdf(data, passwords)
+    except WrongPassword:
+        raise
+    except Exception:  # noqa: BLE001 — estructura rota: probar el lector tolerante
+        logger.warning(
+            "pypdf no pudo leer el estado de cuenta; reintentando con pdfminer",
+            exc_info=True,
+        )
+        return _extract_pdfminer(data, passwords)
+
+
+def _extract_pypdf(data: bytes, passwords: list[str]) -> str:
     reader = PdfReader(io.BytesIO(data))
     if reader.is_encrypted:
         opened = False
@@ -58,6 +95,20 @@ def extract_text(data: bytes, passwords: list[str]) -> str:
         if not opened:
             raise WrongPassword("Ninguna contraseña abrió el PDF.")
     return "\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+def _extract_pdfminer(data: bytes, passwords: list[str]) -> str:
+    from pdfminer.high_level import extract_text as pdfminer_extract
+    from pdfminer.pdfdocument import PDFPasswordIncorrect
+
+    ultimo: Exception | None = None
+    # Primero sin contraseña: un PDF roto no siempre es un PDF cifrado.
+    for pw in ["", *[p for p in passwords if p]]:
+        try:
+            return pdfminer_extract(io.BytesIO(data), password=pw)
+        except PDFPasswordIncorrect as exc:
+            ultimo = exc
+    raise WrongPassword("Ninguna contraseña abrió el PDF.") from ultimo
 
 
 # ---- parsing -----------------------------------------------------------

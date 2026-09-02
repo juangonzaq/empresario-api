@@ -11,8 +11,9 @@ from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
 from .models import JobKind, SyncJob
 from .serializers import SyncJobHistorySerializer, SyncJobSerializer
 from .services import (
-    CannotRetry, NotConnected, SyncLimitReached, cancel_sync, manual_quota,
-    reclaim_stale, retry_step, run_source, start_manual_sync,
+    CannotRetry, NotConnected, SyncLimitReached, cancel_sync,
+    estimated_durations, manual_quota, reclaim_stale, retry_step, run_source,
+    start_manual_sync,
 )
 from .sources import SOURCES
 
@@ -102,10 +103,24 @@ class SyncHistoryView(OrganizationAPIView):
         count = base.count()
         start = (page - 1) * HISTORY_PAGE_SIZE
         rows = list(base[start:start + HISTORY_PAGE_SIZE])
+        # Cuántas van hoy, contando también las automáticas: la cuota solo
+        # habla de las manuales y la gente pregunta «¿ya corrió la de hoy?».
+        from django.utils import timezone
+
+        hoy = base.filter(created_at__date=timezone.localdate())
+        manuales_hoy = hoy.filter(kind=JobKind.MANUAL).count()
+        total_hoy = hoy.count()
+        estimates = estimated_durations(request.organization)
         return Response({
             "quota": manual_quota(request.organization),
+            "today": {
+                "total": total_hoy,
+                "manual": manuales_hoy,
+                "auto": total_hoy - manuales_hoy,
+            },
             "sources": [
-                {"key": s.key, "label": s.label, "needs_sol": s.needs_sol}
+                {"key": s.key, "label": s.label, "needs_sol": s.needs_sol,
+                 "estimated_seconds": estimates.get(s.key, s.estimate)}
                 for s in SOURCES if s.key not in HIDDEN_MANUAL_SOURCES
             ],
             "jobs": {

@@ -13,12 +13,19 @@ class DocumentReconciliationSerializer(serializers.ModelSerializer):
 
 
 class BankMovementSerializer(serializers.ModelSerializer):
+    # Quién clasificó y cuándo: la columna de evidencia lo muestra completo.
+    classified_by_email = serializers.SerializerMethodField()
+
     class Meta:
         model = BankMovement
         fields = ("id", "date", "period", "bank", "bank_account", "currency", "kind", "amount",
                   "description", "operation_number", "source", "category", "confidence",
-                  "evidence", "classified_by")
-        read_only_fields = ("id", "period", "confidence", "evidence", "classified_by")
+                  "evidence", "classified_by", "classified_by_email", "classified_at")
+        read_only_fields = ("id", "period", "confidence", "evidence", "classified_by",
+                            "classified_by_email", "classified_at")
+
+    def get_classified_by_email(self, movement: BankMovement) -> str | None:
+        return movement.classified_by_user.email if movement.classified_by_user_id else None
 
     def validate(self, attrs):
         date = attrs.get("date")

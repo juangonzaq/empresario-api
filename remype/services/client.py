@@ -1,9 +1,13 @@
 """Client for the REMYPE registry lookup (Ministerio de Trabajo).
 
-The endpoint verifies a reCAPTCHA Enterprise token server-side and returns
+The endpoint verifies a reCAPTCHA token server-side and returns
 ``401 {"message": "Captcha invalido"}`` without one, so the lookup has to run inside a
 real browser. The client keeps one browser open across lookups and mints a fresh token
-per request — Enterprise tokens are single-use and short-lived.
+per request — the tokens are single-use and short-lived.
+
+The portal has already switched flavors once (Enterprise → classic v3 in 2026,
+rotating the site key with it), so the client supports both and reads the live
+site key off the page instead of trusting the hardcoded one.
 """
 
 from __future__ import annotations
@@ -35,11 +39,14 @@ from .constants import (
 logger = logging.getLogger(__name__)
 
 # Runs in the page: mint a token, then post the lookup from the same origin.
+# `grecaptcha.enterprise` and classic v3 share the ready/execute API; the page
+# decides which one exists.
 LOOKUP_SCRIPT = """
 async ([siteKey, action, ruc, path, auth]) => {
+    const api = grecaptcha.enterprise || grecaptcha;
     const token = await new Promise((resolve, reject) => {
-        grecaptcha.enterprise.ready(() => {
-            grecaptcha.enterprise.execute(siteKey, {action: action})
+        api.ready(() => {
+            api.execute(siteKey, {action: action})
                 .then(resolve).catch(reject);
         });
     });
@@ -140,6 +147,7 @@ class RemypeClient:
     _playwright: Any = field(default=None, init=False, repr=False)
     _browser: Any = field(default=None, init=False, repr=False)
     _page: Any = field(default=None, init=False, repr=False)
+    _site_key: str = field(default=RECAPTCHA_SITE_KEY, init=False, repr=False)
 
     def __enter__(self) -> "RemypeClient":
         self.start()
@@ -160,11 +168,34 @@ class RemypeClient:
                 viewport={"width": 1440, "height": 900},
             )
             self._page = context.new_page()
-            self._page.goto(APP_URL, wait_until="networkidle", timeout=self.timeout_ms)
+            # NOT "networkidle": the page keeps polling (widgets, telemetry,
+            # reCAPTCHA itself), so the network never goes quiet and the goto
+            # times out with the page perfectly usable. The only thing the
+            # lookup needs is grecaptcha, and the wait below covers that.
+            self._page.goto(
+                APP_URL, wait_until="domcontentloaded", timeout=self.timeout_ms
+            )
+            # Enterprise o v3 clásico: el portal ya cambió de uno a otro una
+            # vez; se acepta el que la página haya cargado.
             self._page.wait_for_function(
-                "() => typeof grecaptcha !== 'undefined' && !!grecaptcha.enterprise",
+                "() => typeof grecaptcha !== 'undefined' && "
+                "(!!grecaptcha.enterprise || typeof grecaptcha.execute === 'function')",
                 timeout=self.timeout_ms,
             )
+            # La site key vigente se lee del propio <script> de la página
+            # (`api.js?render=…`): al rotarla —pasó al migrar de Enterprise a
+            # v3— la constante quedaría emitiendo tokens que el backend
+            # rechaza como «Captcha invalido».
+            detected = self._page.evaluate(
+                """() => {
+                    const src = [...document.scripts].map(s => s.src).find(
+                        s => s.includes('recaptcha/api.js')
+                          || s.includes('recaptcha/enterprise.js'));
+                    const m = src && src.match(/[?&]render=([^&]+)/);
+                    return m ? m[1] : null;
+                }"""
+            )
+            self._site_key = detected or RECAPTCHA_SITE_KEY
         except PlaywrightError as exc:
             self.close()
             raise RemypeLookupError(f"Could not open the REMYPE page: {exc}") from exc
@@ -186,7 +217,7 @@ class RemypeClient:
         try:
             result = self._page.evaluate(
                 LOOKUP_SCRIPT,
-                [RECAPTCHA_SITE_KEY, RECAPTCHA_ACTION, ruc, LOOKUP_PATH,
+                [self._site_key, RECAPTCHA_ACTION, ruc, LOOKUP_PATH,
                  BASIC_AUTH_HEADER],
             )
         except PlaywrightError as exc:

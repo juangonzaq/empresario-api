@@ -310,6 +310,10 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
     guardar a medias y completar después."""
 
     is_complete = serializers.BooleanField(read_only=True)
+    offerings = serializers.ListField(
+        child=serializers.ChoiceField(choices=BusinessProfile.Offering.choices),
+        required=False, allow_empty=True,
+    )
     sectors = serializers.ListField(
         child=serializers.ChoiceField(choices=BusinessProfile.Sector.choices),
         required=False, allow_empty=True,
@@ -321,7 +325,7 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BusinessProfile
-        fields = ("offering", "sectors", "goals", "business_age",
+        fields = ("offerings", "sectors", "goals", "business_age",
                   "people_count", "sells_to_consumers", "has_premises",
                   "sells_online", "has_payroll", "is_complete", "completed_at")
         read_only_fields = ("is_complete", "completed_at")
@@ -333,6 +337,9 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
             if v not in seen:
                 seen.append(v)
         return seen
+
+    def validate_offerings(self, value: list[str]) -> list[str]:
+        return self._unique(value)
 
     def validate_sectors(self, value: list[str]) -> list[str]:
         value = self._unique(value)

@@ -166,17 +166,26 @@ class SyncJob(BaseModel):
         self.save(update_fields=["steps", "updated_at"])
         return not self.cancellation_requested()
 
-    def mark_step(self, key: str, status: str, detail: str = "") -> None:
+    def mark_step(self, key: str, status: str, detail: str = "",
+                  debug: str = "") -> None:
+        """``detail`` es la frase que ve el usuario; ``debug`` es el error
+        crudo (traceback incluido) que se guarda para el admin. Van separados
+        a propósito: el segundo nunca sale por el API."""
         step = self._step(key)
         if step is None:
             return
         step["status"] = status
         if detail:
             step["detail"] = detail
+        if debug:
+            step["debug"] = debug[:8000]
         stamp = timezone.now().isoformat()
         if status == StepStatus.RUNNING:
             step["started_at"] = stamp
             step.pop("progress", None)
+            # Un reintento arranca limpio: el traceback del intento anterior
+            # ya no describe lo que está corriendo.
+            step.pop("debug", None)
         elif status in (StepStatus.DONE, StepStatus.FAILED, StepStatus.SKIPPED):
             step["finished_at"] = stamp
         self.save(update_fields=["steps", "updated_at"])

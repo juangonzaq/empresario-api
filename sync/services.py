@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -129,6 +130,50 @@ def manual_quota(organization: Organization) -> dict:
     }
 
 
+# Corridas recientes que alimentan la leyenda de duración estimada. Con menos
+# historial que esto igual funciona: cada fuente sin muestras usa su valor
+# típico de fábrica (``Source.estimate``, medido de corridas reales).
+ESTIMATE_SAMPLE_JOBS = 30
+
+
+def estimated_durations(organization: Organization) -> dict[str, int]:
+    """Segundos que suele tardar cada fuente PARA ESTA EMPRESA.
+
+    La mediana de sus últimas corridas completas: el volumen manda (628
+    comprobantes no tardan lo que 20), así que el historial propio predice
+    mejor que cualquier constante. La mediana y no el promedio, para que una
+    carga inicial que caminó todo el histórico no infle la cifra de siempre.
+    """
+    from datetime import datetime
+    from statistics import median
+
+    from .sources import SOURCES
+
+    samples: dict[str, list[float]] = {}
+    rows = SyncJob.objects.filter(organization=organization).values_list(
+        "steps", flat=True,
+    )[:ESTIMATE_SAMPLE_JOBS]
+    for steps in rows:
+        for step in steps or []:
+            if step.get("status") != StepStatus.DONE:
+                continue
+            started, finished = step.get("started_at"), step.get("finished_at")
+            if not started or not finished:
+                continue
+            seconds = (
+                datetime.fromisoformat(finished) - datetime.fromisoformat(started)
+            ).total_seconds()
+            if seconds >= 0:
+                samples.setdefault(step.get("key", ""), []).append(seconds)
+    return {
+        source.key: (
+            int(median(samples[source.key]))
+            if samples.get(source.key) else source.estimate
+        )
+        for source in SOURCES
+    }
+
+
 def start_manual_sync(organization: Organization, requested_by=None, *,
                       only: list[str] | None = None, accept_charge: bool = False):
     """Lanza una sincronización manual respetando el tope diario. Devuelve
@@ -241,6 +286,20 @@ def _sin_ruido_tecnico(texto: str) -> str:
     return f"{cabeza}. {cola}"
 
 
+def _rastro(exc: Exception, source: Source, job: SyncJob,
+            cadence: str | None) -> str:
+    """El error crudo que guarda el paso para el admin: una cabecera con el
+    contexto que el traceback no trae (qué fuente, con qué cadencia, de qué
+    empresa) y debajo el traceback completo, causas encadenadas incluidas."""
+    tipo = f"{type(exc).__module__}.{type(exc).__qualname__}"
+    cabecera = (
+        f"fuente: {source.key} · trabajo: {job.kind} · "
+        f"cadencia: {cadence or job.kind} · ruc: {job.organization.ruc}\n"
+        f"excepción: {tipo}"
+    )
+    return f"{cabecera}\n\n{traceback.format_exc()}"
+
+
 def _run_source(
     job: SyncJob,
     source: Source,
@@ -278,7 +337,8 @@ def _run_source(
                 "clave en este trabajo: se trata como fallo del portal (%s)",
                 source.key, organization.ruc,
             )
-            job.mark_step(source.key, StepStatus.FAILED, str(exc)[:300])
+            job.mark_step(source.key, StepStatus.FAILED, str(exc)[:300],
+                          debug=_rastro(exc, source, job, cadence))
             return ""
 
         # Credenciales malas: el usuario debe volver a conectarse. Se escribe
@@ -291,12 +351,16 @@ def _run_source(
             status=SunatConnectionStatus.INVALID,
             last_error=str(exc)[:500],
         )
-        job.mark_step(source.key, StepStatus.FAILED, "Credenciales rechazadas")
+        job.mark_step(source.key, StepStatus.FAILED, "Credenciales rechazadas",
+                      debug=_rastro(exc, source, job, cadence))
         logger.warning("Login SUNAT rechazado para %s", organization.ruc)
         return str(exc)
     except Exception as exc:  # noqa: BLE001 — un paso caído no tumba el resto
         logger.exception("Falló el paso %s de %s", source.key, organization.ruc)
-        job.mark_step(source.key, StepStatus.FAILED, _motivo_amigable(exc)[:300])
+        # La frase amigable para la pantalla; el traceback completo para el
+        # admin, que es donde se diagnostica sin molestar al cliente.
+        job.mark_step(source.key, StepStatus.FAILED, _motivo_amigable(exc)[:300],
+                      debug=_rastro(exc, source, job, cadence))
         return ""
 
     detail = ", ".join(f"{k}: {v}" for k, v in (result or {}).items())

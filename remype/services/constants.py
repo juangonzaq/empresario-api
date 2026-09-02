@@ -3,9 +3,11 @@
 APP_URL = "https://apps.trabajo.gob.pe/consultas-remype/app/index.html"
 LOOKUP_PATH = "../consulta/remype.tra"
 
-# reCAPTCHA Enterprise site key, read from the page's own controller. The backend
-# rejects any request without a token it can verify, so a real browser is required.
-RECAPTCHA_SITE_KEY = "6Le-nQksAAAAAH-QyP3vCcI-05KTagQoh7auXaPi"
+# Site key de reCAPTCHA v3 (el portal migró de Enterprise a v3 en 2026-08,
+# rotando la clave). Es solo el RESPALDO: el cliente lee la clave vigente del
+# propio <script> de la página en cada arranque, porque el backend rechaza los
+# tokens de una clave vieja como «Captcha invalido».
+RECAPTCHA_SITE_KEY = "6LdpOZktAAAAANlPMrHhM6uDOcrM2DxKc0TfVUiv"
 RECAPTCHA_ACTION = "remype"
 
 # The Angular app sets this on every request; the endpoint 401s without it.

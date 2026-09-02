@@ -74,3 +74,41 @@ class ItfApiTests(TenantAPITestCase):
         self.assertIn("by_period", response.data)
         self.assertIsNotNone(response.data["tax_total"])
         self.assertGreater(Decimal(str(response.data["tax_total"])), 0)
+
+
+class StubClientConHistorial(StubClient):
+    """Devuelve movimientos solo para los ejercicios indicados; el resto,
+    una página sin filas — como un año en que la empresa aún no operaba."""
+
+    def __init__(self, years_with_data: set[str]):
+        super().__init__()
+        self.years_with_data = years_with_data
+
+    def fetch_report(self, period_start, period_end):
+        self.calls.append((period_start, period_end))
+        return SAMPLE if period_start[:4] in self.years_with_data else "<html></html>"
+
+
+class ItfBackfillTests(TenantAPITestCase):
+    def test_camina_ejercicios_y_para_tras_dos_anios_vacios(self):
+        # Datos en 2026 (en curso) y 2024; 2025 vacío no corta la caminata,
+        # dos vacíos seguidos (2023 y 2022) sí.
+        client = StubClientConHistorial({"2026", "2024"})
+        result = ItfSynchronizer(client).backfill("202608")
+
+        self.assertEqual(client.calls, [
+            ("202601", "202608"),
+            ("202501", "202512"),
+            ("202401", "202412"),
+            ("202301", "202312"),
+            ("202201", "202212"),
+        ])
+        self.assertGreater(result.stored, 0)
+        # El rango reportado llega hasta el ejercicio más antiguo con datos.
+        self.assertEqual(result.periods, ("202401", "202608"))
+
+    def test_un_solo_anio_de_vida_cuesta_tres_consultas(self):
+        client = StubClientConHistorial({"2026"})
+        ItfSynchronizer(client).backfill("202608")
+        # El año en curso más los dos vacíos que confirman el final.
+        self.assertEqual(len(client.calls), 3)

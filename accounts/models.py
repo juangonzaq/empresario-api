@@ -478,7 +478,6 @@ class BusinessProfile(BaseModel):
         PRODUCTS = "products", "Productos"
         SERVICES = "services", "Servicios"
         FOOD = "food", "Comida o bebidas"
-        MIXED = "mixed", "Un poco de todo"
         UNSURE = "unsure", "No estoy seguro"
 
     class Sector(models.TextChoices):
@@ -504,17 +503,19 @@ class BusinessProfile(BaseModel):
     organization = models.OneToOneField(
         Organization, related_name="business_profile", on_delete=models.CASCADE
     )
-    offering = models.CharField(max_length=15, choices=Offering, blank=True)
     # Un negocio puede identificarse con varios rubros (restaurante que además
-    # hace catering y vende insumos) y querer mejorar varias cosas a la vez.
+    # hace catering y vende insumos), vender productos Y servicios a la vez, y
+    # querer mejorar varias cosas a la vez.
     # Se guardan en el orden en que la persona los eligió: el primero es el
     # que más la representa y manda cuando hay que priorizar algo visual.
     # No son las actividades económicas de la Ficha RUC —esas las trae SUNAT—,
     # sino cómo la persona describe su negocio con sus palabras.
+    offerings = models.JSONField("qué vende", default=list, blank=True)
     sectors = models.JSONField("rubros", default=list, blank=True)
     goals = models.JSONField("objetivos", default=list, blank=True)
     # Espejo del primer elemento de cada lista, para el admin y para reglas o
     # reportes que todavía leen un solo valor. Se recalculan al guardar.
+    offering = models.CharField(max_length=15, choices=Offering, blank=True, editable=False)
     sector = models.CharField(max_length=15, choices=Sector, blank=True, editable=False)
     primary_goal = models.CharField(max_length=15, choices=Goal, blank=True, editable=False)
     business_age = models.CharField(max_length=15, choices=Age, blank=True)
@@ -544,8 +545,10 @@ class BusinessProfile(BaseModel):
         return f"{self.organization.ruc} · {self.sector or 'sin rubro'}"
 
     def save(self, *args, **kwargs):
+        self.offerings = list(self.offerings or [])
         self.sectors = list(self.sectors or [])
         self.goals = list(self.goals or [])
+        self.offering = self.offerings[0] if self.offerings else ""
         self.sector = self.sectors[0] if self.sectors else ""
         self.primary_goal = self.goals[0] if self.goals else ""
         super().save(*args, **kwargs)

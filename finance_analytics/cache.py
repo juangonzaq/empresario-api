@@ -25,19 +25,31 @@ logger = logging.getLogger(__name__)
 TTL_SECONDS = 300
 
 
-def overview_key(ruc: str) -> str:
-    return f"finance:overview:{ruc}"
+def _generation(ruc: str) -> int:
+    """Versión del caché de la empresa. El overview ahora se cachea por
+    ventana (13 meses, 21, 81…), así que invalidar borrando UNA clave dejaría
+    vivas las demás ventanas; subir la generación las vuelca todas a la vez
+    sin necesitar `delete_pattern` (que no existe en todos los backends)."""
+    return cache.get(f"finance:overview:gen:{ruc}", 0)
 
 
-def get_overview(ruc: str):
-    return cache.get(overview_key(ruc))
+def overview_key(ruc: str, months: int = 13) -> str:
+    return f"finance:overview:{ruc}:{_generation(ruc)}:{months}"
 
 
-def set_overview(ruc: str, payload) -> None:
-    cache.set(overview_key(ruc), payload, TTL_SECONDS)
+def get_overview(ruc: str, months: int = 13):
+    return cache.get(overview_key(ruc, months))
+
+
+def set_overview(ruc: str, payload, months: int = 13) -> None:
+    cache.set(overview_key(ruc, months), payload, TTL_SECONDS)
 
 
 def invalidate(ruc: str) -> None:
     """Se llama cuando algo que aparece en el panel ha cambiado."""
-    cache.delete(overview_key(ruc))
+    key = f"finance:overview:gen:{ruc}"
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, None)
     logger.debug("Caché del panel invalidada para %s", ruc)

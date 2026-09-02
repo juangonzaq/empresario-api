@@ -69,6 +69,14 @@ def _values_for(taxpayer_id: str, year: int, month: int) -> dict[str, Decimal]:
     return values
 
 
+# V11 ampliada: un denominador insignificante produce un número que no es
+# información — S/ 12 de intereses en el año daban una «cobertura» de
+# 19,334× que reventaba la escala del gráfico. Por debajo del piso, el
+# ratio se reporta nulo: «prácticamente sin gastos financieros» no es
+# «cobertura de miles de veces».
+MIN_DENOMINATOR = {"INTEREST_COVERAGE": Decimal("100")}
+
+
 def annual_ratios(taxpayer_id: str, year: int, month: int = 12) -> list[dict]:
     days, partial = base_days(taxpayer_id, year)
     igv = igv_rate_on(datetime.date(year, month, 1))
@@ -85,7 +93,8 @@ def annual_ratios(taxpayer_id: str, year: int, month: int = 12) -> list[dict]:
             _evaluate_expression(ratio.denominator_formula, values)
             if ratio.denominator_formula else Decimal("1")
         )
-        if denominator == 0:
+        minimo = MIN_DENOMINATOR.get(ratio.code, Decimal("0"))
+        if denominator == 0 or abs(denominator) < minimo:
             value = None  # V11: null, never infinity nor zero
         else:
             value = _round6(numerator / denominator * ratio.multiplier)
@@ -231,6 +240,11 @@ def kpis(taxpayer_id: str, year: int) -> dict:
     months = []
     for month in range(1, 13):
         sales = now.get("NET_SALES", {}).get(month, Decimal("0"))
+        # Un margen solo significa algo sobre una venta POSITIVA. Un mes con
+        # más notas de crédito que facturas deja la venta neta negativa, y
+        # utilidad negativa ÷ venta negativa daba un «+2273%» que reventaba
+        # la escala del gráfico. Base ≤ 0 → margen nulo, no un número.
+        base = sales if sales > 0 else None
         row = {"month": month}
         for code in KPI_LINES:
             value = now.get(code, {}).get(month, Decimal("0"))
@@ -239,19 +253,19 @@ def kpis(taxpayer_id: str, year: int) -> dict:
             row[f"{code.lower()}_prev"] = float(prior)
             row[f"{code.lower()}_var_pct"] = pct(value - prior, abs(prior) or None)
         row["gross_margin_pct"] = pct(
-            now.get("GROSS_PROFIT", {}).get(month, Decimal("0")), sales or None
+            now.get("GROSS_PROFIT", {}).get(month, Decimal("0")), base
         )
         row["operating_margin_pct"] = pct(
-            now.get("OPERATING_PROFIT", {}).get(month, Decimal("0")), sales or None
+            now.get("OPERATING_PROFIT", {}).get(month, Decimal("0")), base
         )
         row["net_margin_pct"] = pct(
-            now.get("NET_INCOME", {}).get(month, Decimal("0")), sales or None
+            now.get("NET_INCOME", {}).get(month, Decimal("0")), base
         )
         # Peso de cada bloque de gasto sobre la venta del mes, en magnitud:
         # las líneas de gasto llevan signo negativo en el estado.
         for code in ("COST_OF_SALES_LINE", "ADMIN_EXPENSES_LINE", "SELLING_EXPENSES_LINE"):
             row[f"{code.lower()}_pct"] = pct(
-                abs(now.get(code, {}).get(month, Decimal("0"))), sales or None
+                abs(now.get(code, {}).get(month, Decimal("0"))), base
             )
         months.append(row)
     return {"year": year, "months": months, "accumulated": _accumulated(now)}

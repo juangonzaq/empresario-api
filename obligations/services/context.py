@@ -156,6 +156,7 @@ def build_context(organization) -> CompanyContext:
         "company.sectors": list(getattr(profile, "sectors", None) or []) or None,
         "company.sector": getattr(profile, "sector", "") or None,
         "company.goals": list(getattr(profile, "goals", None) or []) or None,
+        "company.offerings": list(getattr(profile, "offerings", None) or []) or None,
         "company.offering": getattr(profile, "offering", "") or None,
         "company.sells_to_consumers": getattr(profile, "sells_to_consumers", None),
         "company.has_premises": getattr(profile, "has_premises", None),

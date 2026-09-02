@@ -192,6 +192,13 @@ class BankMovement(BaseModel):
     confidence = models.FloatField(null=True, blank=True)
     evidence = models.JSONField(default=list, blank=True)
     classified_by = models.CharField(max_length=10, choices=ClassifiedBy, blank=True)
+    # Auditoría de la clasificación: QUIÉN decidió y CUÁNDO exactamente. La
+    # columna de evidencia lo muestra; sin esto, «Clasificado por el usuario»
+    # no decía cuál usuario ni de qué fecha.
+    classified_at = models.DateTimeField(null=True, blank=True)
+    classified_by_user = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         ordering = ["-date"]
@@ -205,6 +212,9 @@ class SettlementStatus(models.TextChoices):
     UNPAID = "unpaid", "Sin pago"
     PARTIAL = "partial", "Pago parcial"
     PAID = "paid", "Pagada"
+    # Sin abono bancario pero con nota(s) de crédito que cubren el total: no
+    # hay nada que cobrar, y llamarla «pagada» mentiría sobre la caja.
+    CREDITED = "credited", "Cubierta por nota de crédito"
     OVERPAID = "overpaid", "Pago excedente"
     UNDETERMINED = "undetermined", "No determinado"
 
@@ -222,6 +232,9 @@ class InvoiceSettlement(BaseModel):
     status = models.CharField(max_length=15, choices=SettlementStatus, default=SettlementStatus.UNPAID)
     invoice_total = models.DecimalField(max_digits=14, decimal_places=2)
     paid_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # Notas de crédito emitidas que referencian esta factura: reducen lo
+    # cobrable. balance = total − NC − pagado.
+    credit_notes_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     billing_period = models.CharField(max_length=6, db_index=True)
     collection_period = models.CharField(max_length=6, blank=True)  # of the last payment
