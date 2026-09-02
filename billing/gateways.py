@@ -282,7 +282,7 @@ class MercadoPagoGateway(Gateway):
         body = {
             "items": [{
                 "id": payment.plan.code,
-                "title": f"Empresario · {payment.plan.name} · {org.ruc}",
+                "title": f"Empresario · {payment.plan.name}",
                 "quantity": 1,
                 "unit_price": float(payment.amount),
                 "currency_id": payment.currency,
@@ -329,7 +329,7 @@ class MercadoPagoGateway(Gateway):
         if vigente_hasta > timezone.now() + datetime.timedelta(minutes=5):
             auto_recurring["start_date"] = vigente_hasta.isoformat(timespec="milliseconds")
         body = {
-            "reason": f"Empresario · {plan.name} · {org.ruc}",
+            "reason": f"Empresario · {plan.name}",
             # La referencia es la suscripción local: todos los cobros que
             # genere esta autorización vuelven con ella.
             "external_reference": str(sub.pk),
