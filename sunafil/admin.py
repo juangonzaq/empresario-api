@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
 
+from core.admin import filtro_empresa
+
 from .models import ItemKind, SunafilItem
 
 
@@ -11,7 +13,7 @@ class SunafilItemAdmin(admin.ModelAdmin):
         "deposited_at", "kind", "short_subject", "record_number",
         "is_read", "deadline",
     )
-    list_filter = ("kind", "is_read", "taxpayer_id", "status", "deposited_at")
+    list_filter = (filtro_empresa("taxpayer_id"), "kind", "is_read", "status", "deposited_at")
     search_fields = ("subject", "record_number", "detail_text")
     date_hierarchy = "deposited_at"
     readonly_fields = tuple(field.name for field in SunafilItem._meta.fields) + (

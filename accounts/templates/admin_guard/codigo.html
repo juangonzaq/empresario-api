@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Código de acceso · EMPRESARIO</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8f7;
+       font-family:Inter,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0b1d1a}
+  .caja{background:#fff;border-radius:20px;box-shadow:0 8px 30px rgba(11,29,26,.08);
+        padding:32px;width:min(92vw,380px)}
+  h1{margin:0 0 4px;font-size:20px}
+  p.sub{margin:0 0 20px;font-size:13px;color:#5b6b68}
+  input{width:100%;box-sizing:border-box;border:1px solid #d8e0de;border-radius:10px;
+        padding:12px;font-size:26px;letter-spacing:10px;text-align:center}
+  input:focus{outline:2px solid #0f766e;border-color:transparent}
+  button{margin-top:18px;width:100%;border:0;border-radius:999px;background:#0f766e;
+         color:#fff;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
+  button:hover{background:#0d675f}
+  .error{margin:0 0 12px;background:#fdecea;color:#b3261e;border-radius:10px;
+         padding:10px 12px;font-size:13px}
+  a{color:#0f766e;font-size:13px}
+</style>
+</head>
+<body>
+<main class="caja">
+  <h1>Revisa tu correo</h1>
+  <p class="sub">Enviamos un código de 6 dígitos a {{ correo }}. Vence en 10 minutos.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="paso" value="codigo">
+    <input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+           autocomplete="one-time-code" autofocus required>
+    <button type="submit">Entrar</button>
+  </form>
+  <p style="margin:16px 0 0"><a href="">Volver a empezar</a></p>
+</main>
+</body>
+</html>

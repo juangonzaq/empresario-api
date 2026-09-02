@@ -10,6 +10,8 @@ from datetime import datetime
 from django.contrib import admin
 from django.utils.html import format_html, format_html_join
 
+from core.admin import filtro_empresa
+
 from .models import StepStatus, SyncJob
 
 _ICONO = {
@@ -36,7 +38,7 @@ class SyncJobAdmin(admin.ModelAdmin):
         "organization", "kind", "status", "avance", "fallas", "duracion",
         "created_at",
     )
-    list_filter = ("status", "kind")
+    list_filter = (filtro_empresa("organization__ruc"), "status", "kind")
     search_fields = ("organization__ruc", "organization__name")
     date_hierarchy = "created_at"
     ordering = ("-created_at",)

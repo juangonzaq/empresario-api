@@ -1,5 +1,8 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+
+from core.admin import filtro_empresa
 
 from .models import RemypeCheck
 from .services import RemypeLookupError, RemypeSynchronizer
@@ -10,7 +13,7 @@ class RemypeCheckAdmin(admin.ModelAdmin):
     list_display = (
         "ruc", "business_name", "checked_on", "standing", "changed", "succeeded",
     )
-    list_filter = ("is_registered", "changed", "succeeded", "condition", "checked_on")
+    list_filter = (filtro_empresa("ruc"), "is_registered", "changed", "succeeded", "condition", "checked_on")
     search_fields = ("ruc", "business_name", "file_number")
     date_hierarchy = "checked_on"
     readonly_fields = tuple(field.name for field in RemypeCheck._meta.fields)
@@ -19,9 +22,9 @@ class RemypeCheckAdmin(admin.ModelAdmin):
     @admin.display(description="REMYPE standing")
     def standing(self, obj: RemypeCheck) -> str:
         if not obj.succeeded:
-            return format_html('<span style="color:#777">check failed</span>')
+            return mark_safe('<span style="color:#777">check failed</span>')
         if not obj.is_registered:
-            return format_html('<b style="color:#b3261e">not registered</b>')
+            return mark_safe('<b style="color:#b3261e">not registered</b>')
         colour = "#b3261e" if obj.deregistered_on else "#146c2e"
         return format_html(
             '<b style="color:{}">{}</b>', colour, obj.condition or "registered"

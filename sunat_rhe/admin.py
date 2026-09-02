@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import FeeReceipt
 
 
@@ -9,5 +11,5 @@ class FeeReceiptAdmin(admin.ModelAdmin):
         "account_ruc", "full_number", "issuer_name", "issue_date",
         "gross_amount", "income_tax_withheld", "is_reverted",
     )
-    list_filter = ("is_reverted", "period")
+    list_filter = (filtro_empresa("account_ruc"), "is_reverted", "period")
     search_fields = ("issuer_name", "issuer_doc", "full_number")

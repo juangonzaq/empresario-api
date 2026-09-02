@@ -316,6 +316,9 @@ def _expiry(hours: int) -> datetime.datetime:
 class TokenPurpose(models.TextChoices):
     EMAIL_VERIFICATION = "email_verification", "Verificación de correo"
     PASSWORD_RESET = "password_reset", "Recuperación de contraseña"
+    # Segundo factor del panel de administración: código de 6 dígitos al
+    # correo del staff (accounts.admin_guard).
+    ADMIN_OTP = "admin_otp", "Código de acceso al admin"
 
 
 class OneTimeTokenQuerySet(models.QuerySet):

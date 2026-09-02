@@ -2,10 +2,15 @@ import json
 
 from django.contrib import admin, messages
 from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 from suppliers.services.ruc_client import RucLookupError
 
-from .models import LegalRepresentative, RucSection, RucSnapshot, WorkerHeadcount
+from core.admin import filtro_empresa
+
+from .models import (
+    LegalRepresentative, RucSection, RucSnapshot, RucTaxAffectation, WorkerHeadcount,
+)
 from .services import RucProfileSynchronizer
 
 RISK_FIELDS = (
@@ -70,6 +75,7 @@ class RucSnapshotAdmin(admin.ModelAdmin):
         "changed",
     )
     list_filter = (
+        filtro_empresa("ruc"),
         "has_risk_signals", "changed", "succeeded", "status", "condition",
         "has_coactive_debt", "has_tax_omissions", "captured_on",
     )
@@ -84,7 +90,7 @@ class RucSnapshotAdmin(admin.ModelAdmin):
     @admin.display(description="Estado")
     def standing(self, obj: RucSnapshot) -> str:
         if not obj.succeeded:
-            return format_html('<span style="color:#777">capture failed</span>')
+            return mark_safe('<span style="color:#777">capture failed</span>')
         healthy = obj.status == "ACTIVO" and obj.condition == "HABIDO"
         return format_html(
             '<b style="color:{}">{}</b> / {}',
@@ -95,7 +101,7 @@ class RucSnapshotAdmin(admin.ModelAdmin):
     def risk(self, obj: RucSnapshot) -> str:
         flagged = [label for field, label in RISK_FIELDS if getattr(obj, field)]
         if not flagged:
-            return format_html('<span style="color:#146c2e">sin alertas</span>')
+            return mark_safe('<span style="color:#146c2e">sin alertas</span>')
         return format_html('<b style="color:#b3261e">{}</b>', ", ".join(flagged))
 
     @admin.display(description="Sections (raw)")
@@ -116,6 +122,19 @@ class RucSnapshotAdmin(admin.ModelAdmin):
             return
         level = messages.WARNING if result.failed else messages.SUCCESS
         self.message_user(request, f"RUC profile capture: {result}", level=level)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+
+@admin.register(RucTaxAffectation)
+class RucTaxAffectationAdmin(admin.ModelAdmin):
+    """Los tributos afectos de la Ficha RUC: de aquí sale el régimen de renta."""
+
+    list_display = ("ruc", "tributo", "fecha_alta", "afecto_desde", "captured_at")
+    list_filter = (filtro_empresa("ruc"),)
+    search_fields = ("ruc", "tributo")
+    readonly_fields = tuple(f.name for f in RucTaxAffectation._meta.fields)
 
     def has_add_permission(self, request) -> bool:
         return False

@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import Attachment, Message
 
 
@@ -26,7 +28,7 @@ class MessageAdmin(admin.ModelAdmin):
         "sent_on", "taxpayer_id", "message_type", "short_subject",
         "is_read", "attachment_count",
     )
-    list_filter = ("message_type", "is_read", "is_urgent", "taxpayer_id", "label_code")
+    list_filter = (filtro_empresa("taxpayer_id"), "message_type", "is_read", "is_urgent", "label_code")
     search_fields = ("subject", "message_code", "sender_name")
     date_hierarchy = "published_at"
     inlines = (AttachmentInline,)

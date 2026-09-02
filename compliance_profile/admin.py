@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import ComplianceRating, ComplianceVariable
 
 
@@ -24,7 +26,7 @@ class ComplianceRatingAdmin(admin.ModelAdmin):
         "period", "taxpayer_id", "rating", "preliminary_category",
         "is_current", "loaded_at", "detail_fetched_at",
     )
-    list_filter = ("rating", "is_current", "taxpayer_id")
+    list_filter = (filtro_empresa("taxpayer_id"), "rating", "is_current")
     search_fields = ("taxpayer_id", "period")
     inlines = (ComplianceVariableInline,)
     readonly_fields = ("header_payload", "detail_payload", "created_at", "updated_at")

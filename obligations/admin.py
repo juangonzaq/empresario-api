@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import (
     ComplianceAction, ComplianceDomain, ComplianceRule, ComplianceSnapshot,
     CompanyObligation, ObligationAssessment, ObligationEvidence,
@@ -36,8 +38,8 @@ class CompanyObligationAdmin(admin.ModelAdmin):
     list_display = ("account_ruc", "rule", "applicability_status", "compliance_status",
                     "workflow_status", "verification_status", "severity", "due_date",
                     "last_evaluated_at")
-    list_filter = ("applicability_status", "compliance_status", "workflow_status",
-                   "verification_status", "severity", "rule__domain")
+    list_filter = (filtro_empresa("account_ruc"), "applicability_status", "compliance_status",
+                   "workflow_status", "verification_status", "severity", "rule__domain")
     search_fields = ("account_ruc", "rule__code", "rule__title")
     list_select_related = ("rule", "rule__domain")
     inlines = [EvidenceInline, ActionInline]
@@ -55,5 +57,5 @@ class ObligationAssessmentAdmin(admin.ModelAdmin):
 class ComplianceSnapshotAdmin(admin.ModelAdmin):
     list_display = ("account_ruc", "snapshot_date", "overall_score", "applicable_count",
                     "compliant_count", "non_compliant_count", "overdue_count")
-    list_filter = ("snapshot_date",)
+    list_filter = (filtro_empresa("account_ruc"), "snapshot_date")
     search_fields = ("account_ruc",)

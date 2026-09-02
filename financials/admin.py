@@ -1,8 +1,11 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import (
-    CategorizationRule, Counterparty, ExchangeRate, FinancialSettings,
-    FinancialTransaction, ManualBalanceEntry, RatioDefinition, RatioThreshold,
+    AccountBalance, CategorizationRule, Counterparty, ExchangeRate,
+    FinancialSettings, FinancialStatementSnapshot, FinancialTransaction,
+    FiscalPeriod, ManualBalanceEntry, RatioDefinition, RatioThreshold,
     StatementLine, TaxRate, TransactionCategory,
 )
 
@@ -14,7 +17,7 @@ class FinancialTransactionAdmin(admin.ModelAdmin):
         "counterparty_name", "net_amount_pen", "categorization_status",
         "taxpayer_id",
     )
-    list_filter = ("source", "categorization_status", "direction")
+    list_filter = (filtro_empresa("taxpayer_id"), "source", "categorization_status", "direction")
     search_fields = ("external_id", "counterparty_name", "counterparty_tax_id")
     date_hierarchy = "accounting_date"
 
@@ -22,7 +25,7 @@ class FinancialTransactionAdmin(admin.ModelAdmin):
 @admin.register(TransactionCategory)
 class TransactionCategoryAdmin(admin.ModelAdmin):
     list_display = ("code", "name", "statement", "statement_line", "sign", "taxpayer_id")
-    list_filter = ("statement",)
+    list_filter = (filtro_empresa("taxpayer_id"), "statement")
     search_fields = ("code", "name")
 
 
@@ -56,19 +59,42 @@ class ExchangeRateAdmin(admin.ModelAdmin):
 @admin.register(Counterparty)
 class CounterpartyAdmin(admin.ModelAdmin):
     list_display = ("tax_id", "legal_name", "kind", "default_category", "taxpayer_id")
+    list_filter = (filtro_empresa("taxpayer_id"),)
     search_fields = ("tax_id", "legal_name")
 
 
 @admin.register(CategorizationRule)
 class CategorizationRuleAdmin(admin.ModelAdmin):
     list_display = ("name", "priority", "category", "confidence", "match_count", "is_active")
+    list_filter = (filtro_empresa("taxpayer_id"), "is_active")
 
 
 @admin.register(FinancialSettings)
 class FinancialSettingsAdmin(admin.ModelAdmin):
     list_display = ("taxpayer_id", "functional_currency", "display_scale")
+    list_filter = (filtro_empresa("taxpayer_id"),)
 
 
 @admin.register(ManualBalanceEntry)
 class ManualBalanceEntryAdmin(admin.ModelAdmin):
     list_display = ("category", "year", "month", "amount", "taxpayer_id")
+    list_filter = (filtro_empresa("taxpayer_id"),)
+
+
+@admin.register(FiscalPeriod)
+class FiscalPeriodAdmin(admin.ModelAdmin):
+    list_display = ("taxpayer_id", "year", "month", "status", "closed_at", "closed_by")
+    list_filter = (filtro_empresa("taxpayer_id"), "status")
+
+
+@admin.register(AccountBalance)
+class AccountBalanceAdmin(admin.ModelAdmin):
+    list_display = ("taxpayer_id", "year", "month", "category", "amount", "source", "computed_at")
+    list_filter = (filtro_empresa("taxpayer_id"), "source")
+
+
+@admin.register(FinancialStatementSnapshot)
+class FinancialStatementSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("taxpayer_id", "period", "statement", "created_at")
+    list_filter = (filtro_empresa("taxpayer_id"), "statement")
+    readonly_fields = ("lines", "vertical_analysis")

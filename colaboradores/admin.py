@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import Colaborador, Contrato, ContratoArchivo, Memorandum
 
 
@@ -9,7 +11,7 @@ class ColaboradorAdmin(admin.ModelAdmin):
         "full_name", "taxpayer_id", "document_number", "regimen",
         "monthly_salary", "salary_source", "is_active",
     )
-    list_filter = ("regimen", "salary_source", "is_active", "afp")
+    list_filter = (filtro_empresa("taxpayer_id"), "regimen", "salary_source", "is_active", "afp")
     search_fields = ("full_name", "document_number", "cuspp", "taxpayer_id")
     readonly_fields = ("cuspp", "salary_period", "salary_updated_at",
                        "created_at", "updated_at")
@@ -35,7 +37,7 @@ class MemorandumAdmin(admin.ModelAdmin):
         "numero", "colaborador", "tipo", "fecha_emision", "entregado",
         "firmado", "taxpayer_id",
     )
-    list_filter = ("tipo", "entregado", "firmado")
+    list_filter = (filtro_empresa("taxpayer_id"), "tipo", "entregado", "firmado")
     search_fields = ("numero", "asunto", "colaborador__full_name", "taxpayer_id")
     readonly_fields = ("created_at", "updated_at")
 
@@ -46,7 +48,7 @@ class ContratoAdmin(admin.ModelAdmin):
         "colaborador", "tipo", "fecha_inicio", "fecha_fin", "renovar",
         "taxpayer_id",
     )
-    list_filter = ("tipo", "renovar")
+    list_filter = (filtro_empresa("taxpayer_id"), "tipo", "renovar")
     search_fields = ("colaborador__full_name", "causa_objetiva", "taxpayer_id")
     readonly_fields = ("created_at", "updated_at")
 
@@ -54,6 +56,7 @@ class ContratoAdmin(admin.ModelAdmin):
 @admin.register(ContratoArchivo)
 class ContratoArchivoAdmin(admin.ModelAdmin):
     list_display = ("nombre_original", "contrato", "cargado_en", "taxpayer_id")
+    list_filter = (filtro_empresa("taxpayer_id"),)
     search_fields = (
         "nombre_original", "contrato__colaborador__full_name", "taxpayer_id",
     )

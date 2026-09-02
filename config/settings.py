@@ -184,6 +184,12 @@ AUTH_USER_MODEL = "accounts.User"
 # URL pública del frontend: los correos de verificación y recuperación apuntan ahí.
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3001").rstrip("/")
 
+# Doble puerta del /admin (accounts.admin_guard): reCAPTCHA en el login y
+# código de un solo uso al correo del staff. Sin llaves, el captcha se omite
+# (desarrollo); el código por correo aplica siempre.
+RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "")
+RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "")
+
 EMAIL_BACKEND = os.getenv(
     "DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )

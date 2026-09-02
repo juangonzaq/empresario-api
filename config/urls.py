@@ -3,7 +3,12 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from accounts.admin_guard import admin_login
+
 urlpatterns = [
+    # Sombrea el login del admin ANTES de montar el sitio: reCAPTCHA + código
+    # al correo (accounts.admin_guard). El admin redirige aquí solo.
+    path("admin/login/", admin_login, name="admin-otp-login"),
     path("admin/", admin.site.urls),
     path("api/", include("accounts.urls")),
     path("api/", include("sync.urls")),

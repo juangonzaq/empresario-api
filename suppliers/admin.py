@@ -1,5 +1,8 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+
+from core.admin import filtro_empresa
 
 from .models import Supplier, SupplierCheck, SujetoSinCapacidadOperativa
 from .services import SupplierMonitor
@@ -9,7 +12,7 @@ STATUS_COLOURS = {True: "#b3261e", False: "#146c2e"}
 
 def standing_badge(status: str, condition: str, has_issue: bool) -> str:
     if not status:
-        return format_html('<span style="color:#777">not checked yet</span>')
+        return mark_safe('<span style="color:#777">not checked yet</span>')
     return format_html(
         '<b style="color:{}">{}</b> / {}',
         STATUS_COLOURS[has_issue], status, condition or "—",
@@ -27,7 +30,10 @@ class SupplierCheckInline(admin.TabularInline):
     verbose_name_plural = "Recent checks"
 
     def get_queryset(self, request):
-        return super().get_queryset(request)[:30]
+        # Sin rebanar el queryset: el formset lo vuelve a filtrar por FK y un
+        # slice ya no admite filtros (Django 6). El tope va por subconsulta.
+        qs = super().get_queryset(request)
+        return qs.filter(pk__in=qs.order_by("-checked_on").values_list("pk", flat=True)[:30])
 
 
 @admin.register(Supplier)
@@ -36,7 +42,7 @@ class SupplierAdmin(admin.ModelAdmin):
         "ruc", "display_name", "standing", "is_tracked",
         "last_checked_at", "last_changed_at",
     )
-    list_filter = ("has_issue", "is_tracked", "status", "condition")
+    list_filter = (filtro_empresa("account_ruc"), "has_issue", "is_tracked", "status", "condition")
     search_fields = ("ruc", "alias", "business_name", "trade_name")
     readonly_fields = (
         "business_name", "trade_name", "taxpayer_type", "fiscal_address",
@@ -81,7 +87,7 @@ class SupplierCheckAdmin(admin.ModelAdmin):
     list_display = (
         "checked_on", "supplier", "standing", "changed", "succeeded",
     )
-    list_filter = ("checked_on", "has_issue", "changed", "succeeded", "status")
+    list_filter = (filtro_empresa("supplier__account_ruc"), "checked_on", "has_issue", "changed", "succeeded", "status")
     search_fields = ("supplier__ruc", "supplier__alias", "supplier__business_name")
     date_hierarchy = "checked_on"
     readonly_fields = tuple(

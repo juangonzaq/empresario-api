@@ -1,12 +1,14 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import Case, CaseEvent, MessageAnalysis, VigiaMessage
 
 
 @admin.register(VigiaMessage)
 class VigiaMessageAdmin(admin.ModelAdmin):
     list_display = ("role", "content", "created_at")
-    list_filter = ("role",)
+    list_filter = (filtro_empresa("taxpayer_id"), "role")
     search_fields = ("content",)
 
 
@@ -27,6 +29,6 @@ class CaseEventInline(admin.TabularInline):
 @admin.register(Case)
 class CaseAdmin(admin.ModelAdmin):
     list_display = ("title", "risk", "status", "responsible", "deadline")
-    list_filter = ("risk", "status", "requires_decision")
+    list_filter = (filtro_empresa("taxpayer_id"), "risk", "status", "requires_decision")
     search_fields = ("title", "summary", "group_key")
     inlines = [CaseEventInline]

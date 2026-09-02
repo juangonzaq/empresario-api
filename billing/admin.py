@@ -1,6 +1,8 @@
 from django.contrib import admin, messages
 
 from . import services
+from core.admin import filtro_empresa
+
 from .models import (
     Payment, PaymentStatus, Plan, Referral, ReferralReward, Subscription, UsageCharge,
 )
@@ -20,7 +22,7 @@ class PlanAdmin(admin.ModelAdmin):
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
     list_display = ("organization", "status", "plan", "auto_renew", "next_charge_at", "trial_end", "current_period_end", "access_until", "bonus_days", "extra_member_seats", "extra_company_seats")
-    list_filter = ("auto_renew", "gateway", "gateway_status", "plan")
+    list_filter = (filtro_empresa("organization__ruc"), "auto_renew", "gateway", "gateway_status", "plan")
     search_fields = ("organization__ruc", "organization__name")
     list_select_related = ("organization", "plan")
     readonly_fields = ("access_until", "status", "days_left")
@@ -71,7 +73,7 @@ class ReferralRewardAdmin(admin.ModelAdmin):
 @admin.register(UsageCharge)
 class UsageChargeAdmin(admin.ModelAdmin):
     list_display = ("created_at", "organization", "kind", "amount", "currency", "status", "created_by")
-    list_filter = ("kind", "status", "currency")
+    list_filter = (filtro_empresa("organization__ruc"), "kind", "status", "currency")
     search_fields = ("organization__ruc", "organization__name", "reference")
     list_select_related = ("organization", "created_by")
 

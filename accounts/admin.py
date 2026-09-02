@@ -1,7 +1,10 @@
+from django.apps import apps
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.urls import reverse
+from django.utils.html import format_html, format_html_join
 
-from billing.models import Referral, ReferralReward
+from billing.models import Referral, ReferralReward, Subscription
 from .models import (
     BusinessProfile, Invitation, Membership, OneTimeToken, Organization,
     SunatAuthorization, SunatCredential, User,
@@ -161,12 +164,142 @@ class InvitationInline(admin.TabularInline):
     autocomplete_fields = ("invited_by",)
 
 
+class SunatCredentialInline(SoloLecturaInline):
+    model = SunatCredential
+    verbose_name_plural = "Credencial SUNAT (SOL)"
+    fields = ("sol_username", "status", "uses_primary_user", "last_verified_at", "last_error")
+    readonly_fields = fields
+
+
+class BusinessProfileInline(admin.StackedInline):
+    model = BusinessProfile
+    verbose_name_plural = "Perfil del negocio (onboarding)"
+    extra = 0
+    fields = ("offerings", "sectors", "goals", "business_age", "people_count",
+              "sells_to_consumers", "has_premises", "sells_online", "has_payroll",
+              "completed_at")
+    readonly_fields = ("completed_at",)
+
+
+class SubscriptionInline(SoloLecturaInline):
+    model = Subscription
+    verbose_name_plural = "Suscripción"
+    fields = ("plan", "trial_end", "current_period_end", "auto_renew",
+              "gateway", "canceled_at")
+    readonly_fields = fields
+
+
+# El mapa de la empresa: cada módulo tenant con su campo hacia el RUC. Los
+# enlaces usan el parámetro común ?empresa= (core.admin.filtro_empresa), así
+# que todo modelo listado aquí DEBE llevar ese filtro en su ModelAdmin.
+PANORAMA: tuple[tuple[str, tuple[tuple[str, str, str, str], ...]], ...] = (
+    ("Sincronización y buzón", (
+        ("sync", "SyncJob", "organization__ruc", "Sincronizaciones"),
+        ("sunat_mailbox", "Message", "taxpayer_id", "Mensajes del buzón"),
+        ("sunat_intel", "Case", "taxpayer_id", "Casos del buzón (IA)"),
+        ("sunat_intel", "VigiaMessage", "taxpayer_id", "Avisos Vigía"),
+    )),
+    ("Comprobantes e ingresos", (
+        ("sunat_cpe", "ElectronicInvoice", "account_ruc", "Comprobantes electrónicos"),
+        ("sunat_rhe", "FeeReceipt", "account_ruc", "Recibos por honorarios"),
+        ("finance_analytics", "ManualEntry", "account_ruc", "Movimientos manuales"),
+        ("finance_analytics", "InvoiceOverride", "account_ruc", "Correcciones de comprobantes"),
+        ("finance_analytics", "FinanceAlert", "account_ruc", "Alertas financieras"),
+    )),
+    ("Declaraciones e impuestos", (
+        ("sunat_declaraciones", "DeclaracionPresentada", "account_ruc", "Declaraciones presentadas"),
+        ("sunat_declaraciones", "DeclaracionAnual", "account_ruc", "Declaraciones anuales"),
+        ("sunat_itf", "ItfRecord", "taxpayer_id", "Registros ITF"),
+        ("finance_analytics", "RentaProjection", "account_ruc", "Proyecciones de renta"),
+    )),
+    ("Conciliación y cobranzas", (
+        ("reconciliation", "BankStatement", "account_ruc", "Estados de cuenta"),
+        ("reconciliation", "BankMovement", "account_ruc", "Movimientos bancarios"),
+        ("reconciliation", "ReconciliationRun", "account_ruc", "Corridas de conciliación"),
+        ("reconciliation", "InvoiceSettlement", "account_ruc", "Liquidaciones de cobranza"),
+        ("reconciliation", "ConsistencyScore", "account_ruc", "Puntajes de consistencia"),
+    )),
+    ("Cumplimiento y perfil SUNAT", (
+        ("ruc_profile", "RucSnapshot", "ruc", "Fichas RUC"),
+        ("ruc_profile", "RucTaxAffectation", "ruc", "Tributos afectos"),
+        ("obligations", "CompanyObligation", "account_ruc", "Obligaciones"),
+        ("obligations", "ComplianceSnapshot", "account_ruc", "Fotos de cumplimiento"),
+        ("compliance_profile", "ComplianceRating", "taxpayer_id", "Calificaciones de cumplimiento"),
+        ("remype", "RemypeCheck", "ruc", "Consultas REMYPE"),
+        ("sunafil", "SunafilItem", "taxpayer_id", "Registros SUNAFIL"),
+    )),
+    ("Terceros", (
+        ("suppliers", "Supplier", "account_ruc", "Proveedores vigilados"),
+    )),
+    ("Personas y planilla", (
+        ("colaboradores", "Colaborador", "taxpayer_id", "Colaboradores"),
+        ("colaboradores", "Contrato", "taxpayer_id", "Contratos"),
+        ("payroll", "PayrollPeriod", "taxpayer_id", "Periodos de planilla"),
+        ("payroll", "PayrollSettings", "taxpayer_id", "Parámetros de planilla"),
+        ("afpnet", "AfpnetDeclaration", "taxpayer_id", "Declaraciones AFPnet"),
+        ("afpnet", "AfpnetDebt", "taxpayer_id", "Deudas AFP"),
+        ("afpnet", "AfpnetAffiliate", "taxpayer_id", "Afiliados AFP"),
+    )),
+    ("Contabilidad interna", (
+        ("financials", "FinancialTransaction", "taxpayer_id", "Transacciones categorizadas"),
+        ("financials", "TransactionCategory", "taxpayer_id", "Categorías propias"),
+        ("financials", "CategorizationRule", "taxpayer_id", "Reglas de categorización"),
+        ("financials", "FinancialSettings", "taxpayer_id", "Ajustes financieros"),
+        ("financials", "ManualBalanceEntry", "taxpayer_id", "Saldos manuales"),
+    )),
+)
+
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
+    """La ficha de la empresa es el hub del admin: lo que cuelga por FK va
+    como inline; lo que cuelga por RUC (account_ruc/taxpayer_id) no admite
+    inline, así que el panorama lo enlaza ya filtrado con ?empresa=."""
+
     list_display = ("ruc", "name", "trade_name", "manual_sync_daily_limit")
     list_editable = ("manual_sync_daily_limit",)
     search_fields = ("ruc", "name", "trade_name")
-    inlines = [MembershipInline, InvitationInline]
+    inlines = [MembershipInline, InvitationInline, SunatCredentialInline,
+               SubscriptionInline, BusinessProfileInline]
+    readonly_fields = ("panorama",)
+    fieldsets = (
+        (None, {"fields": ("ruc", "name", "trade_name",
+                           ("tax_regime", "tax_regime_source", "tax_regime_checked_at"),
+                           "manual_sync_daily_limit")}),
+        ("Todo lo de esta empresa", {"fields": ("panorama",)}),
+    )
+
+    @admin.display(description="")
+    def panorama(self, org: Organization) -> str:
+        if not org.pk:
+            return "Guarda la empresa para ver su panorama."
+        bloques = []
+        for titulo, filas in PANORAMA:
+            items = []
+            for app_label, modelo, campo, etiqueta in filas:
+                model = apps.get_model(app_label, modelo)
+                n = model.objects.filter(**{campo: org.ruc}).count()
+                if model in admin.site._registry:
+                    url = reverse(f"admin:{app_label}_{modelo.lower()}_changelist")
+                    items.append(format_html(
+                        '<li style="margin:2px 0"><a href="{}?empresa={}">{}</a>'
+                        ' — <b>{}</b></li>',
+                        url, org.ruc, etiqueta, n,
+                    ))
+                else:
+                    items.append(format_html(
+                        '<li style="margin:2px 0">{} — <b>{}</b></li>', etiqueta, n,
+                    ))
+            bloques.append(format_html(
+                '<div style="break-inside:avoid;margin-bottom:12px">'
+                '<h3 style="margin:0 0 4px">{}</h3>'
+                '<ul style="margin:0;padding-left:16px">{}</ul></div>',
+                titulo, format_html_join("", "{}", ((i,) for i in items)),
+            ))
+        return format_html(
+            '<div style="columns:2;column-gap:32px;max-width:760px">{}</div>',
+            format_html_join("", "{}", ((b,) for b in bloques)),
+        )
 
 
 @admin.register(BusinessProfile)

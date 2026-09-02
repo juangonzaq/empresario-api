@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from core.admin import filtro_empresa
+
 from .models import ElectronicInvoice
 
 
@@ -11,8 +13,9 @@ class ElectronicInvoiceAdmin(admin.ModelAdmin):
         "status", "is_cancelled", "is_rejected", "references_document", "has_xml",
     )
     list_filter = (
+        filtro_empresa("account_ruc"),
         "direction", "document_class", "period", "is_cancelled", "is_rejected",
-        "status", "account_ruc",
+        "status",
     )
     search_fields = (
         "full_number", "series", "number",
