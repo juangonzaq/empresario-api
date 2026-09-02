@@ -19,9 +19,10 @@ def _staff(email="admin@pattern.pe", *, staff=True):
     return user
 
 
-def _captcha(exito: bool):
+def _captcha(exito: bool, **extra):
     """Parcha la verificación contra Google para no salir a la red."""
-    respuesta = type("R", (), {"json": lambda self: {"success": exito}})()
+    payload = {"success": exito, **extra}
+    respuesta = type("R", (), {"json": lambda self: payload})()
     return patch("accounts.admin_guard.requests.post", return_value=respuesta)
 
 
@@ -45,8 +46,21 @@ class AdminGuardTests(TestCase):
     def test_captcha_rechazado_no_manda_codigo(self):
         with _captcha(False):
             r = self._credenciales()
-        self.assertContains(r, "Confirma el reCAPTCHA")
+        self.assertContains(r, "No pudimos verificar")
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_v3_puntaje_bajo_o_accion_ajena_rechazan(self):
+        # Un token v3 válido pero con pinta de bot (score bajo), y uno emitido
+        # para otra acción del sitio: ninguno abre la puerta.
+        with _captcha(True, score=0.1, action="admin_login"):
+            r = self._credenciales()
+        self.assertContains(r, "No pudimos verificar")
+        with _captcha(True, score=0.9, action="otro_form"):
+            r = self._credenciales()
+        self.assertContains(r, "No pudimos verificar")
+        with _captcha(True, score=0.9, action="admin_login"):
+            r = self._credenciales()
+        self.assertContains(r, "Revisa tu correo")
 
     def test_password_mala_mismo_mensaje_que_no_staff(self):
         with _captcha(True):

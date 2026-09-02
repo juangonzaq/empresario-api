@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 OTP_MINUTOS = 10
 MAX_INTENTOS = 5
+# reCAPTCHA v3: sin casilla, devuelve un puntaje 0–1. Bajo este umbral se
+# trata como bot. La acción amarra el token a ESTE formulario: un token v3
+# emitido en otra página del sitio no sirve aquí.
+CAPTCHA_ACCION = "admin_login"
+CAPTCHA_PUNTAJE_MIN = 0.5
 SESION_USER = "admin_otp_user"
 SESION_INTENTOS = "admin_otp_intentos"
 SESION_NEXT = "admin_otp_next"
@@ -52,7 +57,14 @@ def _captcha_ok(request) -> bool:
             "secret": secreto, "response": token,
             "remoteip": request.META.get("REMOTE_ADDR", ""),
         }, timeout=10)
-        return bool(r.json().get("success"))
+        datos = r.json()
+        if not datos.get("success"):
+            return False
+        puntaje = datos.get("score")
+        if puntaje is not None and puntaje < CAPTCHA_PUNTAJE_MIN:
+            return False
+        accion = datos.get("action")
+        return accion is None or accion == CAPTCHA_ACCION
     except requests.RequestException:
         # Google caído no puede dejarte fuera de tu propio panel para siempre,
         # pero tampoco se abre la puerta: se niega este intento y se registra.
@@ -101,7 +113,7 @@ def _limpiar(request) -> None:
 
 def _paso_credenciales(request, contexto):
     if not _captcha_ok(request):
-        contexto["error"] = "Confirma el reCAPTCHA para continuar."
+        contexto["error"] = "No pudimos verificar que seas una persona. Recarga la página e inténtalo de nuevo."
         return render(request, "admin_guard/login.html", contexto)
     user = authenticate(
         request,
