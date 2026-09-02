@@ -282,7 +282,10 @@ class MercadoPagoGateway(Gateway):
         body = {
             "items": [{
                 "id": payment.plan.code,
-                "title": f"Empresario · {payment.plan.name} · {org.ruc}",
+                # Sin el RUC en el texto visible: el sanitizador de Mercado
+                # Pago toma los 11 dígitos por un documento y reemplaza TODO el
+                # título por «[REDACTED]». El RUC ya viaja en metadata.
+                "title": f"Empresario · {payment.plan.name}",
                 "quantity": 1,
                 "unit_price": float(payment.amount),
                 "currency_id": payment.currency,
@@ -329,7 +332,9 @@ class MercadoPagoGateway(Gateway):
         if vigente_hasta > timezone.now() + datetime.timedelta(minutes=5):
             auto_recurring["start_date"] = vigente_hasta.isoformat(timespec="milliseconds")
         body = {
-            "reason": f"Empresario · {plan.name} · {org.ruc}",
+            # Sin RUC por la misma censura de Mercado Pago que en el título
+            # del checkout: con 11 dígitos, el nombre llega como «[REDACTED]».
+            "reason": f"Empresario · {plan.name}",
             # La referencia es la suscripción local: todos los cobros que
             # genere esta autorización vuelven con ella.
             "external_reference": str(sub.pk),
