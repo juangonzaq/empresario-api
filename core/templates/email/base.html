@@ -18,10 +18,12 @@
           <td style="padding:0 8px 16px 8px;">
             <table role="presentation" cellspacing="0" cellpadding="0" border="0">
               <tr>
-                <td style="width:30px;height:30px;border-radius:9px;background:#045857;text-align:center;vertical-align:middle;">
-                  <span style="display:inline-block;width:4px;height:8px;background:#cdface;border-radius:2px;margin-right:2px;"></span><span style="display:inline-block;width:4px;height:13px;background:#ffffff;border-radius:2px;margin-right:2px;"></span><span style="display:inline-block;width:4px;height:18px;background:#cdface;border-radius:2px;"></span>
+                {# El colibrí, en PNG a 2x servido por el front (Gmail no muestra SVG).
+                   Si el cliente bloquea imágenes, queda el nombre en texto. #}
+                <td style="width:37px;height:26px;vertical-align:middle;">
+                  <img src="{{ frontend_url }}/email/logo.png" width="37" height="26" alt="" style="display:block;width:37px;height:26px;border:0;">
                 </td>
-                <td style="padding-left:10px;font-size:18px;font-weight:700;letter-spacing:-0.2px;color:#0b1d1a;">Empresario</td>
+                <td style="padding-left:10px;font-size:18px;font-weight:700;letter-spacing:-0.2px;color:#0b1d1a;vertical-align:middle;">Empresario</td>
               </tr>
             </table>
           </td>
