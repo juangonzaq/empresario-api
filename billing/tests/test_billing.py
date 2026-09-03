@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 from unittest.mock import patch
 
+from django.core import mail
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -339,6 +340,45 @@ class MercadoPagoRecurrenteTests(APITestCase):
         self.assertAlmostEqual((sub.current_period_end - fin1).total_seconds(), 30 * 86400, delta=5)
         self.assertEqual(Payment.objects.get(gateway_payment_id="9002").kind, "recurring_charge")
 
+    def test_el_cargo_de_validacion_de_tarjeta_no_aprueba_el_alta(self):
+        # Con el primer cobro diferido (prueba gratis), Mercado Pago cobra S/ 2
+        # para validar la tarjeta y los devuelve. Llega como pago aprobado con
+        # la referencia de la suscripción: no es un periodo pagado.
+        sub, setup = self._con_preapproval()
+        self.client.force_authenticate(None)
+        mail.outbox.clear()
+        class Validacion:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {"id": 7001, "status": "approved", "external_reference": str(sub.pk), "transaction_amount": 2, "currency_id": "PEN", "metadata": {"preapproval_id": "pre-1"}}
+        with patch("billing.gateways.requests.get", return_value=Validacion()):
+            r = self.client.post(reverse("billing:mp-webhook") + "?type=payment&data.id=7001", {}, format="json")
+        self.assertEqual(r.status_code, 200)
+        setup.refresh_from_db(); sub.refresh_from_db()
+        self.assertEqual(setup.status, PaymentStatus.PENDING)
+        self.assertEqual(setup.gateway_payment_id, "")
+        self.assertIsNone(sub.current_period_end)
+        self.assertEqual(sub.status, "trialing")
+        self.assertFalse(any("Pago recibido" in m.subject for m in mail.outbox))
+        self.assertFalse(Payment.objects.filter(gateway_payment_id="7001").exists())
+        # La devolución de esos S/ 2 tampoco toca nada.
+        class Devolucion(Validacion):
+            def json(self): return {**Validacion.json(self), "status": "refunded"}
+        with patch("billing.gateways.requests.get", return_value=Devolucion()):
+            self.client.post(reverse("billing:mp-webhook") + "?type=payment&data.id=7001", {}, format="json")
+        setup.refresh_from_db()
+        self.assertEqual(setup.status, PaymentStatus.PENDING)
+        # El cobro real del plan sí aprueba el alta y avisa.
+        class Cobro(Validacion):
+            def json(self): return {**Validacion.json(self), "id": 7002, "transaction_amount": 99.9}
+        with patch("billing.gateways.requests.get", return_value=Cobro()):
+            self.client.post(reverse("billing:mp-webhook") + "?type=payment&data.id=7002", {}, format="json")
+        setup.refresh_from_db(); sub.refresh_from_db()
+        self.assertEqual(setup.status, PaymentStatus.APPROVED)
+        self.assertEqual(setup.gateway_payment_id, "7002")
+        self.assertEqual(sub.status, "active")
+        self.assertTrue(any("Pago recibido" in m.subject for m in mail.outbox))
+
     def test_cancelar_avisa_a_mercado_pago(self):
         sub, _ = self._con_preapproval()
         sub.auto_renew = True; sub.save()
@@ -602,9 +642,25 @@ class CambioDePlanTests(APITestCase):
         self.assertIn("Ya tienes el plan", r.data["detail"])
         self._checkout("anual", "pre-anual")
 
-    def test_el_primer_cobro_del_plan_nuevo_espera_a_lo_ya_vigente(self):
+    def test_en_prueba_se_cobra_al_autorizar_y_los_dias_de_prueba_se_suman(self):
+        """Sin `start_date`: MP cobra al autorizar. El periodo pagado empieza
+        igual cuando acaba la prueba, así que esos días no se pierden."""
+        sub = Subscription.objects.get(organization=self.org)
+        class Resp:
+            status_code = 200
+            def json(self): return {"id": "pre-m", "status": "pending", "init_point": "https://mp/x"}
+        with patch("billing.gateways.requests.post", return_value=Resp()) as post:
+            r = self.client.post(reverse("billing:checkout"), {"plan": "mensual"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertNotIn("start_date", post.call_args.kwargs["json"]["auto_recurring"])
+        setup = Payment.objects.get(subscription=sub, kind="recurring_setup")
+        services.approve_payment(setup, gateway_payment_id="9100")
+        sub.refresh_from_db()
+        self.assertAlmostEqual((sub.current_period_end - sub.trial_end).total_seconds(), 30 * 86400, delta=5)
+
+    def test_el_primer_cobro_del_plan_nuevo_espera_a_lo_ya_pagado(self):
         """Con un año pagado, pasar a mensual no cobra hoy: MP recibe
-        `start_date` = fin de lo vigente. En prueba, igual: cobra al terminarla."""
+        `start_date` = fin del periodo pagado."""
         sub = Subscription.objects.get(organization=self.org)
         sub.current_period_end = timezone.now() + datetime.timedelta(days=300)
         sub.save()

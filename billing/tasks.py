@@ -36,8 +36,9 @@ def avisar_fin_de_prueba() -> int:
     plan pagado y sin aviso previo, se les escribe a titular y contador."""
     now = timezone.now()
     limite = now + datetime.timedelta(days=AVISO_DIAS)
+    # Con la renovación ya autorizada el cobro llega solo: no hay nada que elegir.
     pendientes = Subscription.objects.filter(
-        trial_end__gt=now, trial_end__lte=limite,
+        trial_end__gt=now, trial_end__lte=limite, auto_renew=False,
         current_period_end__isnull=True, trial_reminder_sent_at__isnull=True,
     ).select_related("organization")
     enviados = 0

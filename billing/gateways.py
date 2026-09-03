@@ -324,13 +324,17 @@ class MercadoPagoGateway(Gateway):
             "transaction_amount": float(plan.price),
             "currency_id": plan.currency,
         }
-        # Lo ya vigente (prueba o periodo pagado) no se cobra dos veces: el
-        # primer cobro del plan nuevo se programa para cuando termine. Sin
-        # esto, MP cobraba la primera cuota al autorizar, y cambiar de anual a
-        # mensual con un año pagado volvía a cobrar hoy.
-        vigente_hasta = sub.access_until
-        if vigente_hasta > timezone.now() + datetime.timedelta(minutes=5):
-            auto_recurring["start_date"] = vigente_hasta.isoformat(timespec="milliseconds")
+        # Lo ya pagado no se cobra dos veces: al cambiar de plan con un periodo
+        # pagado vigente, el primer cobro del nuevo se programa para cuando
+        # termine (sin esto, pasar de anual a mensual con un año pagado volvía
+        # a cobrar hoy). La prueba gratis, en cambio, no difiere nada: se cobra
+        # al autorizar y el periodo pagado empieza igual cuando acabe la prueba
+        # (`approve_payment`), así que esos días no se pierden. Cobrar de una
+        # vez evita además el cargo de validación de S/ 2 y el hueco entre el
+        # fin de la prueba y la hora a la que MP cobra.
+        pagado_hasta = sub.current_period_end
+        if pagado_hasta and pagado_hasta > timezone.now() + datetime.timedelta(minutes=5):
+            auto_recurring["start_date"] = pagado_hasta.isoformat(timespec="milliseconds")
         body = {
             # Sin RUC por la misma censura de Mercado Pago que en el título
             # del checkout: con 11 dígitos, el nombre llega como «[REDACTED]».

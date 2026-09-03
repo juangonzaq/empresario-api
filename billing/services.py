@@ -382,18 +382,33 @@ def cancel_auto_renew(organization: Organization, user: User | None = None) -> S
     return sub
 
 
-def record_recurring_charge(sub: Subscription, *, amount, currency: str, gateway_payment_id: str, raw: dict | None = None) -> Payment:
+def record_recurring_charge(sub: Subscription, *, amount, currency: str, gateway_payment_id: str, raw: dict | None = None) -> Payment | None:
     """Un cobro periódico avisado por la pasarela. El primero aprueba el alta
-    pendiente; los siguientes crean su propio pago. Idempotente por id."""
+    pendiente; los siguientes crean su propio pago. Idempotente por id.
+
+    Devuelve None si el importe no es el de un periodo: Mercado Pago valida
+    la tarjeta con un cargo mínimo (S/ 2 en Perú) que devuelve enseguida
+    cuando el primer cobro queda diferido por la prueba gratis. Llega por el
+    mismo webhook y con la misma referencia que un cobro real; sin este
+    filtro aprobaba el alta, mandaba «Pago recibido» por el importe del plan
+    y regalaba un mes. Ningún cobro de verdad baja de la mitad del precio
+    del plan: los asientos adicionales solo suman."""
     existing = Payment.objects.filter(subscription=sub, gateway_payment_id=gateway_payment_id).first()
     if existing:
         return existing
     setup = Payment.objects.filter(
         subscription=sub, kind=PaymentKind.RECURRING_SETUP, status=PaymentStatus.PENDING,
     ).order_by("-created_at").first()
+    last = Payment.objects.filter(subscription=sub).order_by("-created_at").first()
+    plan = setup.plan if setup else (sub.plan or (last.plan if last else None))
+    if plan is not None and Decimal(str(amount)) < plan.price / 2:
+        logger.info(
+            "Cobro de %s %s en %s ignorado: validación de tarjeta, no un periodo del plan %s",
+            currency, amount, sub.organization.ruc, plan.code,
+        )
+        return None
     if setup is not None:
         return approve_payment(setup, gateway_payment_id=gateway_payment_id, raw=raw)
-    last = Payment.objects.filter(subscription=sub).order_by("-created_at").first()
     payment = Payment.objects.create(
         subscription=sub, plan=sub.plan or (last.plan if last else None), amount=amount, currency=currency,
         gateway=sub.gateway or (last.gateway if last else ""), kind=PaymentKind.RECURRING_CHARGE,

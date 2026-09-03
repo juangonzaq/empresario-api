@@ -96,3 +96,16 @@ p. ej. Visa `4009 1753 3280 6176`, CVV `123`, fecha futura, nombre `APRO` (aprob
   «Aprobar».
 - Todo pago lleva `external_reference` = id del `Payment`; el webhook solo aprueba si Mercado
   Pago confirma `status=approved` para esa referencia (consulta con tu token).
+
+## Primer cobro y cargo de validación
+
+En prueba, la suscripción **se cobra al autorizar** (sin `start_date`): el periodo pagado
+empieza cuando termina la prueba (`approve_payment`), así que los días de prueba se suman y
+no hay hueco entre el fin de la prueba y la hora a la que Mercado Pago cobra.
+
+Solo se difiere el primer cobro cuando hay un **periodo ya pagado** (cambio de plan). En ese
+caso Mercado Pago cobra **S/ 2 para validar la tarjeta** y los devuelve a los minutos. Ese
+cargo llega por el webhook `payment` como aprobado y con la referencia de la suscripción,
+igual que un cobro real; `record_recurring_charge` lo descarta porque no llega ni a la mitad
+del precio del plan. El alta sigue pendiente hasta el cobro de verdad, que es el que manda
+«Pago recibido».
