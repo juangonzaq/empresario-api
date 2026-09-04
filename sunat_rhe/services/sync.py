@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from django.utils import timezone
 
+from core import archive
+
 from ..models import FeeReceipt
 from .client import RhePortalClient
 from .parsing import rows_to_fields
@@ -70,20 +72,37 @@ class RheSynchronizer:
 
     def _store(self, rows: list[dict], result: SyncResult) -> int:
         stored = 0
-        for fields in rows_to_fields(rows, self.client.taxpayer_id):
+        # The detail page is not a field: it is set aside before the mapping
+        # and archived next to the row it came from.
+        pages = [row.get("__detail_html__", b"") for row in rows]
+        for fields, page in zip(rows_to_fields(rows, self.client.taxpayer_id), pages):
             if not fields["issuer_doc"] or not fields["number"]:
                 logger.warning("RHE row without key fields: %r", fields["raw"])
                 continue
-            _, created = FeeReceipt.objects.update_or_create(
+            receipt, created = FeeReceipt.objects.update_or_create(
                 account_ruc=fields["account_ruc"],
                 issuer_doc=fields["issuer_doc"],
                 series=fields["series"],
                 number=fields["number"],
                 defaults={**fields, "last_seen_at": timezone.now()},
             )
+            if page:
+                self._archive_page(receipt, page)
             stored += 1
             if created:
                 result.created += 1
             else:
                 result.updated += 1
         return stored
+
+    @staticmethod
+    def _archive_page(receipt: FeeReceipt, page: bytes) -> None:
+        """The detail page is the only «document» SUNAT hands the paying
+        company, so it is the receipt's file — refreshed on every sync,
+        because the payments list keeps changing after issue. A PDF the
+        worker handed over (manual registration) is the better copy and
+        is never replaced by the page."""
+        if receipt.file and receipt.file.name.lower().endswith(".pdf"):
+            return
+        archive.store(receipt.file, page, "html")
+        receipt.save(update_fields=["file", "updated_at"])

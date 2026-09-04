@@ -18,6 +18,7 @@ from .serializers import (
     ElectronicInvoiceDetailSerializer,
     ElectronicInvoiceListSerializer,
 )
+from .services.pdf import invoice_file_stem, render_invoice_pdf
 
 
 class ElectronicInvoiceViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
@@ -28,6 +29,7 @@ class ElectronicInvoiceViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelV
     * ``GET /api/cpe/invoices/`` — paginated list (filter by period/date/receiver)
     * ``GET /api/cpe/invoices/{id}/`` — full record including the XML text
     * ``GET /api/cpe/invoices/{id}/xml/`` — the raw XML as a download
+    * ``GET /api/cpe/invoices/{id}/pdf/`` — printable representation built from the XML
     * ``GET /api/cpe/invoices/summary/`` — count and total per period
     """
     tenant_field = "account_ruc"
@@ -58,12 +60,32 @@ class ElectronicInvoiceViewSet(TenantScopedViewSetMixin, viewsets.ReadOnlyModelV
         """Return the stored signed XML as a file download."""
         invoice = self.get_object()
         if not invoice.xml_content:
-            raise NotFound("This comprobante has no XML stored yet.")
-        filename = invoice.xml_filename or f"{invoice.series}-{invoice.number}.xml"
+            raise NotFound("Este comprobante aún no tiene XML descargado.")
+        # ISO-8859-1 maps every byte to one character, so encoding the stored
+        # text back yields SUNAT's file byte for byte.
         response = HttpResponse(
-            invoice.xml_content, content_type="application/xml; charset=ISO-8859-1"
+            invoice.xml_content.encode("ISO-8859-1", "replace"),
+            content_type="application/xml; charset=ISO-8859-1",
         )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Disposition"] = (
+            f'attachment; filename="{invoice_file_stem(invoice)}.xml"'
+        )
+        return response
+
+    @action(detail=True, methods=["get"])
+    def pdf(self, request: Request, pk: str | None = None) -> HttpResponse:
+        """The comprobante as a PDF (representación impresa), built from the
+        signed XML on every request: SUNAT only hands out the XML, and the
+        issuer's own PDF never reaches SOL."""
+        invoice = self.get_object()
+        if not invoice.xml_content:
+            raise NotFound(
+                "Este comprobante aún no tiene XML descargado; sin XML no hay PDF."
+            )
+        response = HttpResponse(render_invoice_pdf(invoice), content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{invoice_file_stem(invoice)}.pdf"'
+        )
         return response
 
     @action(detail=False, methods=["get"])

@@ -5,11 +5,14 @@ fixtures cover the mapping, the upsert and the front's read endpoint."""
 from __future__ import annotations
 
 import datetime
+import tempfile
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.test import override_settings
 from django.urls import reverse
 
+from core import archive
 from core.testing import TenantAPITestCase
 
 from financials.models import FinancialTransaction
@@ -60,13 +63,21 @@ class ParsingTests(TenantAPITestCase):
         self.assertTrue(fields["is_reverted"])
 
 
+PAGE = b"<html><body>RECIBO POR HONORARIOS E001-245</body></html>"
+
+
 class FakeClient:
+    """Rows as the real client returns them: the table row plus the
+    detail (parsed) and the detail page (bytes) as annotations."""
+
     taxpayer_id = RUC
 
     def collect(self, periods):
-        return {periods[0]: [ROW]}
+        row = dict(ROW, __detail__={"concept": "Asesoría"}, __detail_html__=PAGE)
+        return {periods[0]: [row]}
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="rhe-test-"))
 class SyncTests(TenantAPITestCase):
     def test_upsert_is_idempotent(self):
         synchronizer = RheSynchronizer(FakeClient())
@@ -76,6 +87,44 @@ class SyncTests(TenantAPITestCase):
         self.assertEqual(second.created, 0)
         self.assertEqual(second.updated, 1)
         self.assertEqual(FeeReceipt.objects.count(), 1)
+
+    def test_detail_page_is_filed_as_the_receipt_document(self):
+        RheSynchronizer(FakeClient()).sync_periods(["202608"])
+        row = FeeReceipt.objects.get()
+        self.assertEqual(
+            row.file.name,
+            f"comprobantes/{RUC}/2026/08/recibo_honorarios/E001-245-{row.pk}.html",
+        )
+        with row.file.open("rb") as stored:
+            self.assertEqual(stored.read(), PAGE)
+        # The annotations never leak into the verbatim row.
+        self.assertNotIn("__detail_html__", row.raw)
+        self.assertNotIn("__detail__", row.raw)
+        self.assertEqual(row.detail["concept"], "Asesoría")
+
+    def test_resync_keeps_one_file_per_receipt(self):
+        import os
+
+        RheSynchronizer(FakeClient()).sync_periods(["202608"])
+        before = FeeReceipt.objects.get().file.name
+        RheSynchronizer(FakeClient()).sync_periods(["202608"])
+        row = FeeReceipt.objects.get()
+        self.assertEqual(row.file.name, before)
+        # The temp MEDIA_ROOT outlives the DB rollback between tests, so
+        # only this receipt's uuid is counted.
+        folder = os.path.dirname(row.file.storage.path(before))
+        copies = [name for name in os.listdir(folder) if str(row.pk) in name]
+        self.assertEqual(copies, [os.path.basename(before)])
+
+    def test_uploaded_pdf_is_never_replaced_by_the_page(self):
+        row = receipt()  # same key as ROW: the scrape merges into it
+        archive.store(row.file, b"%PDF-1.4 recibo", "pdf")
+        row.save()
+        RheSynchronizer(FakeClient()).sync_periods(["202608"])
+        row.refresh_from_db()
+        self.assertTrue(row.file.name.endswith(".pdf"))
+        with row.file.open("rb") as stored:
+            self.assertEqual(stored.read(), b"%PDF-1.4 recibo")
 
 
 def receipt(**overrides) -> FeeReceipt:
@@ -147,6 +196,31 @@ class ApiTests(TenantAPITestCase):
         self.assertEqual(Decimal(data["totals"]["gross"]), Decimal("3500.00"))
         self.assertEqual(Decimal(data["totals"]["withheld"]), Decimal("200.00"))
         self.assertEqual(Decimal(data["totals"]["net"]), Decimal("3300.00"))
+
+
+class PdfDownloadTests(TenantAPITestCase):
+    """Every receipt can be downloaded as PDF: scraped ones get a
+    representation built from their data; uploaded ones return the file."""
+
+    def test_scraped_receipt_gets_a_generated_pdf(self):
+        row = receipt(detail={
+            "concept": "Asesoría contable", "payment_method": "AL CONTADO",
+            "observation": "-",
+            "payments": [{"date": "05/08/2026", "gross": "2,500.00",
+                          "withheld": "200.00", "net": "2,300.00"}],
+        })
+        response = self.client.get(reverse("sunat_rhe:receipt-pdf", args=[row.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response.content.startswith(b"%PDF"))
+        self.assertIn(
+            'filename="RHE-10450123456-E001-245.pdf"', response["Content-Disposition"],
+        )
+
+    def test_receipt_of_another_company_is_not_served(self):
+        row = receipt(account_ruc="20999999991")
+        response = self.client.get(reverse("sunat_rhe:receipt-pdf", args=[row.pk]))
+        self.assertEqual(response.status_code, 404)
 
 
 class ManualRegistrationTests(TenantAPITestCase):
@@ -239,6 +313,7 @@ def _sample_pdf() -> bytes:
     return buffer.getvalue()
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="rhe-test-"))
 class PdfExtractTests(TenantAPITestCase):
     def test_reads_the_sunat_layout(self):
         from sunat_rhe.services.pdf_extract import extract_fee_receipt
@@ -254,7 +329,9 @@ class PdfExtractTests(TenantAPITestCase):
     def test_upload_creates_the_receipt(self):
         import io
 
-        pdf = io.BytesIO(_sample_pdf())
+        # reportlab stamps a random ID per document: keep the bytes sent.
+        pdf_bytes = _sample_pdf()
+        pdf = io.BytesIO(pdf_bytes)
         pdf.name = "recibo.pdf"
         response = self.client.post(
             reverse("sunat_rhe:receipt-upload"), {"file": pdf},
@@ -266,6 +343,20 @@ class PdfExtractTests(TenantAPITestCase):
         self.assertTrue(FinancialTransaction.objects.filter(
             external_id=str(row.pk), source="fee_receipt"
         ).exists())
+        # The PDF the worker handed over is filed with the scraped ones.
+        self.assertEqual(
+            row.file.name,
+            f"comprobantes/{RUC}/2026/08/recibo_honorarios/E001-8-{row.pk}.pdf",
+        )
+        with row.file.open("rb") as stored:
+            self.assertEqual(stored.read(), pdf_bytes)
+        # The download hands back the very file the worker delivered.
+        download = self.client.get(reverse("sunat_rhe:receipt-pdf", args=[row.pk]))
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(b"".join(download.streaming_content), pdf_bytes)
+        self.assertIn(
+            'filename="RHE-10732009049-E001-8.pdf"', download["Content-Disposition"],
+        )
 
     def test_scanned_pdf_falls_back_to_the_form(self):
         import io
@@ -280,6 +371,7 @@ class PdfExtractTests(TenantAPITestCase):
         self.assertIn("parsed", response.data)
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="rhe-test-"))
 class BackfillTests(TenantAPITestCase):
     """Initial load walks backwards until the history runs dry."""
 

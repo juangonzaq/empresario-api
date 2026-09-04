@@ -237,12 +237,15 @@ def rows_to_fields(
     """Header-keyed rows → FeeReceipt field dicts."""
     if not rows:
         return []
+    # Keys starting with «__» are the client's annotations (detail, page),
+    # not SUNAT columns: they never map to a field nor land in ``raw``.
     columns = _assign_columns(
-        [key for key in rows[0] if key != "__detail__"]
+        [key for key in rows[0] if not key.startswith("__")]
     )
     out = []
     for row in rows:
         detail = row.pop("__detail__", None)
+        row.pop("__detail_html__", None)
         values: dict[str, str] = {}
         for header, value in row.items():
             fieldname = columns.get(header)

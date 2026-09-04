@@ -70,6 +70,8 @@ class CollectionsApiTests(TenantAPITestCase):
         self.assertEqual(andes["oldest_unpaid"]["balance"], Decimal("1000.00"))
         self.assertIsNotNone(andes["oldest_unpaid"]["days"])
         self.assertEqual(len(andes["pending_detail"]), 2)
+        # Each pending invoice carries its id: the UI hangs the downloads on it.
+        self.assertTrue(all(p["id"] for p in andes["pending_detail"]))
 
         self.assertEqual(costa_fila["ruc"], "20222222222")
         self.assertEqual(costa_fila["by_currency"]["PEN"]["paid"], Decimal("2000.00"))
@@ -171,6 +173,7 @@ class CollectionsApiTests(TenantAPITestCase):
         # Solo facturas como filas; la NC cuelga de la suya.
         self.assertEqual(set(docs), {"F001-940", "F001-941", "F001-942"})
         self.assertEqual(docs["F001-940"]["credit_notes"][0]["full_number"], "F001-80")
+        self.assertTrue(docs["F001-940"]["credit_notes"][0]["id"])
         self.assertEqual(docs["F001-940"]["credit_notes_amount"], Decimal("300.00"))
         self.assertEqual(docs["F001-940"]["settlement"]["status"], "partial")
         self.assertEqual(docs["F001-942"]["settlement"]["status"], "paid")

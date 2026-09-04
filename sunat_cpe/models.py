@@ -10,8 +10,11 @@ lost.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from django.db import models
 
+from core.archive import document_path
 from core.models import BaseModel
 
 
@@ -48,6 +51,18 @@ class CpeQuerySet(models.QuerySet):
 
     def for_period(self, period: str) -> "CpeQuerySet":
         return self.filter(period=period)
+
+
+def xml_file_path(instance: "ElectronicInvoice", filename: str) -> str:
+    """comprobantes/<ruc>/<año>/<mes>/<factura|nota_credito|nota_debito>/<serie-número>-<uuid>.xml"""
+    return document_path(
+        account_ruc=instance.account_ruc,
+        period=instance.period,
+        kind=instance.document_class or "otros",
+        code=f"{instance.series}-{instance.number}",
+        pk=instance.pk,
+        extension=Path(filename).suffix or ".xml",
+    )
 
 
 class ElectronicInvoice(BaseModel):
@@ -108,6 +123,11 @@ class ElectronicInvoice(BaseModel):
     xml_filename = models.CharField(max_length=120, blank=True)
     xml_sha256 = models.CharField(max_length=64, blank=True, db_index=True)
     xml_downloaded_at = models.DateTimeField(null=True, blank=True)
+    # The same XML as a file on disk, byte-for-byte as SUNAT served it, filed
+    # by company and period (core.archive). Written through core.archive.store.
+    xml_file = models.FileField(
+        "archivo XML", upload_to=xml_file_path, max_length=255, blank=True,
+    )
 
     # When the daily query last returned this comprobante.
     last_seen_at = models.DateTimeField(null=True, blank=True, db_index=True)

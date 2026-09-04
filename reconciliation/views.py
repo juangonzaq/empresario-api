@@ -130,6 +130,7 @@ class CollectionsView(OrganizationAPIView):
                 c["pending_invoices"] += 1
                 bucket["pending"] += st.balance
                 pendiente = {
+                    "id": str(inv.pk),
                     "full_number": inv.full_number, "issue_date": inv.issue_date,
                     "days": (hoy - inv.issue_date).days if inv.issue_date else None,
                     "balance": st.balance, "currency": moneda, "status": st.status,
@@ -217,7 +218,7 @@ class CustomerDocumentsView(OrganizationAPIView):
         sueltas: list[dict] = []
         for nc in emitidos.filter(document_class=DocumentClass.CREDIT_NOTE,
                                   is_cancelled=False, is_rejected=False):
-            fila = {"full_number": nc.full_number, "issue_date": nc.issue_date,
+            fila = {"id": str(nc.pk), "full_number": nc.full_number, "issue_date": nc.issue_date,
                     "currency": nc.currency or "PEN", "amount": nc.total_amount or Decimal("0")}
             destino = por_numero.get(_norm_number(nc.references_document))
             if destino is None:

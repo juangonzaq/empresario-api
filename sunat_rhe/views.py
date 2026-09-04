@@ -16,12 +16,14 @@ from __future__ import annotations
 import datetime
 from decimal import Decimal, InvalidOperation
 
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from accounts.tenancy import ManagedOrganizationAPIView, OrganizationAPIView
+from core import archive
 
 from .models import FeeReceipt
 
@@ -88,8 +90,11 @@ class FeeReceiptsView(OrganizationAPIView):
         return Response({"id": str(receipt.pk)}, status=status.HTTP_201_CREATED)
 
 
-def _create_receipt(account_ruc: str, data) -> tuple:
-    """(receipt, None, 201) or (None, detail, http_status)."""
+def _create_receipt(account_ruc: str, data, document: bytes | None = None) -> tuple:
+    """(receipt, None, 201) or (None, detail, http_status).
+
+    ``document`` is the receipt's PDF when it was registered by upload: it
+    goes to the document archive next to the scraped ones."""
     bad = status.HTTP_400_BAD_REQUEST
     full = str(data.get("full_number") or "").strip().upper()
     series, _, number = full.partition("-")
@@ -122,7 +127,7 @@ def _create_receipt(account_ruc: str, data) -> tuple:
         return None, (f"El recibo {series}-{number} de ese emisor ya "
                       "está registrado."), status.HTTP_409_CONFLICT
 
-    receipt = FeeReceipt.objects.create(
+    receipt = FeeReceipt(
         account_ruc=account_ruc,
         issuer_doc=issuer_doc,
         issuer_doc_type="6" if len(issuer_doc) == 11 else "1",
@@ -139,6 +144,9 @@ def _create_receipt(account_ruc: str, data) -> tuple:
         status="Registrado",
         raw={"origin": "manual"},
     )
+    if document:
+        archive.store(receipt.file, document, "pdf")
+    receipt.save()
     _ingest(account_ruc)
     return receipt, None, status.HTTP_201_CREATED
 
@@ -170,8 +178,9 @@ class FeeReceiptUploadView(ManagedOrganizationAPIView):
             )
         from .services.pdf_extract import PdfExtractError, extract_fee_receipt
 
+        content = upload.read()
         try:
-            parsed = extract_fee_receipt(upload.read(), request.ruc)
+            parsed = extract_fee_receipt(content, request.ruc)
         except PdfExtractError as error:
             return Response(
                 {"detail": str(error), "parsed": {}},
@@ -181,7 +190,9 @@ class FeeReceiptUploadView(ManagedOrganizationAPIView):
         required = ("full_number", "issuer_doc", "issuer_name",
                     "issue_date", "gross_amount")
         if all(parsed.get(field) for field in required):
-            receipt, error, code = _create_receipt(request.ruc, parsed)
+            receipt, error, code = _create_receipt(
+                request.ruc, parsed, document=content
+            )
             if receipt is not None:
                 return Response(
                     {"id": str(receipt.pk), "parsed": parsed}, status=code
@@ -218,6 +229,30 @@ class FeeReceiptRefreshView(ManagedOrganizationAPIView):
             {"detail": "Actualizando desde SUNAT…"},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class FeeReceiptPdfView(OrganizationAPIView):
+    """``GET`` the receipt as a PDF: the file the worker handed over when it
+    was registered by upload, or —for scraped ones, where SUNAT only shows
+    a consulta page— a representation built from the receipt's data."""
+
+    def get(self, request: Request, pk) -> HttpResponse:
+        from accounts.models import Organization
+
+        from .services.pdf import receipt_file_stem, render_receipt_pdf
+
+        receipt = get_object_or_404(FeeReceipt, pk=pk, account_ruc=request.ruc)
+        filename = f"{receipt_file_stem(receipt)}.pdf"
+        if receipt.file and receipt.file.name.lower().endswith(".pdf"):
+            return FileResponse(
+                receipt.file.open("rb"), as_attachment=True, filename=filename,
+                content_type="application/pdf",
+            )
+        organization = Organization.objects.filter(ruc=request.ruc).first()
+        pdf = render_receipt_pdf(receipt, organization.name if organization else "")
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class FeeReceiptView(ManagedOrganizationAPIView):

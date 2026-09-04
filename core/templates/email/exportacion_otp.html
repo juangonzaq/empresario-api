@@ -1,0 +1,8 @@
+{% extends "email/base.html" %}
+{% block content %}
+{% include "email/_titulo.html" with titulo="Tu código para descargar comprobantes" subtitulo="Vence en unos minutos y sirve una sola vez." %}
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">Pediste descargar <strong>{{ etiqueta }}</strong> de <strong>{{ empresa }}</strong> ({{ cantidad }} comprobantes) en un archivo .zip. Este es el código:</p>
+<p style="margin:16px 0;font-size:34px;letter-spacing:10px;font-weight:700;text-align:center;color:#0b1d1a;">{{ codigo }}</p>
+<p style="margin:0;font-size:15px;line-height:23px;color:#0b1d1a;">Vence en {{ minutos }} minutos y solo sirve una vez.</p>
+<p style="margin:12px 0 0 0;font-size:15px;line-height:23px;color:#0b1d1a;">Si no fuiste tú, cambia tu contraseña de inmediato y revisa quién tiene acceso a tu empresa en Equipo.</p>
+{% endblock %}

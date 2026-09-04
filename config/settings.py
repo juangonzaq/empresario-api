@@ -54,7 +54,9 @@ SUNAT = {
 MEDIA_SUNAT_DIR = BASE_DIR / "media" / "sunat_raw"   # raw ZIPs and TXTs on local disk
 
 # Archivos subidos (contratos firmados, etc.). No se sirven por URL pública:
-# cada descarga pasa por un endpoint con permisos de la empresa.
+# cada descarga pasa por un endpoint con permisos de la empresa. Debajo vive
+# también la carpeta de comprobantes scrapeados (core.archive):
+# comprobantes/<ruc>/<año>/<mes>/<tipo>/<serie-número>-<uuid>.<ext>
 MEDIA_ROOT = BASE_DIR / "media"
 
 
@@ -129,6 +131,7 @@ INSTALLED_APPS = [
     'reconciliation',
     'obligations',
     'sunat_declaraciones',
+    'documents',
 ]
 
 MIDDLEWARE = [

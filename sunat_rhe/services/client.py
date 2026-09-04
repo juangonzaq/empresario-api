@@ -72,9 +72,10 @@ class RhePortalClient:
             rows = self._query(period)
             # The detail action is stateful: ``posirecibo`` indexes the
             # LAST executed listing, so details are fetched right here,
-            # before the next period replaces it.
+            # before the next period replaces it. The page itself travels
+            # along: it is the receipt's copy in the document archive.
             for index, row in enumerate(rows):
-                row["__detail__"] = self._detail(index)
+                row["__detail__"], row["__detail_html__"] = self._detail(index)
             results[period] = rows
         return results
 
@@ -192,10 +193,11 @@ class RhePortalClient:
         response.encoding = "iso-8859-1"
         return rows_from_html(response.text)
 
-    def _detail(self, index: int) -> dict:
+    def _detail(self, index: int) -> tuple[dict, bytes]:
         """One receipt's detail page (concept, payments), by its position
-        in the listing just queried. Fail-soft: a detail that does not
-        parse must not sink the whole sync."""
+        in the listing just queried: the parsed fields plus the page bytes
+        exactly as served. Fail-soft: a detail that does not parse must
+        not sink the whole sync."""
         try:
             response = self.session.post(
                 APP_URL,
@@ -204,7 +206,7 @@ class RhePortalClient:
             )
             response.raise_for_status()
             response.encoding = "iso-8859-1"
-            return detail_from_html(response.text)
+            return detail_from_html(response.text), response.content
         except Exception:  # pragma: no cover — defensive
             logger.exception("RHE: detalle %d no se pudo leer", index)
-            return {}
+            return {}, b""

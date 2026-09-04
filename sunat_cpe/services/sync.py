@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 from django.utils import timezone
 
+from core import archive
+
 from ..models import ElectronicInvoice
 from .client import CpePortalClient
 from .constants import ALL_TIPOS
@@ -102,7 +104,7 @@ class CpeSynchronizer:
         fields = record_fields(record, self.client.taxpayer_id, tipo)
         if not fields["series"] or not fields["number"]:
             return
-        _, created = ElectronicInvoice.objects.update_or_create(
+        invoice, created = ElectronicInvoice.objects.update_or_create(
             account_ruc=fields["account_ruc"],
             issuer_ruc=fields["issuer_ruc"],
             document_type=fields["document_type"],
@@ -114,31 +116,44 @@ class CpeSynchronizer:
         result.updated += not created
 
         if self.download_xml and fields["can_download"]:
-            self._maybe_download(fields, result)
+            self._maybe_download(invoice, fields, result)
 
-    def _maybe_download(self, fields: dict, result: SyncResult) -> None:
-        key = {
-            "account_ruc": fields["account_ruc"], "issuer_ruc": fields["issuer_ruc"],
-            "document_type": fields["document_type"], "series": fields["series"],
-            "number": fields["number"],
-        }
-        if not self.redownload:
-            has_xml = (
-                ElectronicInvoice.objects.filter(**key)
-                .exclude(xml_content="").exists()
-            )
-            if has_xml:
-                return
+    def _maybe_download(
+        self, invoice: ElectronicInvoice, fields: dict, result: SyncResult
+    ) -> None:
+        if invoice.xml_content and not self.redownload:
+            # The XML is already stored; only rows older than the document
+            # archive (or whose file went missing) still need the copy on disk.
+            if not invoice.xml_file:
+                archive_xml(invoice)
+                invoice.save(update_fields=["xml_file", "updated_at"])
+            return
         try:
             filename, xml_text = self.client.download_xml(fields)
         except Exception:
             result.xml_failed += 1
             logger.exception("XML download failed for %s", fields["full_number"])
             return
-        ElectronicInvoice.objects.filter(**key).update(
-            xml_content=xml_text,
-            xml_filename=filename,
-            xml_sha256=hashlib.sha256(xml_text.encode("utf-8")).hexdigest(),
-            xml_downloaded_at=timezone.now(),
-        )
+        invoice.xml_content = xml_text
+        invoice.xml_filename = filename
+        invoice.xml_sha256 = hashlib.sha256(xml_text.encode("utf-8")).hexdigest()
+        invoice.xml_downloaded_at = timezone.now()
+        archive_xml(invoice)
+        invoice.save(update_fields=[
+            "xml_content", "xml_filename", "xml_sha256", "xml_downloaded_at",
+            "xml_file", "updated_at",
+        ])
         result.xml_downloaded += 1
+
+
+def archive_xml(invoice: ElectronicInvoice) -> None:
+    """Write the XML the row already holds in ``xml_content`` to the document
+    archive (does not save the row).
+
+    The text was decoded from SUNAT's bytes as ISO-8859-1, which maps every
+    byte to exactly one character, so encoding it back yields the original
+    file byte for byte, whatever encoding the XML itself declares.
+    """
+    archive.store(
+        invoice.xml_file, invoice.xml_content.encode("ISO-8859-1", "replace"), "xml"
+    )

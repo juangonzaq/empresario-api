@@ -41,6 +41,9 @@ def _transaction_payload(transaction: FinancialTransaction) -> dict:
     return {
         "id": str(transaction.id),
         "source": transaction.source,
+        # The row behind the transaction (invoice or fee receipt pk): the UI
+        # builds the PDF/XML download links from it.
+        "source_object_id": transaction.source_object_id,
         "external_id": transaction.external_id,
         "direction": transaction.direction,
         "document_kind": transaction.document_kind,

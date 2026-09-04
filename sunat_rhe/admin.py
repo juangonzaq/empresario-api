@@ -13,3 +13,5 @@ class FeeReceiptAdmin(admin.ModelAdmin):
     )
     list_filter = (filtro_empresa("account_ruc"), "is_reverted", "period")
     search_fields = ("issuer_name", "issuer_doc", "full_number")
+    # El archivo lo escribe el scraping o la subida del PDF, nunca el admin.
+    readonly_fields = ("file",)

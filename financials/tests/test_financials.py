@@ -237,6 +237,9 @@ class IncomeStatementTests(TenantAPITestCase):
         ).data
         self.assertEqual(len(data["transactions"]), 1)
         self.assertEqual(data["transactions"][0]["external_id"], row.external_id)
+        self.assertEqual(
+            data["transactions"][0]["source_object_id"], row.source_object_id
+        )
 
 
 class RatioTests(TenantAPITestCase):

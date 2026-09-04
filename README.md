@@ -63,6 +63,55 @@ Downloads hit `/visor/bajarArchivo/{codArchivo}/{annex}/{system}/{ruc}`, which r
 `200` with an **empty body** unless the owning message's detail was requested earlier in
 the same session — the synchronizer always does this first.
 
+### Document archive
+
+Every scraped comprobante is also written to disk, under `MEDIA_ROOT`:
+
+```
+comprobantes/<ruc>/<year>/<month>/<factura|nota_credito|nota_debito|recibo_honorarios>/<series-number>-<uuid>.<ext>
+```
+
+Facturas and notes store their signed XML byte-for-byte as SUNAT served it (`.xml`).
+Fee receipts store the detail page as served (`.html`) — the consulta SUNAT offers the
+paying company has no PDF/XML download — or the PDF the worker handed over when the
+receipt was registered by upload (`.pdf`), which a later scrape never replaces. The uuid
+is the row's primary key, so re-downloading replaces the file instead of duplicating it.
+Rows scraped before the archive existed get their XML written from the database with:
+
+```bash
+python manage.py archive_xml                    # every company
+python manage.py archive_xml --ruc 20604442533  # one company
+```
+
+### Downloads
+
+Every place the UI shows a document carries PDF / XML download icons. The endpoints:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/cpe/invoices/{id}/xml/` | The signed XML, byte for byte, named the SUNAT way (`{ruc}-{tipo}-{serie}-{numero}.xml`) |
+| `GET /api/cpe/invoices/{id}/pdf/` | A printable representation built from the XML on each request (`sunat_cpe/services/pdf.py`): parties, lines, totals by operation type, IGV, payment terms, detracción, the document a note modifies, and the XML's SHA-256 in the footer |
+| `GET /api/rhe/receipts/{id}/pdf/` | The PDF uploaded when the receipt was registered from paper, or —for scraped receipts— a representation built from the receipt's data and detail |
+
+Fee receipts have no XML: SUNAT never hands one to the paying company, so the UI shows only the PDF icon for them.
+
+### Bulk download (.zip, with a one-time code)
+
+Each document section (facturación, comprobantes recibidos, notas de crédito, honorarios)
+has a "Descargar todo (.zip)" button that bundles every document of the section's filter:
+`year/month/type/` folders with the XML and PDF of each comprobante (PDF only for fee
+receipts), plus `indice.csv` for Excel and a `LEEME.txt`. Because that is the company's whole
+paper trail leaving the system, it is gated twice:
+
+- **Paid plan only** (`PaidPlanActive`): the trial does not include it, and the button is
+  disabled without it (and when the section has nothing to export).
+- **One-time code by email**: `POST /api/documents/exports/` validates the filter, counts the
+  documents (max 2 000 per download) and emails a 6-digit code to the requesting user;
+  `POST /api/documents/exports/{id}/download/` with `{"code"}` returns the zip once. The code
+  expires in 10 minutes, dies after 5 wrong attempts, and a new request voids the previous one.
+  Every export is logged (`documents.DocumentExport`, read-only in the admin): who, which
+  filter, how many documents, when it was downloaded.
+
 ## API
 
 | Endpoint | Description |

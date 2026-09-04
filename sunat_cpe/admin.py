@@ -24,7 +24,7 @@ class ElectronicInvoiceAdmin(admin.ModelAdmin):
     )
     date_hierarchy = "issue_date"
     readonly_fields = (
-        "raw", "xml_content", "xml_sha256", "xml_downloaded_at",
+        "raw", "xml_content", "xml_sha256", "xml_downloaded_at", "xml_file",
         "last_seen_at", "created_at", "updated_at",
     )
 

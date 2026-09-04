@@ -10,8 +10,11 @@ which is why the withheld amount is a first-class column.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from django.db import models
 
+from core.archive import document_path
 from core.models import BaseModel
 
 
@@ -24,6 +27,18 @@ class FeeReceiptQuerySet(models.QuerySet):
 
     def for_period(self, period: str) -> "FeeReceiptQuerySet":
         return self.filter(period=period)
+
+
+def receipt_file_path(instance: "FeeReceipt", filename: str) -> str:
+    """comprobantes/<ruc>/<año>/<mes>/recibo_honorarios/<serie-número>-<uuid>.<pdf|html>"""
+    return document_path(
+        account_ruc=instance.account_ruc,
+        period=instance.period,
+        kind="recibo_honorarios",
+        code=f"{instance.series}-{instance.number}",
+        pk=instance.pk,
+        extension=Path(filename).suffix or ".bin",
+    )
 
 
 class FeeReceipt(BaseModel):
@@ -73,6 +88,14 @@ class FeeReceipt(BaseModel):
     # clause and the payments list — what the accountant opens the PDF for.
     detail = models.JSONField(default=dict, blank=True)
     detail_fetched_at = models.DateTimeField(null=True, blank=True)
+
+    # El recibo como archivo, en la carpeta de comprobantes (core.archive):
+    # el PDF que entregó el trabajador cuando se registró subiéndolo, o la
+    # página de detalle tal como SUNAT la sirvió cuando vino del scraping —
+    # la consulta que SUNAT da al usuario del servicio no ofrece PDF ni XML.
+    file = models.FileField(
+        "archivo", upload_to=receipt_file_path, max_length=255, blank=True,
+    )
 
     # Everything scraped, verbatim: new columns surface without re-scraping.
     raw = models.JSONField(default=dict, blank=True)
