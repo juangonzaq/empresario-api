@@ -18,8 +18,8 @@
           <td style="padding:0 8px 16px 8px;">
             <table role="presentation" cellspacing="0" cellpadding="0" border="0">
               <tr>
-                {# El colibrí, en PNG a 2x servido por el front (Gmail no muestra SVG).
-                   Si el cliente bloquea imágenes, queda el nombre en texto. #}
+                {% comment %}El colibrí, en PNG a 2x servido por el front (Gmail no muestra SVG).
+                   Si el cliente bloquea imágenes, queda el nombre en texto.{% endcomment %}
                 <td style="width:37px;height:26px;vertical-align:middle;">
                   <img src="{{ frontend_url }}/email/logo.png" width="37" height="26" alt="" style="display:block;width:37px;height:26px;border:0;">
                 </td>
